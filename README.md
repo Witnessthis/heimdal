@@ -88,6 +88,9 @@ script prints how to remove those too if you want a fully clean machine.
 
 ### Docker (distro-agnostic)
 
+For deployment or preview without live-reload. Use `npm run dev` above for
+active development with instant browser reload on file changes.
+
 Build and run the static PWA via Caddy in a container:
 
 **Local (HTTP, no domain needed):**

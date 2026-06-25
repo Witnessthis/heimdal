@@ -77,6 +77,21 @@ no mail-provider integration, no AI filtering yet. Treat anything beyond
   a user unit since no one logs into a session. Caddy's setup doesn't need
   to change for that move.
 
+## Docker deployment
+
+- `Dockerfile` builds an Arch-based image with Caddy serving the static `web/`
+  content from `/srv/heimdal/`.
+- `docker-entrypoint.sh` is the container entrypoint. It generates
+  `/etc/caddy/Caddyfile` at runtime based on the `DOMAIN` env var:
+  - If `DOMAIN` is set → writes a domain-based config for HTTPS (Caddy
+    auto-provisions Let's Encrypt certs).
+  - If `DOMAIN` is unset → writes a `:80` config for plain HTTP.
+- No Caddyfile is baked into the image — the entrypoint always writes one
+  fresh on container start, so the same image works for both local and
+  public modes.
+- This is the distro-agnostic deployment path. Unlike the systemd-based
+  setup in `deploy/`, it requires nothing but Docker on the host.
+
 ## Networking prerequisites (host-specific, not in this repo)
 
 Not encoded anywhere in the repo since it's environment-specific, but

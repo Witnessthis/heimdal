@@ -52,10 +52,12 @@ no mail-provider integration, no AI filtering yet. Treat anything beyond
   including renewal — no manual cert handling.
 - The dev server itself currently runs as a systemd **user** unit (starts on
   graphical login), not a system unit. That's intentional for now since this
-  runs on a desktop dev machine. **When this gets deployed to a headless
-  Raspberry Pi, switch it to a system-level unit** (`/etc/systemd/system/...`)
-  instead — a headless box won't have a login session to trigger a user
-  unit. Caddy's setup doesn't need to change for that move.
+  is meant for a desktop dev machine with a normal login session. **If
+  deploying to a headless host (no graphical login, e.g. a server or
+  single-board computer running standalone), switch it to a system-level
+  unit** (`/etc/systemd/system/...`) instead — a headless box never triggers
+  a user unit since no one logs into a session. Caddy's setup doesn't need
+  to change for that move.
 
 ## Networking prerequisites (host-specific, not in this repo)
 
@@ -75,13 +77,3 @@ required for the public-facing setup to work:
   interface instead of being looped back to the host).
 - Don't forward SSH (22) directly to the internet for admin access — prefer
   a VPN (Tailscale/WireGuard) for remote management instead.
-
-## Planned network isolation
-
-The eventual Raspberry Pi deployment is intended to live on its own VLAN,
-isolated from the rest of the home network it's deployed on. Implications
-for whoever sets that up: the isolated VLAN still needs outbound internet
-access (DNS, NTP, reaching Let's Encrypt) even though it's blocked from
-reaching other LAN devices, and a narrow allow-rule is needed for management
-access (e.g. SSH from one specific admin device) since full bidirectional
-isolation would lock out admin access entirely.

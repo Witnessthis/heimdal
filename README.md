@@ -27,3 +27,61 @@ self-hosted or third-party — to automatically:
 ## Status
 
 Early stage — project intent and direction only. Implementation has not started yet.
+
+## Local development
+
+The `web/` folder holds the PWA shell, served with live-reload via
+`npm run dev`. Two ways to try it out, depending on what you need:
+
+### Quick local test (no domain needed)
+
+To just try it out from a browser or phone on the same network:
+
+```sh
+deploy/serve-local.sh
+```
+
+This runs the dev server over plain HTTP and prints the URL to use from
+other devices on your network. No domain, no Caddy, no certificate needed.
+The one limitation: without HTTPS, the service worker won't register (so
+offline caching won't activate), but the page loads normally and
+"Add to Home Screen" still works on iOS/Android.
+
+If Caddy (see below) is currently running, this refuses to start instead of
+running alongside it — otherwise it'd also be reachable through your domain,
+defeating the point of testing purely locally. Run `deploy/dev-server.sh
+stop` first in that case.
+
+### Full setup with your own domain and HTTPS
+
+To run it with live-reload and expose it publicly over HTTPS via
+[Caddy](https://caddyserver.com/), both auto-starting on your machine:
+
+```sh
+deploy/setup-dev-server.sh yourdomain.com
+```
+
+Prerequisites: Arch Linux (pacman), Node.js/npm, a systemd user session, and a
+domain whose DNS A record points at your machine's public IP with ports 80/443
+forwarded to it.
+
+This installs Caddy, writes `/etc/caddy/Caddyfile`, installs a
+`heimdal-dev.service` systemd user unit that runs `npm run dev`
+(`live-server` on `web/`, port 8080), and enables both to start automatically.
+Re-run the script anytime after editing the templates in `deploy/`.
+
+Once set up, control the dev server and Caddy together with:
+
+```sh
+deploy/dev-server.sh {start|stop|restart|status}
+```
+
+To undo all of that:
+
+```sh
+deploy/cleanup-dev-server.sh
+```
+
+This stops and disables both services and removes the files the setup script
+generated. It leaves the `caddy` package and `node_modules/` installed; the
+script prints how to remove those too if you want a fully clean machine.

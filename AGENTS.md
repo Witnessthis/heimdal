@@ -120,8 +120,6 @@ no mail-provider integration, no AI filtering yet. Treat anything beyond
 - Once dev is stable, switch back to the production CA (just remove the
   `--ca` flag) — that single cert will renew automatically and never count
   against the limit again unless you tear down the container and recreate it.
-- If stuck with a 429 on the production endpoint, fall back to plain HTTP
-  (see first bullet).
 
 ## Networking prerequisites (host-specific, not in this repo)
 

@@ -24,6 +24,39 @@ self-hosted or third-party — to automatically:
   notification suppression, and unsubscribing are driven by your configuration,
   not a fixed black-box policy.
 
+## Architecture
+
+### Scope
+
+Single-user. One person's mail, one set of credentials, one backend instance. Multi-user is not a current goal and the design does not account for it.
+
+### Stack
+
+- **Frontend**: TypeScript PWA (existing `web/` shell)
+- **Backend**: TypeScript/Node.js — chosen for its library ecosystem (WebAuthn, OAuth2, IMAP) and the ability to share type definitions between frontend and backend, which matters for the AI protocol schema
+- **AI**: [Vercel AI SDK](https://github.com/vercel/ai) (Apache 2.0) providing a unified interface across local and hosted models — Ollama, Anthropic, OpenAI, and others. The model is configured through the app's settings UI; swapping providers requires no code changes
+- **Deployment**: Docker with Caddy handling TLS; backend and frontend in one container
+
+### Authentication
+
+1. Password + optional TOTP on first login
+2. TOTP setup uses the `otpauth://` deep link to open the authenticator app directly on mobile, with a QR code fallback for desktop. The code input uses `autocomplete="one-time-code"` for system-level auto-fill (works with iOS built-in authenticator and Google Password Manager; third-party apps like Aegis require manual entry)
+3. After initial login, a WebAuthn passkey is registered — subsequent logins use biometrics (Face ID, fingerprint, etc.) instead of password and TOTP
+
+### Mail providers
+
+- **Gmail**: OAuth2 + Gmail API, push notifications via Pub/Sub
+- **Outlook**: OAuth2 + Microsoft Graph API, push notifications via webhooks
+- **Everything else** (iCloud, Yahoo, Fastmail, self-hosted): generic IMAP with app passwords, `IDLE` for near-realtime events
+
+### AI protocol
+
+The backend acts as a strict intermediary: it extracts structured metadata from each incoming email (sender, subject, snippet, thread context — not raw body by default) and sends it to the model as a typed request. The model returns a typed response: classification, priority, suggested action, and optionally a draft reply. The Vercel AI SDK's `generateObject` enforces the response schema, so the model is a pure function from the application's perspective — structured in, structured out, no direct mail access. Swapping models (local or hosted) requires no application code changes.
+
+### Local AI models (Ollama)
+
+Ollama is a separate concern — it is not bundled with Heimdal and is set up independently. Think of it like a database: Heimdal connects to it over HTTP, it does not manage it. When running locally, Ollama is defined as an optional service in the Docker Compose file and configured in the app settings with its URL (e.g. `http://ollama:11434`). If using a hosted provider instead, the Ollama container is simply not started. Ollama can also run on a separate machine entirely — Heimdal only needs a reachable URL.
+
 ## Status
 
 Early stage — project intent and direction only. Implementation has not started yet.

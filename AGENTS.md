@@ -58,6 +58,10 @@ no mail-provider integration, no AI filtering yet. Treat anything beyond
   --now caddy`), so it starts at boot independent of any login session.
   Caddy handles HTTPS automatically via Let's Encrypt (HTTP-01 challenge),
   including renewal — no manual cert handling.
+- `deploy/dev-server.sh {start|stop|restart|status}` is a thin wrapper
+  around `systemctl --user <action> heimdal-dev`, just so callers don't need
+  to know the unit name/flag. Caddy itself isn't wrapped — it's a normal
+  distro service, controlled directly via `sudo systemctl <action> caddy`.
 - The dev server itself currently runs as a systemd **user** unit (starts on
   graphical login), not a system unit. That's intentional for now since this
   is meant for a desktop dev machine with a normal login session. **If

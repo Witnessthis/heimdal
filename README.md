@@ -65,6 +65,14 @@ This installs Caddy, writes `/etc/caddy/Caddyfile`, installs a
 (`live-server` on `web/`, port 8080), and enables both to start automatically.
 Re-run the script anytime after editing the templates in `deploy/`.
 
+Once set up, control the dev server with:
+
+```sh
+deploy/dev-server.sh {start|stop|restart|status}
+```
+
+(Caddy is a normal system service: `sudo systemctl {start|stop} caddy`.)
+
 To undo all of that:
 
 ```sh

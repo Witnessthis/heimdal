@@ -92,6 +92,35 @@ no mail-provider integration, no AI filtering yet. Treat anything beyond
 - This is the distro-agnostic deployment path. Unlike the systemd-based
   setup in `deploy/`, it requires nothing but Docker on the host.
 
+## Let's Encrypt rate limits in development
+
+- Let's Encrypt enforces a **50 certificates per domain per week** limit, but
+  a narrower limit that bites far more often in dev: **5 certificates per
+  exact set of identifiers per week**. Every time you recreate the container
+  with the `DOMAIN` env set (e.g. on a new machine, after a `docker rm`, or
+  after a full rebuild), Caddy requests a fresh certificate, burning one of
+  those 5 slots. Once exhausted, all further issuance gets `HTTP 429` until
+  the window resets (~168h from the first of those 5 certs).
+- Use the **staging** ACME endpoint during development to avoid burning
+  production rate limits. Override Caddy's default CA:
+  ```sh
+  docker run -d --name heimdal -p 80:80 -p 443:443 \
+    -e DOMAIN=witnessthis.eu \
+    heimdal caddy run --config /etc/caddy/Caddyfile \
+    --ca https://acme-staging-v02.api.letsencrypt.org/directory
+  ```
+  Staging certs are not trusted by browsers, but they're identical in every
+  other way (challenge flow, renewal, etc.) and have much higher rate limits.
+- Once dev is stable, switch back to the production CA (just remove the
+  `--ca` flag) — that single cert will renew automatically and never count
+  against the limit again unless you tear down the container and recreate it.
+- If stuck with a 429 on the production endpoint, you can still serve over
+  plain HTTP by omitting `DOMAIN`:
+  ```sh
+  docker rm -f heimdal
+  docker run -d --name heimdal -p 80:80 heimdal
+  ```
+
 ## Networking prerequisites (host-specific, not in this repo)
 
 Not encoded anywhere in the repo since it's environment-specific, but

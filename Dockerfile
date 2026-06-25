@@ -1,6 +1,6 @@
-FROM archlinux:latest
+FROM alpine:latest
 
-RUN pacman -Syu --noconfirm caddy
+RUN apk add --no-cache caddy
 
 COPY web/ /srv/heimdal/
 COPY docker-entrypoint.sh /docker-entrypoint.sh

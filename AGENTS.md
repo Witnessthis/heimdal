@@ -79,8 +79,8 @@ no mail-provider integration, no AI filtering yet. Treat anything beyond
 
 ## Docker deployment
 
-- `Dockerfile` builds an Arch-based image with Caddy serving the static `web/`
-  content from `/srv/heimdal/`.
+- `Dockerfile` builds an Alpine-based image (multi-arch: amd64 + arm64) with
+  Caddy serving the static `web/` content from `/srv/heimdal/`.
 - `docker-entrypoint.sh` is the container entrypoint. It generates
   `/etc/caddy/Caddyfile` at runtime based on the `DOMAIN` env var:
   - If `DOMAIN` is set → writes a domain-based config for HTTPS (Caddy

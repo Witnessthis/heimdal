@@ -1,0 +1,11 @@
+[Unit]
+Description=Heimdal web dev server (live-reload)
+After=network.target
+
+[Service]
+WorkingDirectory={{REPO_DIR}}
+ExecStart=/usr/bin/npm run dev
+Restart=on-failure
+
+[Install]
+WantedBy=default.target

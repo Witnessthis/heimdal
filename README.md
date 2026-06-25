@@ -27,3 +27,22 @@ self-hosted or third-party — to automatically:
 ## Status
 
 Early stage — project intent and direction only. Implementation has not started yet.
+
+## Local development
+
+The `web/` folder holds the PWA shell. To run it with live-reload and expose it
+publicly over HTTPS via [Caddy](https://caddyserver.com/), both auto-starting
+on this machine:
+
+```sh
+deploy/setup-dev-server.sh yourdomain.com
+```
+
+Prerequisites: Arch Linux (pacman), Node.js/npm, a systemd user session, and a
+domain whose DNS A record points at this machine's public IP with ports 80/443
+forwarded to it.
+
+This installs Caddy, writes `/etc/caddy/Caddyfile`, installs a
+`heimdal-dev.service` systemd user unit that runs `npm run dev`
+(`live-server` on `web/`, port 8080), and enables both to start automatically.
+Re-run the script anytime after editing the templates in `deploy/`.

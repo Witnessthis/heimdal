@@ -101,8 +101,14 @@ no mail-provider integration, no AI filtering yet. Treat anything beyond
   after a full rebuild), Caddy requests a fresh certificate, burning one of
   those 5 slots. Once exhausted, all further issuance gets `HTTP 429` until
   the window resets (~168h from the first of those 5 certs).
-- Use the **staging** ACME endpoint during development to avoid burning
-  production rate limits. Override Caddy's default CA:
+- **Best for local development**: don't set `DOMAIN` at all — serve over
+  plain HTTP. No rate limits, no certs needed, and you avoid the 429 trap
+  entirely:
+  ```sh
+  docker run -d --name heimdal -p 80:80 heimdal
+  ```
+- **If you need to test HTTPS behavior during development**, use the
+  **staging** ACME endpoint to avoid burning production quota:
   ```sh
   docker run -d --name heimdal -p 80:80 -p 443:443 \
     -e DOMAIN=witnessthis.eu \
@@ -114,12 +120,8 @@ no mail-provider integration, no AI filtering yet. Treat anything beyond
 - Once dev is stable, switch back to the production CA (just remove the
   `--ca` flag) — that single cert will renew automatically and never count
   against the limit again unless you tear down the container and recreate it.
-- If stuck with a 429 on the production endpoint, you can still serve over
-  plain HTTP by omitting `DOMAIN`:
-  ```sh
-  docker rm -f heimdal
-  docker run -d --name heimdal -p 80:80 heimdal
-  ```
+- If stuck with a 429 on the production endpoint, fall back to plain HTTP
+  (see first bullet).
 
 ## Networking prerequisites (host-specific, not in this repo)
 

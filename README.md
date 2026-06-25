@@ -47,6 +47,11 @@ The one limitation: without HTTPS, the service worker won't register (so
 offline caching won't activate), but the page loads normally and
 "Add to Home Screen" still works on iOS/Android.
 
+If Caddy (see below) is currently running, this refuses to start instead of
+running alongside it — otherwise it'd also be reachable through your domain,
+defeating the point of testing purely locally. Run `deploy/dev-server.sh
+stop` first in that case.
+
 ### Full setup with your own domain and HTTPS
 
 To run it with live-reload and expose it publicly over HTTPS via
@@ -65,13 +70,11 @@ This installs Caddy, writes `/etc/caddy/Caddyfile`, installs a
 (`live-server` on `web/`, port 8080), and enables both to start automatically.
 Re-run the script anytime after editing the templates in `deploy/`.
 
-Once set up, control the dev server with:
+Once set up, control the dev server and Caddy together with:
 
 ```sh
 deploy/dev-server.sh {start|stop|restart|status}
 ```
-
-(Caddy is a normal system service: `sudo systemctl {start|stop} caddy`.)
 
 To undo all of that:
 

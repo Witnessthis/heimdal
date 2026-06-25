@@ -14,8 +14,10 @@ no mail-provider integration, no AI filtering yet. Treat anything beyond
 ## Local dev server
 
 - `package.json` defines `npm run dev`, which runs `live-server` against
-  `web/` on port 8080 with `--host=0.0.0.0` (so it's also reachable directly
-  from other devices on the LAN) and live-reload on file changes.
+  `web/` on port 8080 with `--host=::` (dual-stack: covers IPv4 and IPv6 on
+  one socket, so `localhost`/`127.0.0.1`/`::1`/the LAN IP all work — plain
+  `0.0.0.0` only binds IPv4, which breaks `localhost` on any system where it
+  resolves to `::1` first) and live-reload on file changes.
 - `live-server` is an old, lightly-maintained package. Its declared
   dependencies (`chokidar@^2.0.4`, `http-auth@3.1.x`) pull in vulnerable
   transitive deps (`braces`/`chokidar` — high severity ReDoS-style issue in
@@ -43,7 +45,10 @@ no mail-provider integration, no AI filtering yet. Treat anything beyond
   won't work over plain HTTP on a non-localhost origin, so offline caching
   won't activate in this mode, but the page and "Add to Home Screen" both
   work fine. This is intentionally separate from, not a replacement for, the
-  domain+HTTPS path below.
+  domain+HTTPS path below. If Caddy is currently active, it refuses to start
+  at all (rather than silently also becoming reachable through the domain)
+  and tells the caller to run `deploy/dev-server.sh stop` first — no
+  automatic side effects on other services.
 - `deploy/setup-dev-server.sh <domain>` is the one-command setup path for a
   fresh clone. It is idempotent (safe to re-run after editing the templates
   in `deploy/`).
@@ -58,10 +63,11 @@ no mail-provider integration, no AI filtering yet. Treat anything beyond
   --now caddy`), so it starts at boot independent of any login session.
   Caddy handles HTTPS automatically via Let's Encrypt (HTTP-01 challenge),
   including renewal — no manual cert handling.
-- `deploy/dev-server.sh {start|stop|restart|status}` is a thin wrapper
-  around `systemctl --user <action> heimdal-dev`, just so callers don't need
-  to know the unit name/flag. Caddy itself isn't wrapped — it's a normal
-  distro service, controlled directly via `sudo systemctl <action> caddy`.
+- `deploy/dev-server.sh {start|stop|restart|status}` controls the dev server
+  (`systemctl --user <action> heimdal-dev`) and Caddy (`sudo systemctl
+  <action> caddy`) together, so the two services covering the domain+HTTPS
+  path always move in lockstep — there's no state where one is up and the
+  other isn't from using this script.
 - The dev server itself currently runs as a systemd **user** unit (starts on
   graphical login), not a system unit. That's intentional for now since this
   is meant for a desktop dev machine with a normal login session. **If

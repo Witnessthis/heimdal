@@ -9,6 +9,15 @@
 # own domain, see deploy/setup-dev-server.sh instead.
 set -euo pipefail
 
+if systemctl is-active --quiet caddy 2>/dev/null; then
+  echo "Caddy is currently running and proxying your domain to localhost:8080." >&2
+  echo "Starting this now would also expose it through Caddy/your domain," >&2
+  echo "which defeats the point of testing purely locally." >&2
+  echo "" >&2
+  echo "Stop it first with: deploy/dev-server.sh stop" >&2
+  exit 1
+fi
+
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_DIR"
 

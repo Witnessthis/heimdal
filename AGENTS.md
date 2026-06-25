@@ -75,5 +75,3 @@ required for the public-facing setup to work:
   LAN as the host can reach the public domain too (without it, internal
   clients hitting the public IP/domain get routed to the router's own admin
   interface instead of being looped back to the host).
-- Don't forward SSH (22) directly to the internet for admin access — prefer
-  a VPN (Tailscale/WireGuard) for remote management instead.

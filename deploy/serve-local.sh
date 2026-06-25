@@ -18,6 +18,13 @@ if systemctl is-active --quiet caddy 2>/dev/null; then
   exit 1
 fi
 
+if systemctl --user is-active --quiet heimdal-dev 2>/dev/null; then
+  echo "The heimdal-dev service is already using port 8080." >&2
+  echo "" >&2
+  echo "Stop it first with: deploy/dev-server.sh stop" >&2
+  exit 1
+fi
+
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_DIR"
 
@@ -26,9 +33,9 @@ if [ ! -d node_modules ]; then
   npm install
 fi
 
-LAN_IP="$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{print $7; exit}')"
+LAN_IP="$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for (i = 1; i < NF; i++) if ($i == "src") {print $(i + 1); exit}}')"
 
-echo "==> Starting dev server on http://0.0.0.0:8080"
+echo "==> Starting dev server on port 8080"
 echo "    From this machine:                          http://localhost:8080"
 if [ -n "$LAN_IP" ]; then
   echo "    From your phone or another device on this network: http://$LAN_IP:8080"

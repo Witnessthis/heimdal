@@ -39,6 +39,7 @@ sed "s|{{REPO_DIR}}|$REPO_DIR|" "$REPO_DIR/deploy/heimdal-dev.service.template" 
 
 echo "==> Enabling dev server user service"
 systemctl --user daemon-reload
-systemctl --user enable --now heimdal-dev
+systemctl --user enable heimdal-dev
+systemctl --user restart heimdal-dev
 
 echo "==> Done. Caddy is proxying https://$DOMAIN -> localhost:8080 (live-reload dev server)."

@@ -7,8 +7,10 @@ set -euo pipefail
 ACTION="${1:-}"
 case "$ACTION" in
   start|stop|restart)
-    systemctl --user "$ACTION" heimdal-dev
-    sudo systemctl "$ACTION" caddy
+    dev_rc=0
+    caddy_rc=0
+    systemctl --user "$ACTION" heimdal-dev || dev_rc=$?
+    sudo systemctl "$ACTION" caddy || caddy_rc=$?
     if systemctl --user is-active --quiet heimdal-dev; then
       echo "==> heimdal-dev is running"
     else
@@ -18,6 +20,10 @@ case "$ACTION" in
       echo "==> caddy is running"
     else
       echo "==> caddy is stopped"
+    fi
+    if [ "$dev_rc" -ne 0 ] || [ "$caddy_rc" -ne 0 ]; then
+      echo "==> One or both actions failed (heimdal-dev rc=$dev_rc, caddy rc=$caddy_rc)" >&2
+      exit 1
     fi
     ;;
   status)

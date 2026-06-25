@@ -85,3 +85,25 @@ deploy/cleanup-dev-server.sh
 This stops and disables both services and removes the files the setup script
 generated. It leaves the `caddy` package and `node_modules/` installed; the
 script prints how to remove those too if you want a fully clean machine.
+
+### Docker (distro-agnostic)
+
+Build and run the static PWA via Caddy in a container:
+
+**Local (HTTP, no domain needed):**
+
+```sh
+docker build -t heimdal .
+docker run -d --name heimdal -p 80:80 heimdal
+```
+
+**With a domain (HTTPS via Let's Encrypt):**
+
+```sh
+docker build -t heimdal .
+docker run -d --name heimdal -p 80:80 -p 443:443 -e DOMAIN=witnessthis.eu heimdal
+```
+
+The container switches between HTTP and HTTPS mode automatically based on
+whether the `DOMAIN` environment variable is set. No distro-specific setup
+needed — just Docker.

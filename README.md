@@ -32,14 +32,14 @@ Early stage — project intent and direction only. Implementation has not starte
 
 The `web/` folder holds the PWA shell. To run it with live-reload and expose it
 publicly over HTTPS via [Caddy](https://caddyserver.com/), both auto-starting
-on this machine:
+on your machine:
 
 ```sh
 deploy/setup-dev-server.sh yourdomain.com
 ```
 
 Prerequisites: Arch Linux (pacman), Node.js/npm, a systemd user session, and a
-domain whose DNS A record points at this machine's public IP with ports 80/443
+domain whose DNS A record points at your machine's public IP with ports 80/443
 forwarded to it.
 
 This installs Caddy, writes `/etc/caddy/Caddyfile`, installs a

@@ -36,6 +36,14 @@ no mail-provider integration, no AI filtering yet. Treat anything beyond
 
 ## Deployment / serving setup
 
+- `deploy/serve-local.sh` is the no-domain path: runs `npm run dev` directly
+  over plain HTTP, reachable from other devices on the same LAN, with no
+  Caddy/TLS involved at all. Doesn't autostart anything or touch the system —
+  just runs in the foreground until killed. Service worker registration
+  won't work over plain HTTP on a non-localhost origin, so offline caching
+  won't activate in this mode, but the page and "Add to Home Screen" both
+  work fine. This is intentionally separate from, not a replacement for, the
+  domain+HTTPS path below.
 - `deploy/setup-dev-server.sh <domain>` is the one-command setup path for a
   fresh clone. It is idempotent (safe to re-run after editing the templates
   in `deploy/`).

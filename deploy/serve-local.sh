@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Minimal local-network testing: no domain, no Caddy, no certificate. Runs
+# the live-reload dev server directly over plain HTTP, reachable from any
+# device on the same network (phone, another computer, etc).
+#
+# Note: without HTTPS, the service worker won't register (so offline
+# caching won't activate), but the page loads normally and "Add to Home
+# Screen" still works on iOS/Android. For full HTTPS PWA testing with your
+# own domain, see deploy/setup-dev-server.sh instead.
+set -euo pipefail
+
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$REPO_DIR"
+
+if [ ! -d node_modules ]; then
+  echo "==> Installing npm dependencies"
+  npm install
+fi
+
+LAN_IP="$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{print $7; exit}')"
+
+echo "==> Starting dev server on http://0.0.0.0:8080"
+echo "    From this machine:                          http://localhost:8080"
+if [ -n "$LAN_IP" ]; then
+  echo "    From your phone or another device on this network: http://$LAN_IP:8080"
+fi
+echo ""
+
+exec npm run dev

@@ -24,12 +24,13 @@
       background: #1a1a2e;
       color: #f1f1f1;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      overflow: hidden; /* the feed itself scrolls, not the page */
+      overflow: hidden; /* the active view scrolls internally, not the page */
     }
     body { position: relative; }
 
     /* Fixed top chrome: app title + (temporary) debug status. Hides
-       upward on scroll down, matches bottom-nav's hide behavior. */
+       upward on scroll down, matches bottom-nav's hide behavior. Shared
+       across both views below. */
     header {
       position: fixed;
       top: 0;
@@ -126,6 +127,15 @@
     .card-from-name { font-weight: 600; font-size: 0.87rem; color: #f1f1f1; }
     .card-from-address { font-size: 0.78rem; color: #777; }
     .card-time { font-size: 0.72rem; color: #666; margin-left: auto; }
+    /* Temporary debug aid — see buildCard()'s `index` param. */
+    .card-index {
+      font-family: monospace;
+      font-size: 0.7rem;
+      color: #555;
+      background: #0d0d1a;
+      border-radius: 4px;
+      padding: 1px 5px;
+    }
 
     .card-subject {
       font-size: 1.05rem;
@@ -136,8 +146,15 @@
 
     /* Wraps the body text so the truncation (max-height + overflow) and the
        gradient fade-to-background that signals "there's more" live on a
-       separate element from the text itself — keeps both independent of
-       whatever the text does (wrapping, length, loading state). */
+       separate element from the text itself. Cards are only ever inserted
+       once fully populated (see loadMore()) — nothing here changes
+       size after it's first shown, so max-height (shrink-to-fit, capped)
+       rather than a fixed height is correct: short bodies just take up
+       less room instead of leaving padding. The gradient is hidden via
+       .no-overflow (set in JS, based on measuring scrollHeight after
+       insertion) whenever a body is short enough that nothing is actually
+       being cut off — otherwise the same 2.4em gradient would render
+       almost solid over a box shorter than itself. */
     .card-body-wrap {
       position: relative;
       max-height: 4.5em; /* ~3 lines at the line-height below */
@@ -156,7 +173,8 @@
     .card.expanded .card-body-wrap {
       max-height: none;
     }
-    .card.expanded .card-body-wrap::after {
+    .card.expanded .card-body-wrap::after,
+    .card-body-wrap.no-overflow::after {
       content: none;
     }
 
@@ -166,7 +184,71 @@
       line-height: 1.5em;
       white-space: pre-wrap;
     }
-    .card-body.loading { color: #555; font-style: italic; }
+
+    /* Settings view — a second full-screen panel sharing the same fixed
+       header/nav clearance as the feed. Toggled via the bottom nav instead
+       of being a separate page, so switching to it never tears down the
+       feed's state (loaded messages, scroll position, the live SSE
+       connection) the way a real navigation would. */
+    main#settings-view {
+      position: absolute;
+      inset: 0;
+      overflow-y: auto;
+      padding: 84px 20px calc(72px + env(safe-area-inset-bottom, 0px));
+    }
+    .settings-content { max-width: 480px; width: 100%; margin: 0 auto; }
+
+    .section-label {
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: #555;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      margin: 0 0 8px;
+    }
+    .setting-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 0;
+      border-bottom: 1px solid #1e1e38;
+    }
+    .setting-info { display: flex; flex-direction: column; gap: 3px; }
+    .setting-name { font-size: 0.95rem; color: #f1f1f1; }
+    .setting-desc { font-size: 0.8rem; color: #666; }
+    .badge {
+      font-size: 0.75rem;
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-weight: 600;
+    }
+    .badge-on { background: #0e2a0e; color: #4caf50; }
+    .badge-off { background: #1e1e1e; color: #666; }
+    .btn-action {
+      padding: 7px 14px;
+      border-radius: 6px;
+      border: 1px solid #333;
+      background: transparent;
+      color: #aaa;
+      font-size: 0.85rem;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .btn-action:hover { border-color: #e94560; color: #e94560; }
+
+    .btn-logout {
+      width: 100%;
+      padding: 12px;
+      border-radius: 6px;
+      border: 1px solid #e94560;
+      background: transparent;
+      color: #e94560;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn-logout:hover { background: #e94560; color: #fff; }
+    .btn-logout:disabled { opacity: 0.6; cursor: wait; }
 
     /* Bottom nav */
     .bottom-nav {
@@ -192,11 +274,15 @@
       justify-content: center;
       gap: 3px;
       padding: 10px 0;
+      border: none;
+      background: transparent;
+      font-family: inherit;
       text-decoration: none;
       color: #555;
       font-size: 0.68rem;
       letter-spacing: 0.02em;
       transition: color 0.15s;
+      cursor: pointer;
     }
     .nav-tab.active { color: #e94560; }
     .nav-tab:not(.active):hover { color: #aaa; }
@@ -218,26 +304,57 @@
     <div class="feed-status" id="feed-status">Loading your inbox…</div>
   </main>
 
+  <main id="settings-view" style="display: none">
+    <div class="settings-content">
+      <p class="section-label">Security</p>
+
+      <div class="setting-row">
+        <div class="setting-info">
+          <span class="setting-name">Two-factor authentication</span>
+          <span class="setting-desc">Require an authenticator code on sign in</span>
+        </div>
+        <span id="totp-badge" class="badge badge-off">Off</span>
+      </div>
+
+      <div class="setting-row" style="border-bottom: none;">
+        <div class="setting-info">
+          <span class="setting-name" id="totp-action-label">Set up authenticator</span>
+        </div>
+        <button class="btn-action" id="totp-btn" type="button">Set up</button>
+      </div>
+
+      <p class="section-label" style="margin-top: 32px;">Account</p>
+      <div class="setting-row" style="border-bottom: none;">
+        <button class="btn-logout" id="logout-btn" type="button">Log out</button>
+      </div>
+    </div>
+  </main>
+
   <nav class="bottom-nav" id="bottom-nav">
-    <a href="/" class="nav-tab active" aria-label="Inbox">
+    <button class="nav-tab active" id="nav-inbox" type="button" aria-label="Inbox">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
         <rect x="2" y="4" width="20" height="16" rx="2"/>
         <path d="m2 7 10 7 10-7"/>
       </svg>
       Inbox
-    </a>
-    <a href="/settings.html" class="nav-tab" aria-label="Settings">
+    </button>
+    <button class="nav-tab" id="nav-settings" type="button" aria-label="Settings">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="12" cy="12" r="3"/>
         <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
       </svg>
       Settings
-    </a>
+    </button>
   </nav>
 
   <script>
     const feed = document.getElementById('feed');
     const feedStatus = document.getElementById('feed-status');
+    const settingsView = document.getElementById('settings-view');
+    const header = document.getElementById('header');
+    const nav = document.getElementById('bottom-nav');
+    const navInbox = document.getElementById('nav-inbox');
+    const navSettings = document.getElementById('nav-settings');
 
     /** Converts an HTML email body to plain text WITHOUT ever inserting
      *  attacker-controlled markup into the live DOM. DOMParser-created
@@ -270,44 +387,65 @@
       return date.toLocaleDateString();
     }
 
-    function buildCard(summary) {
+    // `data` is either an EmailSummary (list view, from loadMore() — has
+    // `.snippet` but no `.body`) or a full EmailMessage (from a live SSE
+    // new-mail update via prependCard(), or after ensureFullBodyLoaded()
+    // replaces a card's body post-expand). bestPreviewText() handles both
+    // shapes via its `body.text ?? body.html ?? snippet` fallback chain.
+    // Cards are only ever built with their initial content already known,
+    // so nothing about a card changes size after it first appears; expand
+    // (which triggers ensureFullBodyLoaded) is the only resize that ever
+    // happens post-insertion.
+    //
+    // `index` is a temporary debug aid — a running count of load order, so
+    // it's easy to tell exactly where the feed stops growing if pagination
+    // stalls again. Assigned when a message's position is reserved (list
+    // order), not when its fetch resolves, so it reflects load order even
+    // though messages within a batch can arrive out of order.
+    function buildCard(data, index) {
       const card = document.createElement('article');
       card.className = 'card';
-      card.dataset.id = summary.id;
-      card.dataset.loaded = 'false';
+      card.dataset.id = data.id;
 
       const meta = document.createElement('div');
       meta.className = 'card-meta';
 
+      if (index !== undefined) {
+        const indexBadge = document.createElement('span');
+        indexBadge.className = 'card-index';
+        indexBadge.textContent = `#${index}`;
+        meta.appendChild(indexBadge);
+      }
+
       const unreadDot = document.createElement('span');
       unreadDot.className = 'unread-dot';
-      unreadDot.style.visibility = summary.isRead ? 'hidden' : 'visible';
+      unreadDot.style.visibility = data.isRead ? 'hidden' : 'visible';
       meta.appendChild(unreadDot);
 
       const fromName = document.createElement('span');
       fromName.className = 'card-from-name';
-      fromName.textContent = summary.from?.name || summary.from?.address || '(unknown sender)';
+      fromName.textContent = data.from?.name || data.from?.address || '(unknown sender)';
       meta.appendChild(fromName);
 
-      if (summary.from?.name && summary.from?.address) {
+      if (data.from?.name && data.from?.address) {
         const fromAddress = document.createElement('span');
         fromAddress.className = 'card-from-address';
-        fromAddress.textContent = summary.from.address;
+        fromAddress.textContent = data.from.address;
         meta.appendChild(fromAddress);
       }
 
       const time = document.createElement('span');
       time.className = 'card-time';
-      time.textContent = formatRelativeTime(summary.receivedAt);
+      time.textContent = formatRelativeTime(data.receivedAt);
       meta.appendChild(time);
 
       const subject = document.createElement('h2');
       subject.className = 'card-subject';
-      subject.textContent = summary.subject || '(no subject)';
+      subject.textContent = data.subject || '(no subject)';
 
       const body = document.createElement('div');
-      body.className = 'card-body loading';
-      body.textContent = 'Loading message…';
+      body.className = 'card-body';
+      body.textContent = bestPreviewText(data) || '(empty message)';
 
       const bodyWrap = document.createElement('div');
       bodyWrap.className = 'card-body-wrap';
@@ -317,20 +455,36 @@
       return card;
     }
 
-    async function ensureLoaded(card) {
-      if (card.dataset.loaded === 'true' || card.dataset.loading === 'true') return;
-      card.dataset.loading = 'true';
+    // Only relevant once a card is actually laid out in the DOM (a
+    // detached element always reports 0 for these) — call right after
+    // inserting. Hides the truncation gradient when there's nothing to
+    // truncate, e.g. a genuinely short email.
+    function updateBodyOverflow(card) {
+      const wrap = card.querySelector('.card-body-wrap');
+      wrap.classList.toggle('no-overflow', wrap.scrollHeight <= wrap.clientHeight + 1);
+    }
+
+    // Fetches one message's full content (body, attachments) on demand —
+    // only called when a card is actually expanded. The list/feed itself
+    // no longer needs this: listMessages() now returns a real, bounded
+    // preview snippet directly (see the backend), so there's no separate
+    // batch-fetch step for populating the feed at all anymore.
+    async function ensureFullBodyLoaded(card) {
+      if (card.dataset.fullyLoaded === 'true' || card.dataset.loadingFull === 'true') return;
+      card.dataset.loadingFull = 'true';
       try {
         const res = await fetch(`/api/mail/messages/${encodeURIComponent(card.dataset.id)}`);
         if (!res.ok) throw new Error(`status ${res.status}`);
         const message = await res.json();
-        card.dataset.loaded = 'true';
-        card.querySelector('.card-body').classList.remove('loading');
-        card.querySelector('.card-body').textContent = bestPreviewText(message) || '(empty message)';
+        card.dataset.fullyLoaded = 'true';
+        const bodyEl = card.querySelector('.card-body');
+        bodyEl.textContent = bestPreviewText(message) || '(empty message)';
+        updateBodyOverflow(card);
       } catch (err) {
-        card.querySelector('.card-body').textContent = 'Could not load this message.';
+        // Keep showing the existing preview snippet rather than replacing
+        // decent content with an error.
       } finally {
-        card.dataset.loading = 'false';
+        card.dataset.loadingFull = 'false';
       }
     }
 
@@ -341,18 +495,7 @@
       fetch(`/api/mail/messages/${encodeURIComponent(card.dataset.id)}/read`, { method: 'POST' }).catch(() => {});
     }
 
-    // Lazily fetch a card's body shortly before it scrolls into view, and
-    // mark it read once it's actually being looked at — avoids paying for
-    // every message in the folder up front (each fetch is its own IMAP
-    // round trip on the backend).
-    const prefetchObserver = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (entry.isIntersecting) ensureLoaded(entry.target);
-        }
-      },
-      { root: feed, rootMargin: '100% 0px' }
-    );
+    // Marks a card read once it's actually been looked at (60% visible).
     const readObserver = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
@@ -366,8 +509,35 @@
       const card = e.target.closest('.card');
       if (!card) return;
       const expanded = card.classList.toggle('expanded');
-      if (expanded) ensureLoaded(card);
+      if (expanded) ensureFullBodyLoaded(card);
     });
+
+    // A batch is fetched over a single IMAP connection (see the backend's
+    // ImapProvider.listMessages()), but arrives as one burst rather than
+    // trickling in — the server appears to gather the whole batch before
+    // sending any of it back, so there's no way to make delivery *within*
+    // one batch feel incremental. Trade-off of a bigger PAGE_SIZE: each
+    // burst itself takes proportionally longer (it's all-or-nothing), so
+    // this is worth watching in practice, not just assuming bigger is
+    // better.
+    const PAGE_SIZE = 100;
+
+    // Buffer is measured in batches, not pixels — see the reasoning below
+    // at checkBatchTrigger. Load 10 batches to start, then whenever
+    // scrolling brings the reader within 5 loaded batches of the end,
+    // load 10 more. So: load 1-10 up front; reaching batch 5 (5 of the 10
+    // remaining) loads 11-20; reaching batch 15 (5 of those 20 remaining)
+    // loads 21-30; and so on indefinitely, always keeping at least 5
+    // batches of runway ahead once warmed up.
+    const INITIAL_BATCHES = 10;
+    const LOAD_AHEAD_BATCHES = 10;
+    const TRIGGER_BATCHES_REMAINING = 5;
+
+    let batchesLoaded = 0;
+    let loadingAhead = false;
+    const batchBoundaries = []; // batchBoundaries[i] = permanent marker at the start of batch i (0-indexed)
+    let nextCardIndex = 1; // temporary debug aid — see buildCard()
+    let previousBatchAvailableAt = null; // temporary debug timing — see loadMore()
 
     let nextPageToken = null;
     let loadingMore = false;
@@ -381,34 +551,108 @@
         return;
       }
       folderId = inbox.id;
-      await loadMore();
+      await loadMoreBatches(INITIAL_BATCHES);
+    }
+
+    // Loads up to `n` further batches back-to-back, stopping early if the
+    // folder runs out. Guarded against overlapping calls — scroll events
+    // fire repeatedly while past the trigger point, well before the first
+    // run has finished moving the target further away.
+    async function loadMoreBatches(n) {
+      if (loadingAhead) return;
+      loadingAhead = true;
+      try {
+        for (let i = 0; i < n; i++) {
+          if (batchesLoaded > 0 && !nextPageToken) break; // mailbox exhausted
+          await loadMore();
+        }
+      } finally {
+        loadingAhead = false;
+        // In case the next trigger point is already within view the
+        // instant this finishes, rather than waiting for another scroll
+        // event to notice.
+        checkBatchTrigger();
+      }
     }
 
     async function loadMore() {
       if (loadingMore || !folderId) return;
       loadingMore = true;
+      const requestedPageToken = nextPageToken;
+      // Temporary debug timing — total time for this page, now that
+      // listMessages() returns real preview snippets directly (see the
+      // backend): there's no longer a separate content-fetch step to time
+      // apart from this.
+      const batchStartedAt = performance.now();
       try {
         const url = new URL('/api/mail/messages', window.location.origin);
         url.searchParams.set('folderId', folderId);
-        if (nextPageToken) url.searchParams.set('pageToken', nextPageToken);
+        url.searchParams.set('pageSize', String(PAGE_SIZE));
+        if (requestedPageToken) url.searchParams.set('pageToken', requestedPageToken);
         const page = await fetch(url).then((r) => r.json());
 
-        if (feedStatus.isConnected && page.items?.length) feedStatus.remove();
-
+        // Skip anything already on screen (can happen if a message arrived
+        // via the live SSE stream — connectToMailEvents — in the brief
+        // window before this fetch resolved); still refresh what may have
+        // changed server-side for it.
+        const toFetch = [];
         for (const summary of page.items || []) {
-          const card = buildCard(summary);
-          feed.insertBefore(card, sentinel);
-          prefetchObserver.observe(card);
-          readObserver.observe(card);
+          const existing = feed.querySelector(`[data-id="${CSS.escape(summary.id)}"]`);
+          if (existing) {
+            existing.querySelector('.unread-dot').style.visibility = summary.isRead ? 'hidden' : 'visible';
+          } else {
+            toFetch.push(summary);
+          }
         }
+
+        // Permanent (never replaced) marker at the start of this batch —
+        // this is what checkBatchTrigger() reads .offsetTop from to know
+        // how many loaded batches remain ahead of the reader, regardless
+        // of toFetch below being empty (batchesLoaded still advances
+        // either way, so this needs to stay in lockstep with it). Must be
+        // a real Element, not a Comment — .offsetTop only exists on
+        // HTMLElement (a Comment works fine for the per-message markers
+        // below since those only ever get replaceWith()'d, nothing reads
+        // a position off of them).
+        const anchor = requestedPageToken ? sentinel : feed.querySelector('.card') || sentinel;
+        const boundaryMarker = document.createElement('div');
+        boundaryMarker.style.cssText = 'height:1px;margin:0;padding:0;border:0;';
+        boundaryMarker.dataset.batchIndex = String(batchesLoaded);
+        feed.insertBefore(boundaryMarker, anchor);
+        batchBoundaries.push(boundaryMarker);
+
+        // listMessages() now returns a real, bounded preview snippet per
+        // message directly (see the backend) — no separate content fetch,
+        // no separate connection, no arrival-order weirdness to work
+        // around. Cards are built and inserted immediately from what the
+        // single list fetch above already gave us.
+        if (toFetch.length) {
+          for (const summary of toFetch) {
+            const card = buildCard(summary, nextCardIndex++);
+            feed.insertBefore(card, anchor);
+            updateBodyOverflow(card);
+            readObserver.observe(card);
+          }
+          if (feedStatus.isConnected) feedStatus.remove();
+        }
+
+        // "Available" means cards are actually inserted and visible — the
+        // gap is measured from here, against the same point in the
+        // previous batch, so it reflects what the reader actually
+        // experiences.
+        const availableAt = performance.now();
+        const batchDurationMs = Math.round(availableAt - batchStartedAt);
+        const gapSincePreviousBatchMs =
+          previousBatchAvailableAt !== null ? Math.round(availableAt - previousBatchAvailableAt) : null;
+        previousBatchAvailableAt = availableAt;
+        console.debug(
+          `[batch] #${batchesLoaded + 1} size=${toFetch.length} totalMs=${batchDurationMs} msPerMessage=${toFetch.length ? (batchDurationMs / toFetch.length).toFixed(1) : 'n/a'} gapSincePreviousBatchAvailableMs=${gapSincePreviousBatchMs}`
+        );
 
         nextPageToken = page.nextPageToken || null;
+        batchesLoaded++;
         if (!page.items?.length && !feed.querySelector('.card')) {
           feedStatus.textContent = 'No messages in your inbox.';
-        }
-        if (!nextPageToken) {
-          loadMoreObserver.disconnect();
-          sentinel.remove();
         }
       } catch (err) {
         if (!feed.querySelector('.card')) feedStatus.textContent = 'Could not load your inbox.';
@@ -417,14 +661,32 @@
       }
     }
 
+    // Insertion anchor for paginated (older) batches — always the last
+    // child of the feed.
     const sentinel = document.createElement('div');
     sentinel.style.height = '1px';
     feed.appendChild(sentinel);
-    const loadMoreObserver = new IntersectionObserver(
-      (entries) => { if (entries[0].isIntersecting) loadMore(); },
-      { root: feed, rootMargin: '200% 0px' }
-    );
-    loadMoreObserver.observe(sentinel);
+
+    // Triggers 10 more batches once the reader has scrolled to within 5
+    // loaded batches of the end. A plain scroll-position check against the
+    // marker recorded at the start of that batch (see boundaryMarker in
+    // loadMore()), not IntersectionObserver — two attempts at an
+    // IntersectionObserver-based version of this in a row still didn't
+    // work in practice (likely edge cases in how it resolves intersection
+    // for a dynamically retargeted, near-zero-area element), and a direct
+    // getBoundingClientRect/offsetTop comparison on scroll is simple
+    // enough to reason about and verify directly rather than depend on
+    // observer notification timing. Recomputes the target fresh every
+    // call rather than tracking "which marker am I watching" as mutable
+    // state — simpler, and self-corrects once batchesLoaded moves on.
+    function checkBatchTrigger() {
+      const targetIndex = batchesLoaded - TRIGGER_BATCHES_REMAINING - 1;
+      const marker = targetIndex >= 0 ? batchBoundaries[targetIndex] : null;
+      if (!marker) return;
+      const reached = marker.offsetTop <= feed.scrollTop + feed.clientHeight;
+      console.debug('[pagination] checkBatchTrigger: batchesLoaded=', batchesLoaded, 'targetIndex=', targetIndex, 'reached=', reached);
+      if (reached) loadMoreBatches(LOAD_AHEAD_BATCHES);
+    }
 
     (async function () {
       const [meRes, statusRes] = await Promise.all([fetch('/api/me'), fetch('/api/status')]);
@@ -458,7 +720,10 @@
     // deleted mail and connection-state changes and pushes them down this
     // stream as they happen — this is what makes the feed update itself
     // without the user having to refresh. The browser's EventSource
-    // reconnects automatically if the connection drops.
+    // reconnects automatically if the connection drops. This connection
+    // now stays open the whole time you're on this page, including while
+    // viewing Settings, since that's a view toggle rather than a real
+    // navigation — see showView() below.
     function connectToMailEvents(kind) {
       const source = new EventSource('/api/mail/events');
       source.onmessage = async (e) => {
@@ -493,14 +758,14 @@
     }
 
     function prependCard(message) {
-      const card = buildCard(message);
-      card.dataset.loaded = 'true';
-      card.querySelector('.card-body').classList.remove('loading');
-      card.querySelector('.card-body').textContent = bestPreviewText(message) || '(empty message)';
-
-      if (feedStatus.isConnected) feedStatus.remove();
+      // Not meaningfully orderable against the loaded list (this arrives
+      // live, out of band) — marked distinctly rather than assigned the
+      // next sequential number, which would be misleading up here at the
+      // top of the feed.
+      const card = buildCard(message, 'new');
       feed.insertBefore(card, feed.querySelector('.card') || sentinel);
-      prefetchObserver.observe(card);
+      updateBodyOverflow(card);
+      if (feedStatus.isConnected) feedStatus.remove();
       readObserver.observe(card);
     }
 
@@ -508,23 +773,85 @@
       navigator.serviceWorker.register('sw.js');
     }
 
+    // --- Settings view -------------------------------------------------
+    // Merged in as a second panel rather than a separate page: switching
+    // to it is just a display toggle, so the feed's state, scroll
+    // position, and the EventSource connection above all keep running
+    // untouched the whole time — nothing gets re-fetched just because you
+    // looked at settings and came back.
+
+    let lastScrollY = 0;
+
+    function showView(view) {
+      const isSettings = view === 'settings';
+      settingsView.style.display = isSettings ? 'block' : 'none';
+      feed.style.display = isSettings ? 'none' : '';
+      navInbox.classList.toggle('active', !isSettings);
+      navSettings.classList.toggle('active', isSettings);
+      nav.classList.remove('hide');
+      header.classList.remove('hide');
+      lastScrollY = isSettings ? settingsView.scrollTop : feed.scrollTop;
+      if (isSettings) loadTotpStatus();
+    }
+
+    navInbox.addEventListener('click', () => showView('inbox'));
+    navSettings.addEventListener('click', () => showView('settings'));
+
+    async function loadTotpStatus() {
+      const status = await fetch('/api/totp/status').then((r) => r.json());
+      const badge = document.getElementById('totp-badge');
+      const label = document.getElementById('totp-action-label');
+      const btn = document.getElementById('totp-btn');
+      if (status.enabled) {
+        badge.textContent = 'On';
+        badge.className = 'badge badge-on';
+        label.textContent = 'Reconfigure authenticator';
+        btn.textContent = 'Reconfigure';
+      } else {
+        badge.textContent = 'Off';
+        badge.className = 'badge badge-off';
+        label.textContent = 'Set up authenticator';
+        btn.textContent = 'Set up';
+      }
+    }
+
+    document.getElementById('totp-btn').addEventListener('click', () => {
+      window.location.href = '/totp-setup.html';
+    });
+
+    document.getElementById('logout-btn').addEventListener('click', async () => {
+      const btn = document.getElementById('logout-btn');
+      btn.disabled = true;
+      btn.textContent = 'Logging out…';
+      try {
+        await fetch('/api/logout', { method: 'POST' });
+      } finally {
+        window.location.replace('/login.html');
+      }
+    });
+
     // Auto-hide header (up) and bottom nav (down) on scroll down, reveal
-    // both on scroll up. Tracks the feed's own scroll position since the
-    // feed — not the page — is the scrolling element.
-    let lastY = feed.scrollTop;
-    const header = document.getElementById('header');
-    const nav = document.getElementById('bottom-nav');
-    feed.addEventListener('scroll', () => {
-      const y = feed.scrollTop;
-      if (y > lastY && y > 50) {
+    // both on scroll up. Shared between both views since each is its own
+    // internal scroll container (not the page).
+    function handleScroll(scrollTop) {
+      if (scrollTop > lastScrollY && scrollTop > 50) {
         nav.classList.add('hide');
         header.classList.add('hide');
       } else {
         nav.classList.remove('hide');
         header.classList.remove('hide');
       }
-      lastY = y;
-    }, { passive: true });
+      lastScrollY = scrollTop;
+    }
+    feed.addEventListener(
+      'scroll',
+      () => {
+        handleScroll(feed.scrollTop);
+        checkBatchTrigger();
+      },
+      { passive: true }
+    );
+    settingsView.addEventListener('scroll', () => handleScroll(settingsView.scrollTop), { passive: true });
   </script>
 </body>
 </html>

@@ -23,6 +23,11 @@ const PROVIDER_PREFIX = 'imap';
  *  product actually needs; other folders are still fully readable/writable
  *  via the request-driven methods below, they just don't push events. */
 const IDLE_FOLDER = 'INBOX';
+/** How much of a message's raw source to pull for list-view previews —
+ *  generous enough to comfortably cover headers (including long Received:
+ *  chains) plus a few hundred characters of body, without ever reaching
+ *  into attachment content on a typical message. */
+const MAX_PREVIEW_SOURCE_BYTES = 8192;
 
 function encodeMessageId(folderPath: string, uid: number): string {
   return `${PROVIDER_PREFIX}:${encodeURIComponent(folderPath)}:${uid}`;
@@ -86,6 +91,20 @@ function computeThreadId(envelope: MessageEnvelopeObject | undefined, headers: B
   if (references.length > 0) return references[0];
   const raw = envelope?.inReplyTo || envelope?.messageId || '';
   return stripAngleBrackets(raw);
+}
+
+/** Crude but adequate HTML-to-text for a preview snippet — this only ever
+ *  feeds a ~200-char truncated summary, so it doesn't need to be a real
+ *  renderer, just good enough that a preview reads as text rather than
+ *  markup. The full, properly-converted body is available via getMessage()
+ *  when a card is actually expanded. */
+function stripHtmlForSnippet(html: string): string {
+  return html
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function folderKindFromSpecialUse(specialUse: string | undefined, path: string): Folder['kind'] {
@@ -227,9 +246,23 @@ export class ImapProvider extends BaseProvider {
     }
   }
 
-  private toSummary(folderId: string, msg: FetchMessageObject): EmailSummary {
+  /** `msg.source`, when present, is a *bounded* fetch (see
+   *  MAX_PREVIEW_SOURCE_BYTES in listMessages()) — just enough for headers
+   *  plus a preview-length chunk of body, not the full message. Parsing a
+   *  truncated buffer through simpleParser is safe: verified it degrades
+   *  gracefully (missing/partial fields, never throws) rather than
+   *  choking on a message cut off mid-MIME-structure. This deliberately
+   *  never downloads attachment content — hasAttachments comes from
+   *  whether an attachment's *header* was seen before the cutoff, which is
+   *  reliable since headers precede content in MIME structure. */
+  private async toSummary(folderId: string, msg: FetchMessageObject): Promise<EmailSummary> {
     const envelope = msg.envelope;
     const flags = msg.flags ?? new Set<string>();
+    const parsed = msg.source ? await simpleParser(msg.source) : undefined;
+    const snippet = (parsed?.text || (typeof parsed?.html === 'string' ? stripHtmlForSnippet(parsed.html) : '')).slice(
+      0,
+      200
+    );
     return {
       id: encodeMessageId(folderId, msg.uid),
       messageId: envelope?.messageId ? stripAngleBrackets(envelope.messageId) : undefined,
@@ -238,11 +271,11 @@ export class ImapProvider extends BaseProvider {
       from: toEmailAddress(envelope?.from?.[0]),
       to: (envelope?.to ?? []).map(toEmailAddress),
       subject: envelope?.subject ?? '(no subject)',
-      snippet: '',
+      snippet,
       receivedAt: (envelope?.date ?? new Date()).toISOString(),
       isRead: flags.has('\\Seen'),
       isFlagged: flags.has('\\Flagged'),
-      hasAttachments: false,
+      hasAttachments: (parsed?.attachments.length ?? 0) > 0,
     };
   }
 
@@ -292,8 +325,17 @@ export class ImapProvider extends BaseProvider {
           envelope: true,
           flags: true,
           headers: ['references'],
+          // Bounded, not the full message — headers plus enough of the
+          // body for a preview snippet, without ever pulling attachment
+          // content. This is what makes list loading fast and consistent
+          // regardless of what a given message's attachments happen to be
+          // (verified: a multi-MB attachment used to single-handedly blow
+          // up a batch's fetch time from ~1s to 10-25s — see the
+          // conversation that led here). Full content is fetched
+          // separately, on demand, only when a card is expanded.
+          source: { maxLength: MAX_PREVIEW_SOURCE_BYTES },
         })) {
-          items.push(this.toSummary(options.folderId, msg));
+          items.push(await this.toSummary(options.folderId, msg));
         }
         items.reverse();
 
@@ -303,6 +345,57 @@ export class ImapProvider extends BaseProvider {
         lock.release();
       }
     });
+  }
+
+  /** Builds a normalized, full-content EmailMessage from a raw fetch
+   *  result. Used by getMessage() — the on-demand, full-content fetch for
+   *  a single expanded card; the list view uses toSummary() instead,
+   *  which works off a bounded preview fetch and never pulls attachment
+   *  content. */
+  private async toEmailMessage(folderPath: string, msg: FetchMessageObject): Promise<EmailMessage> {
+    const parsed = msg.source ? await simpleParser(msg.source) : undefined;
+    const envelope = msg.envelope;
+    const flags = msg.flags ?? new Set<string>();
+    const references = (
+      Array.isArray(parsed?.references)
+        ? parsed.references
+        : parsed?.references
+          ? [parsed.references]
+          : []
+    ).map(stripAngleBrackets);
+    const threadId =
+      references[0] ??
+      (parsed?.inReplyTo ? stripAngleBrackets(parsed.inReplyTo) : undefined) ??
+      (envelope?.messageId ? stripAngleBrackets(envelope.messageId) : '');
+
+    return {
+      id: encodeMessageId(folderPath, msg.uid),
+      messageId: envelope?.messageId ? stripAngleBrackets(envelope.messageId) : undefined,
+      threadId,
+      folderId: folderPath,
+      from: toEmailAddress(envelope?.from?.[0]),
+      to: (envelope?.to ?? []).map(toEmailAddress),
+      cc: (envelope?.cc ?? []).map(toEmailAddress),
+      bcc: (envelope?.bcc ?? []).map(toEmailAddress),
+      subject: envelope?.subject ?? '(no subject)',
+      snippet: (parsed?.text ?? '').slice(0, 200),
+      receivedAt: (envelope?.date ?? new Date()).toISOString(),
+      isRead: flags.has('\\Seen'),
+      isFlagged: flags.has('\\Flagged'),
+      hasAttachments: (parsed?.attachments.length ?? 0) > 0,
+      body: {
+        text: parsed?.text,
+        html: typeof parsed?.html === 'string' ? parsed.html : undefined,
+      },
+      attachments: (parsed?.attachments ?? []).map((a, i) => ({
+        id: a.cid ?? String(i),
+        filename: a.filename ?? `attachment-${i}`,
+        mimeType: a.contentType,
+        sizeBytes: a.size,
+      })),
+      inReplyTo: parsed?.inReplyTo,
+      references,
+    };
   }
 
   async getMessage(messageId: string): Promise<EmailMessage> {
@@ -316,50 +409,7 @@ export class ImapProvider extends BaseProvider {
           { uid: true }
         );
         if (!msg) throw new Error(`Message not found: ${messageId}`);
-
-        const parsed = msg.source ? await simpleParser(msg.source) : undefined;
-        const envelope = msg.envelope;
-        const flags = msg.flags ?? new Set<string>();
-        const references = (
-          Array.isArray(parsed?.references)
-            ? parsed.references
-            : parsed?.references
-              ? [parsed.references]
-              : []
-        ).map(stripAngleBrackets);
-        const threadId =
-          references[0] ??
-          (parsed?.inReplyTo ? stripAngleBrackets(parsed.inReplyTo) : undefined) ??
-          (envelope?.messageId ? stripAngleBrackets(envelope.messageId) : '');
-
-        return {
-          id: messageId,
-          messageId: envelope?.messageId ? stripAngleBrackets(envelope.messageId) : undefined,
-          threadId,
-          folderId: folderPath,
-          from: toEmailAddress(envelope?.from?.[0]),
-          to: (envelope?.to ?? []).map(toEmailAddress),
-          cc: (envelope?.cc ?? []).map(toEmailAddress),
-          bcc: (envelope?.bcc ?? []).map(toEmailAddress),
-          subject: envelope?.subject ?? '(no subject)',
-          snippet: (parsed?.text ?? '').slice(0, 200),
-          receivedAt: (envelope?.date ?? new Date()).toISOString(),
-          isRead: flags.has('\\Seen'),
-          isFlagged: flags.has('\\Flagged'),
-          hasAttachments: (parsed?.attachments.length ?? 0) > 0,
-          body: {
-            text: parsed?.text,
-            html: typeof parsed?.html === 'string' ? parsed.html : undefined,
-          },
-          attachments: (parsed?.attachments ?? []).map((a, i) => ({
-            id: a.cid ?? String(i),
-            filename: a.filename ?? `attachment-${i}`,
-            mimeType: a.contentType,
-            sizeBytes: a.size,
-          })),
-          inReplyTo: parsed?.inReplyTo,
-          references,
-        };
+        return this.toEmailMessage(folderPath, msg);
       } finally {
         lock.release();
       }
@@ -383,7 +433,7 @@ export class ImapProvider extends BaseProvider {
           flags: true,
           headers: ['references'],
         })) {
-          const summary = this.toSummary(IDLE_FOLDER, msg);
+          const summary = await this.toSummary(IDLE_FOLDER, msg);
           if (summary.threadId === threadId || summary.messageId === threadId) {
             matches.push(summary);
           }

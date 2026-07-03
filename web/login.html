@@ -127,16 +127,50 @@
         const val = e.target.value.replace(/[^0-9]/g, '');
         e.target.value = val.slice(0, 1);
         if (val && i < digitInputs.length - 1) digitInputs[i + 1].focus();
+        if (getCode().length === 6) attemptTotpVerify();
       });
       input.addEventListener('paste', (e) => {
         e.preventDefault();
         const chars = e.clipboardData.getData('text').replace(/[^0-9]/g, '').split('');
         chars.forEach((c, j) => { if (i + j < digitInputs.length) digitInputs[i + j].value = c; });
         digitInputs[Math.min(i + chars.length, digitInputs.length - 1)].focus();
+        if (getCode().length === 6) attemptTotpVerify();
       });
     });
 
     function getCode() { return digitInputs.map(i => i.value).join(''); }
+
+    // Auto-submits as soon as the 6th digit lands — no need to press
+    // Enter or tap Verify. Guarded against double-firing since both the
+    // input handler above and the form's submit event (Enter key while a
+    // digit box is focused) can each try to trigger this for the same code.
+    let totpVerifying = false;
+    async function attemptTotpVerify() {
+      const code = getCode();
+      const errorEl = document.getElementById('totp-error');
+      if (code.length !== 6 || totpVerifying) return;
+      totpVerifying = true;
+      errorEl.textContent = '';
+
+      try {
+        const res = await fetch('/api/login/totp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pendingToken, code }),
+        });
+
+        if (res.ok) {
+          window.location.replace(nextUrl);
+          return;
+        }
+        const data = await res.json();
+        errorEl.textContent = data.error || 'Invalid code.';
+        digitInputs.forEach((i) => (i.value = ''));
+        digitInputs[0].focus();
+      } finally {
+        totpVerifying = false;
+      }
+    }
 
     document.getElementById('password-form').addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -166,31 +200,13 @@
       }
     });
 
-    document.getElementById('totp-form').addEventListener('submit', async (e) => {
+    document.getElementById('totp-form').addEventListener('submit', (e) => {
       e.preventDefault();
-      const code = getCode();
-      const errorEl = document.getElementById('totp-error');
-      errorEl.textContent = '';
-
-      if (code.length !== 6) {
-        errorEl.textContent = 'Please enter the complete 6-digit code.';
+      if (getCode().length !== 6) {
+        document.getElementById('totp-error').textContent = 'Please enter the complete 6-digit code.';
         return;
       }
-
-      const res = await fetch('/api/login/totp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pendingToken, code }),
-      });
-
-      if (res.ok) {
-        window.location.replace(nextUrl);
-      } else {
-        const data = await res.json();
-        errorEl.textContent = data.error || 'Invalid code.';
-        digitInputs.forEach(i => i.value = '');
-        digitInputs[0].focus();
-      }
+      attemptTotpVerify();
     });
   </script>
 </body>

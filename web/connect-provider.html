@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Heimdal — Connect your mail</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Philosopher:wght@700&display=swap" />
+  <style>
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      height: 100%;
+      background: #1a1a2e;
+      color: #f1f1f1;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+    h1 { font-size: 2.8rem; margin: 0 0 4px; color: #e94560; font-family: 'Philosopher', serif; letter-spacing: 0.05em; }
+    .subtitle { color: #aaa; margin: 0 0 32px; text-align: center; }
+
+    .options { width: 100%; max-width: 400px; display: flex; flex-direction: column; gap: 12px; }
+
+    .option {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: 100%;
+      padding: 16px 18px;
+      border-radius: 10px;
+      border: 1px solid #333;
+      background: #16162e;
+      color: inherit;
+      text-align: left;
+      font: inherit;
+      cursor: pointer;
+    }
+    .option:hover:not(:disabled) { border-color: #e94560; background: #1c1c38; }
+    .option:disabled { cursor: not-allowed; opacity: 0.5; }
+
+    .option-info { display: flex; flex-direction: column; gap: 3px; }
+    .option-name { font-size: 1rem; font-weight: 600; }
+    .option-desc { font-size: 0.8rem; color: #888; }
+
+    .badge {
+      font-size: 0.7rem;
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-weight: 600;
+      background: #1e1e1e;
+      color: #666;
+      white-space: nowrap;
+    }
+    .chevron { color: #555; flex-shrink: 0; margin-left: 12px; }
+  </style>
+</head>
+<body>
+  <h1>Heimdal</h1>
+  <p class="subtitle">Connect a mail account to get started.<br />You can add more later.</p>
+
+  <div class="options">
+    <button class="option" id="option-gmail" type="button" disabled>
+      <div class="option-info">
+        <span class="option-name">Gmail</span>
+        <span class="option-desc">Google Workspace or personal Gmail</span>
+      </div>
+      <span class="badge">Coming soon</span>
+    </button>
+
+    <button class="option" id="option-outlook" type="button" disabled>
+      <div class="option-info">
+        <span class="option-name">Outlook</span>
+        <span class="option-desc">Microsoft 365 or personal Outlook</span>
+      </div>
+      <span class="badge">Coming soon</span>
+    </button>
+
+    <button class="option" id="option-imap" type="button">
+      <div class="option-info">
+        <span class="option-name">IMAP / SMTP</span>
+        <span class="option-desc">iCloud, Yahoo, Fastmail, self-hosted, or any other provider</span>
+      </div>
+      <svg class="chevron" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="m9 18 6-6-6-6" />
+      </svg>
+    </button>
+  </div>
+
+  <script>
+    (async function () {
+      const [meRes, statusRes] = await Promise.all([fetch('/api/me'), fetch('/api/provider/status')]);
+      if (meRes.status === 401) {
+        window.location.replace('/login.html?next=/connect-provider.html');
+        return;
+      }
+      const status = await statusRes.json();
+      if (status.configured) window.location.replace('/');
+    })();
+
+    document.getElementById('option-imap').addEventListener('click', () => {
+      window.location.href = '/connect-imap.html';
+    });
+  </script>
+</body>
+</html>

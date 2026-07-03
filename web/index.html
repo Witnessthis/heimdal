@@ -4,6 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Heimdal</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Philosopher:wght@700&display=swap" />
 
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#1a1a2e" />
@@ -22,34 +24,507 @@
       background: #1a1a2e;
       color: #f1f1f1;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      overflow: hidden; /* the feed itself scrolls, not the page */
     }
-    body {
+    body { position: relative; }
+
+    /* Fixed top chrome: app title + (temporary) debug status. Hides
+       upward on scroll down, matches bottom-nav's hide behavior. */
+    header {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 50;
+      background: rgba(18, 18, 42, 0.92);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+      border-bottom: 1px solid #222;
+      padding-top: env(safe-area-inset-top, 0px);
+      transition: transform 0.25s ease;
+    }
+    header.hide { transform: translateY(-100%); }
+
+    .header-row {
+      display: flex;
+      align-items: center;
+      padding: 16px 20px 10px;
+    }
+    .app-title {
+      font-family: 'Philosopher', serif;
+      font-size: 1.5rem;
+      color: #e94560;
+      letter-spacing: 0.05em;
+    }
+
+    /* Temporary debug banner — remove once there's a real connection
+       status indicator in settings. */
+    .debug-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 0 20px 10px;
+      font-family: monospace;
+      font-size: 0.75rem;
+      color: #888;
+    }
+    .debug-bar .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #666;
+      flex-shrink: 0;
+    }
+    .debug-bar .dot.ok { background: #4caf50; }
+    .debug-bar .dot.bad { background: #e94560; }
+
+    /* Feed: a dense, continuous scroll (not one card per screen) — header
+       and bottom nav float above it as fixed overlays, so the feed reserves
+       matching space at top/bottom instead of each card doing it. */
+    main#feed {
+      position: absolute;
+      inset: 0;
+      overflow-y: auto;
+      scrollbar-width: none;
+      padding-top: 84px;
+      padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+    }
+    main#feed::-webkit-scrollbar { display: none; }
+
+    .feed-status {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 48px 24px;
+      color: #aaa;
+    }
+
+    .card {
+      box-sizing: border-box;
+      background: #16162e;
+      border-radius: 10px;
+      margin: 0 12px 10px;
+      padding: 14px 16px;
+      cursor: pointer;
+    }
+
+    .card-meta {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 6px;
+    }
+    .unread-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #e94560;
+      flex-shrink: 0;
+    }
+    .card-from-name { font-weight: 600; font-size: 0.87rem; color: #f1f1f1; }
+    .card-from-address { font-size: 0.78rem; color: #777; }
+    .card-time { font-size: 0.72rem; color: #666; margin-left: auto; }
+
+    .card-subject {
+      font-size: 1.05rem;
+      font-weight: 700;
+      margin: 0 0 6px;
+      line-height: 1.3;
+    }
+
+    /* Wraps the body text so the truncation (max-height + overflow) and the
+       gradient fade-to-background that signals "there's more" live on a
+       separate element from the text itself — keeps both independent of
+       whatever the text does (wrapping, length, loading state). */
+    .card-body-wrap {
+      position: relative;
+      max-height: 4.5em; /* ~3 lines at the line-height below */
+      overflow: hidden;
+    }
+    .card-body-wrap::after {
+      content: '';
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 2.4em;
+      background: linear-gradient(to bottom, rgba(22, 22, 46, 0), #16162e 85%);
+      pointer-events: none;
+    }
+    .card.expanded .card-body-wrap {
+      max-height: none;
+    }
+    .card.expanded .card-body-wrap::after {
+      content: none;
+    }
+
+    .card-body {
+      color: #ccc;
+      font-size: 0.92rem;
+      line-height: 1.5em;
+      white-space: pre-wrap;
+    }
+    .card-body.loading { color: #555; font-style: italic; }
+
+    /* Bottom nav */
+    .bottom-nav {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: #12122a;
+      border-top: 1px solid #222;
+      display: flex;
+      padding-bottom: env(safe-area-inset-bottom, 0px);
+      transition: transform 0.25s ease;
+      z-index: 50;
+    }
+    .bottom-nav.hide {
+      transform: translateY(calc(100% + env(safe-area-inset-bottom, 0px)));
+    }
+    .nav-tab {
+      flex: 1;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      text-align: center;
-      padding: 24px;
+      gap: 3px;
+      padding: 10px 0;
+      text-decoration: none;
+      color: #555;
+      font-size: 0.68rem;
+      letter-spacing: 0.02em;
+      transition: color 0.15s;
     }
-    h1 {
-      font-size: 2.5rem;
-      margin: 0 0 8px;
-      color: #e94560;
-    }
-    p {
-      margin: 0;
-      color: #aaa;
-    }
+    .nav-tab.active { color: #e94560; }
+    .nav-tab:not(.active):hover { color: #aaa; }
+    .nav-tab svg { width: 22px; height: 22px; }
   </style>
 </head>
 <body>
-  <h1>Heimdal</h1>
-  <p>Your inbox, filtered.</p>
+  <header id="header">
+    <div class="header-row">
+      <span class="app-title">Heimdal</span>
+    </div>
+    <div class="debug-bar" id="debug-bar">
+      <span class="dot" id="debug-dot"></span>
+      <span id="debug-text">Checking mail connection…</span>
+    </div>
+  </header>
+
+  <main id="feed">
+    <div class="feed-status" id="feed-status">Loading your inbox…</div>
+  </main>
+
+  <nav class="bottom-nav" id="bottom-nav">
+    <a href="/" class="nav-tab active" aria-label="Inbox">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="2" y="4" width="20" height="16" rx="2"/>
+        <path d="m2 7 10 7 10-7"/>
+      </svg>
+      Inbox
+    </a>
+    <a href="/settings.html" class="nav-tab" aria-label="Settings">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="3"/>
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+      </svg>
+      Settings
+    </a>
+  </nav>
 
   <script>
-    if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("sw.js");
+    const feed = document.getElementById('feed');
+    const feedStatus = document.getElementById('feed-status');
+
+    /** Converts an HTML email body to plain text WITHOUT ever inserting
+     *  attacker-controlled markup into the live DOM. DOMParser-created
+     *  documents are inert (no script execution, no resource fetching) —
+     *  we only ever read .textContent back out of it, never its innerHTML,
+     *  and only ever assign plain strings to the real page via .textContent
+     *  below. Email bodies are untrusted input; this must never become an
+     *  innerHTML assignment. */
+    function htmlToText(html) {
+      const doc = new DOMParser().parseFromString(html, 'text/html');
+      return doc.body ? doc.body.textContent || '' : '';
     }
+
+    function bestPreviewText(message) {
+      if (message.body?.text) return message.body.text;
+      if (message.body?.html) return htmlToText(message.body.html);
+      return message.snippet || '';
+    }
+
+    function formatRelativeTime(iso) {
+      const date = new Date(iso);
+      const diffMs = Date.now() - date.getTime();
+      const mins = Math.floor(diffMs / 60000);
+      if (mins < 1) return 'just now';
+      if (mins < 60) return `${mins}m ago`;
+      const hours = Math.floor(mins / 60);
+      if (hours < 24) return `${hours}h ago`;
+      const days = Math.floor(hours / 24);
+      if (days < 7) return `${days}d ago`;
+      return date.toLocaleDateString();
+    }
+
+    function buildCard(summary) {
+      const card = document.createElement('article');
+      card.className = 'card';
+      card.dataset.id = summary.id;
+      card.dataset.loaded = 'false';
+
+      const meta = document.createElement('div');
+      meta.className = 'card-meta';
+
+      const unreadDot = document.createElement('span');
+      unreadDot.className = 'unread-dot';
+      unreadDot.style.visibility = summary.isRead ? 'hidden' : 'visible';
+      meta.appendChild(unreadDot);
+
+      const fromName = document.createElement('span');
+      fromName.className = 'card-from-name';
+      fromName.textContent = summary.from?.name || summary.from?.address || '(unknown sender)';
+      meta.appendChild(fromName);
+
+      if (summary.from?.name && summary.from?.address) {
+        const fromAddress = document.createElement('span');
+        fromAddress.className = 'card-from-address';
+        fromAddress.textContent = summary.from.address;
+        meta.appendChild(fromAddress);
+      }
+
+      const time = document.createElement('span');
+      time.className = 'card-time';
+      time.textContent = formatRelativeTime(summary.receivedAt);
+      meta.appendChild(time);
+
+      const subject = document.createElement('h2');
+      subject.className = 'card-subject';
+      subject.textContent = summary.subject || '(no subject)';
+
+      const body = document.createElement('div');
+      body.className = 'card-body loading';
+      body.textContent = 'Loading message…';
+
+      const bodyWrap = document.createElement('div');
+      bodyWrap.className = 'card-body-wrap';
+      bodyWrap.appendChild(body);
+
+      card.append(meta, subject, bodyWrap);
+      return card;
+    }
+
+    async function ensureLoaded(card) {
+      if (card.dataset.loaded === 'true' || card.dataset.loading === 'true') return;
+      card.dataset.loading = 'true';
+      try {
+        const res = await fetch(`/api/mail/messages/${encodeURIComponent(card.dataset.id)}`);
+        if (!res.ok) throw new Error(`status ${res.status}`);
+        const message = await res.json();
+        card.dataset.loaded = 'true';
+        card.querySelector('.card-body').classList.remove('loading');
+        card.querySelector('.card-body').textContent = bestPreviewText(message) || '(empty message)';
+      } catch (err) {
+        card.querySelector('.card-body').textContent = 'Could not load this message.';
+      } finally {
+        card.dataset.loading = 'false';
+      }
+    }
+
+    function markRead(card) {
+      const dot = card.querySelector('.unread-dot');
+      if (dot.style.visibility === 'hidden') return;
+      dot.style.visibility = 'hidden';
+      fetch(`/api/mail/messages/${encodeURIComponent(card.dataset.id)}/read`, { method: 'POST' }).catch(() => {});
+    }
+
+    // Lazily fetch a card's body shortly before it scrolls into view, and
+    // mark it read once it's actually being looked at — avoids paying for
+    // every message in the folder up front (each fetch is its own IMAP
+    // round trip on the backend).
+    const prefetchObserver = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) ensureLoaded(entry.target);
+        }
+      },
+      { root: feed, rootMargin: '100% 0px' }
+    );
+    const readObserver = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting && entry.intersectionRatio > 0.6) markRead(entry.target);
+        }
+      },
+      { root: feed, threshold: [0.6] }
+    );
+
+    feed.addEventListener('click', (e) => {
+      const card = e.target.closest('.card');
+      if (!card) return;
+      const expanded = card.classList.toggle('expanded');
+      if (expanded) ensureLoaded(card);
+    });
+
+    let nextPageToken = null;
+    let loadingMore = false;
+    let folderId = null;
+
+    async function loadInbox() {
+      const folders = await fetch('/api/mail/folders').then((r) => r.json());
+      const inbox = folders.folders.find((f) => f.kind === 'inbox') || folders.folders[0];
+      if (!inbox) {
+        feedStatus.textContent = 'No mail folders found.';
+        return;
+      }
+      folderId = inbox.id;
+      await loadMore();
+    }
+
+    async function loadMore() {
+      if (loadingMore || !folderId) return;
+      loadingMore = true;
+      try {
+        const url = new URL('/api/mail/messages', window.location.origin);
+        url.searchParams.set('folderId', folderId);
+        if (nextPageToken) url.searchParams.set('pageToken', nextPageToken);
+        const page = await fetch(url).then((r) => r.json());
+
+        if (feedStatus.isConnected && page.items?.length) feedStatus.remove();
+
+        for (const summary of page.items || []) {
+          const card = buildCard(summary);
+          feed.insertBefore(card, sentinel);
+          prefetchObserver.observe(card);
+          readObserver.observe(card);
+        }
+
+        nextPageToken = page.nextPageToken || null;
+        if (!page.items?.length && !feed.querySelector('.card')) {
+          feedStatus.textContent = 'No messages in your inbox.';
+        }
+        if (!nextPageToken) {
+          loadMoreObserver.disconnect();
+          sentinel.remove();
+        }
+      } catch (err) {
+        if (!feed.querySelector('.card')) feedStatus.textContent = 'Could not load your inbox.';
+      } finally {
+        loadingMore = false;
+      }
+    }
+
+    const sentinel = document.createElement('div');
+    sentinel.style.height = '1px';
+    feed.appendChild(sentinel);
+    const loadMoreObserver = new IntersectionObserver(
+      (entries) => { if (entries[0].isIntersecting) loadMore(); },
+      { root: feed, rootMargin: '200% 0px' }
+    );
+    loadMoreObserver.observe(sentinel);
+
+    (async function () {
+      const [meRes, statusRes] = await Promise.all([fetch('/api/me'), fetch('/api/status')]);
+      if (meRes.status === 401) {
+        const status = await statusRes.json();
+        window.location.replace(status.configured ? '/login.html' : '/setup.html');
+        return;
+      }
+
+      const providerStatus = await fetch('/api/provider/status').then((r) => r.json());
+      if (!providerStatus.configured) {
+        window.location.replace('/connect-provider.html');
+        return;
+      }
+
+      updateDebugBar(providerStatus);
+      connectToMailEvents(providerStatus.kind);
+
+      await loadInbox();
+    })();
+
+    function updateDebugBar(status) {
+      const dot = document.getElementById('debug-dot');
+      const text = document.getElementById('debug-text');
+      dot.classList.remove('ok', 'bad');
+      dot.classList.add(status.healthy ? 'ok' : 'bad');
+      text.textContent = `Debug: IMAP (${status.kind ?? 'unknown'}) — ${status.healthy ? 'connected' : 'not connected'}`;
+    }
+
+    // Live updates: the backend's IMAP IDLE session detects new/changed/
+    // deleted mail and connection-state changes and pushes them down this
+    // stream as they happen — this is what makes the feed update itself
+    // without the user having to refresh. The browser's EventSource
+    // reconnects automatically if the connection drops.
+    function connectToMailEvents(kind) {
+      const source = new EventSource('/api/mail/events');
+      source.onmessage = async (e) => {
+        let event;
+        try {
+          event = JSON.parse(e.data);
+        } catch {
+          return;
+        }
+
+        if (event.type === 'connectionState') {
+          updateDebugBar({ healthy: event.state === 'connected', kind });
+          return;
+        }
+
+        if (event.type === 'newMessage' && event.folderId === folderId) {
+          if (feed.querySelector(`[data-id="${CSS.escape(event.messageId)}"]`)) return;
+          try {
+            const message = await fetch(`/api/mail/messages/${encodeURIComponent(event.messageId)}`).then((r) => r.json());
+            prependCard(message);
+          } catch {
+            // If this fails, the message still shows up next time loadMore
+            // reaches it during normal pagination — not worth surfacing.
+          }
+          return;
+        }
+
+        if (event.type === 'messageDeleted') {
+          feed.querySelector(`[data-id="${CSS.escape(event.messageId)}"]`)?.remove();
+        }
+      };
+    }
+
+    function prependCard(message) {
+      const card = buildCard(message);
+      card.dataset.loaded = 'true';
+      card.querySelector('.card-body').classList.remove('loading');
+      card.querySelector('.card-body').textContent = bestPreviewText(message) || '(empty message)';
+
+      if (feedStatus.isConnected) feedStatus.remove();
+      feed.insertBefore(card, feed.querySelector('.card') || sentinel);
+      prefetchObserver.observe(card);
+      readObserver.observe(card);
+    }
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js');
+    }
+
+    // Auto-hide header (up) and bottom nav (down) on scroll down, reveal
+    // both on scroll up. Tracks the feed's own scroll position since the
+    // feed — not the page — is the scrolling element.
+    let lastY = feed.scrollTop;
+    const header = document.getElementById('header');
+    const nav = document.getElementById('bottom-nav');
+    feed.addEventListener('scroll', () => {
+      const y = feed.scrollTop;
+      if (y > lastY && y > 50) {
+        nav.classList.add('hide');
+        header.classList.add('hide');
+      } else {
+        nav.classList.remove('hide');
+        header.classList.remove('hide');
+      }
+      lastY = y;
+    }, { passive: true });
   </script>
 </body>
 </html>

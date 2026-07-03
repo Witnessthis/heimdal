@@ -1,0 +1,11 @@
+services:
+  heimdal:
+    build: .
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - DOMAIN=${DOMAIN:-}
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped

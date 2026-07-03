@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Heimdal — Two-factor authentication</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Philosopher:wght@700&display=swap" />
+  <style>
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      height: 100%;
+      background: #1a1a2e;
+      color: #f1f1f1;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 32px 24px;
+      text-align: center;
+      gap: 0;
+    }
+    h1 { font-family: 'Philosopher', serif; font-size: 2.8rem; color: #e94560; margin: 0 0 4px; letter-spacing: 0.05em; }
+    .subtitle { color: #aaa; margin: 0 0 48px; }
+    .card {
+      width: 100%;
+      max-width: 360px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .card h2 { font-size: 1.15rem; font-weight: 600; margin: 0 0 4px; color: #f1f1f1; }
+    .card p { font-size: 0.9rem; color: #aaa; margin: 0 0 20px; line-height: 1.5; }
+    button {
+      padding: 13px;
+      border-radius: 6px;
+      border: none;
+      background: #e94560;
+      color: white;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button:hover { background: #c73a52; }
+    .btn-ghost {
+      background: transparent;
+      border: 1px solid #333;
+      color: #aaa;
+      font-weight: 400;
+    }
+    .btn-ghost:hover { background: transparent; border-color: #555; color: #f1f1f1; }
+  </style>
+</head>
+<body>
+  <h1>Heimdal</h1>
+  <p class="subtitle">One more thing</p>
+
+  <div class="card">
+    <h2>Add an authenticator app?</h2>
+    <p>Two-factor authentication adds a second layer of security — a time-based code from your phone in addition to your password.</p>
+    <button onclick="window.location.replace('/totp-setup.html')">Set up authenticator</button>
+    <button class="btn-ghost" onclick="window.location.replace('/')">Skip for now</button>
+  </div>
+
+  <script>
+    fetch('/api/me').then(r => {
+      if (r.status === 401) window.location.replace('/login.html');
+    });
+  </script>
+</body>
+</html>

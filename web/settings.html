@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Heimdal — Settings</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Philosopher:wght@700&display=swap" />
+  <style>
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      background: #1a1a2e;
+      color: #f1f1f1;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    body {
+      display: flex;
+      flex-direction: column;
+      padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px));
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      padding: 16px 20px;
+      border-bottom: 1px solid #222;
+    }
+    header h1 {
+      font-family: 'Philosopher', serif;
+      font-size: 1.5rem;
+      color: #e94560;
+      letter-spacing: 0.05em;
+      margin: 0;
+    }
+
+    main { flex: 1; padding: 24px 20px; max-width: 480px; width: 100%; }
+
+    .section-label {
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: #555;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      margin: 0 0 8px;
+    }
+    .setting-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 0;
+      border-bottom: 1px solid #1e1e38;
+    }
+    .setting-info { display: flex; flex-direction: column; gap: 3px; }
+    .setting-name { font-size: 0.95rem; color: #f1f1f1; }
+    .setting-desc { font-size: 0.8rem; color: #666; }
+    .badge {
+      font-size: 0.75rem;
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-weight: 600;
+    }
+    .badge-on { background: #0e2a0e; color: #4caf50; }
+    .badge-off { background: #1e1e1e; color: #666; }
+    .btn-action {
+      padding: 7px 14px;
+      border-radius: 6px;
+      border: 1px solid #333;
+      background: transparent;
+      color: #aaa;
+      font-size: 0.85rem;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .btn-action:hover { border-color: #e94560; color: #e94560; }
+
+    /* Bottom nav */
+    .bottom-nav {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: #12122a;
+      border-top: 1px solid #222;
+      display: flex;
+      padding-bottom: env(safe-area-inset-bottom, 0px);
+      transition: transform 0.25s ease;
+      z-index: 50;
+    }
+    .bottom-nav.hide {
+      transform: translateY(calc(100% + env(safe-area-inset-bottom, 0px)));
+    }
+    .nav-tab {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 3px;
+      padding: 10px 0;
+      text-decoration: none;
+      color: #555;
+      font-size: 0.68rem;
+      letter-spacing: 0.02em;
+      transition: color 0.15s;
+    }
+    .nav-tab.active { color: #e94560; }
+    .nav-tab:not(.active):hover { color: #aaa; }
+    .nav-tab svg { width: 22px; height: 22px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Settings</h1>
+  </header>
+
+  <main>
+    <p class="section-label">Security</p>
+
+    <div class="setting-row">
+      <div class="setting-info">
+        <span class="setting-name">Two-factor authentication</span>
+        <span class="setting-desc">Require an authenticator code on sign in</span>
+      </div>
+      <span id="totp-badge" class="badge badge-off">Off</span>
+    </div>
+
+    <div class="setting-row" style="border-bottom: none;">
+      <div class="setting-info">
+        <span class="setting-name" id="totp-action-label">Set up authenticator</span>
+      </div>
+      <button class="btn-action" id="totp-btn" onclick="window.location.href='/totp-setup.html'">Set up</button>
+    </div>
+  </main>
+
+  <nav class="bottom-nav" id="bottom-nav">
+    <a href="/" class="nav-tab" aria-label="Inbox">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="2" y="4" width="20" height="16" rx="2"/>
+        <path d="m2 7 10 7 10-7"/>
+      </svg>
+      Inbox
+    </a>
+    <a href="/settings.html" class="nav-tab active" aria-label="Settings">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="3"/>
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+      </svg>
+      Settings
+    </a>
+  </nav>
+
+  <script>
+    async function init() {
+      const meRes = await fetch('/api/me');
+      if (meRes.status === 401) { window.location.replace('/login.html'); return; }
+
+      const status = await fetch('/api/totp/status').then(r => r.json());
+      if (status.enabled) {
+        document.getElementById('totp-badge').textContent = 'On';
+        document.getElementById('totp-badge').className = 'badge badge-on';
+        document.getElementById('totp-action-label').textContent = 'Reconfigure authenticator';
+        document.getElementById('totp-btn').textContent = 'Reconfigure';
+      }
+    }
+    init();
+
+    let lastY = window.scrollY;
+    const nav = document.getElementById('bottom-nav');
+    window.addEventListener('scroll', () => {
+      const y = window.scrollY;
+      if (y > lastY && y > 50) nav.classList.add('hide');
+      else nav.classList.remove('hide');
+      lastY = y;
+    }, { passive: true });
+  </script>
+</body>
+</html>

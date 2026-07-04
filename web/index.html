@@ -104,6 +104,7 @@
     .card {
       box-sizing: border-box;
       background: #16162e;
+      border: 1px solid rgba(233, 69, 96, 0.35);
       border-radius: 10px;
       margin: 0 12px 10px;
       padding: 14px 16px;
@@ -127,15 +128,6 @@
     .card-from-name { font-weight: 600; font-size: 0.87rem; color: #f1f1f1; }
     .card-from-address { font-size: 0.78rem; color: #777; }
     .card-time { font-size: 0.72rem; color: #666; margin-left: auto; }
-    /* Temporary debug aid — see buildCard()'s `index` param. */
-    .card-index {
-      font-family: monospace;
-      font-size: 0.7rem;
-      color: #555;
-      background: #0d0d1a;
-      border-radius: 4px;
-      padding: 1px 5px;
-    }
 
     .card-subject {
       font-size: 1.05rem;
@@ -184,6 +176,33 @@
       line-height: 1.5em;
       white-space: pre-wrap;
     }
+
+    /* Renders a message's real HTML once a card is expanded (see
+       ensureFullBodyLoaded/renderHtmlBody) — sandboxed so the email's own
+       markup/CSS can never execute script, submit a form, or read
+       anything of ours (see the sandbox attribute set in JS). Starts at 0
+       height and grows once its content loads/resizes, so there's no
+       flash of a default-sized empty iframe before that happens. */
+    .card-html-body {
+      display: block;
+      width: 100%;
+      height: 0;
+      border: none;
+      background: #fff;
+      border-radius: 6px;
+    }
+    .load-images-btn {
+      display: block;
+      margin: 10px 0 0;
+      padding: 7px 14px;
+      border-radius: 6px;
+      border: 1px solid #333;
+      background: transparent;
+      color: #aaa;
+      font-size: 0.82rem;
+      cursor: pointer;
+    }
+    .load-images-btn:hover { border-color: #e94560; color: #e94560; }
 
     /* Settings view — a second full-screen panel sharing the same fixed
        header/nav clearance as the feed. Toggled via the bottom nav instead
@@ -396,26 +415,13 @@
     // so nothing about a card changes size after it first appears; expand
     // (which triggers ensureFullBodyLoaded) is the only resize that ever
     // happens post-insertion.
-    //
-    // `index` is a temporary debug aid — a running count of load order, so
-    // it's easy to tell exactly where the feed stops growing if pagination
-    // stalls again. Assigned when a message's position is reserved (list
-    // order), not when its fetch resolves, so it reflects load order even
-    // though messages within a batch can arrive out of order.
-    function buildCard(data, index) {
+    function buildCard(data) {
       const card = document.createElement('article');
       card.className = 'card';
       card.dataset.id = data.id;
 
       const meta = document.createElement('div');
       meta.className = 'card-meta';
-
-      if (index !== undefined) {
-        const indexBadge = document.createElement('span');
-        indexBadge.className = 'card-index';
-        indexBadge.textContent = `#${index}`;
-        meta.appendChild(indexBadge);
-      }
 
       const unreadDot = document.createElement('span');
       unreadDot.className = 'unread-dot';
@@ -464,6 +470,120 @@
       wrap.classList.toggle('no-overflow', wrap.scrollHeight <= wrap.clientHeight + 1);
     }
 
+    // Rewrites a message's HTML body before it's handed to the sandboxed
+    // iframe: blocks remote (http/https) images by default — a remote
+    // image is also a tracking pixel, since loading it tells the sender
+    // your IP and the exact moment you opened the message — and forces
+    // every link to open in a new tab/window rather than trying to
+    // navigate the iframe's own throwaway document in place. Inline
+    // images (already resolved to data: URIs by the backend from cid:
+    // references) carry none of that risk and are left untouched.
+    // Returns the prepared HTML plus how many images got blocked, so the
+    // caller knows whether to show a "load images" control at all.
+    function prepareHtmlForRender(html) {
+      const doc = new DOMParser().parseFromString(html, 'text/html');
+
+      let blockedCount = 0;
+      doc.querySelectorAll('img[src]').forEach((img) => {
+        const src = img.getAttribute('src') || '';
+        if (!/^https?:\/\//i.test(src)) return;
+        img.dataset.blockedSrc = src;
+        img.removeAttribute('src');
+        img.classList.add('heimdal-blocked-image');
+        // Reserve the declared space so revealing images later doesn't
+        // reflow the layout — only possible when the email actually
+        // declared a size. There's no way to know an undeclared remote
+        // image's real dimensions without downloading it, which is
+        // exactly what blocking it is meant to avoid.
+        const width = img.getAttribute('width') || img.style.width;
+        const height = img.getAttribute('height') || img.style.height;
+        if (width) img.style.width = /^\d+$/.test(width) ? `${width}px` : width;
+        if (height) img.style.height = /^\d+$/.test(height) ? `${height}px` : height;
+        blockedCount++;
+      });
+
+      const base = doc.createElement('base');
+      base.target = '_blank';
+      doc.head.prepend(base);
+
+      const style = doc.createElement('style');
+      style.textContent = `
+        body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; overflow-wrap: anywhere; }
+        img, table { max-width: 100%; }
+        .heimdal-blocked-image {
+          display: inline-block;
+          min-width: 2em;
+          min-height: 1.5em;
+          background: repeating-linear-gradient(45deg, #f6d32d, #f6d32d 10px, #1a1a1a 10px, #1a1a1a 20px);
+          border: 1px solid #1a1a1a;
+          vertical-align: middle;
+        }
+      `;
+      doc.head.prepend(style);
+
+      return { html: `<!doctype html>${doc.documentElement.outerHTML}`, blockedCount };
+    }
+
+    // Renders a message's real HTML body into a sandboxed iframe once a
+    // card is expanded. `sandbox="allow-same-origin allow-popups"` is the
+    // deliberate combination: allow-same-origin lets *our* script (not the
+    // email's) read the iframe's contentDocument for height measurement
+    // and the "load images" reveal below, while omitting allow-scripts
+    // means nothing inside the email — inline <script>, onclick=, etc. —
+    // can ever execute, regardless of same-origin access. allow-popups is
+    // what lets a link with target="_blank" (forced via the injected
+    // <base> above) actually open a new tab; without it a sandboxed
+    // iframe silently blocks that. No allow-forms, no allow-top-navigation
+    // — forms can't submit and the email can't redirect the real page.
+    function renderHtmlBody(card, html) {
+      const bodyWrap = card.querySelector('.card-body-wrap');
+      card.querySelector('.card-body').style.display = 'none';
+
+      const { html: preparedHtml, blockedCount } = prepareHtmlForRender(html);
+
+      const iframe = document.createElement('iframe');
+      iframe.className = 'card-html-body';
+      iframe.setAttribute('sandbox', 'allow-same-origin allow-popups');
+      iframe.setAttribute('referrerpolicy', 'no-referrer');
+      iframe.srcdoc = preparedHtml;
+
+      const resizeToContent = () => {
+        const doc = iframe.contentDocument;
+        if (doc?.body) iframe.style.height = `${doc.body.scrollHeight}px`;
+      };
+      iframe.addEventListener('load', () => {
+        resizeToContent();
+        // Images finishing (a normal load, or later via "load images"
+        // below) change body's rendered height after the load event
+        // already fired — keep the iframe's height in sync as that
+        // happens instead of leaving stale empty space or a cut-off card.
+        const doc = iframe.contentDocument;
+        if (doc?.body && 'ResizeObserver' in window) {
+          new ResizeObserver(resizeToContent).observe(doc.body);
+        }
+      });
+
+      bodyWrap.appendChild(iframe);
+
+      if (blockedCount > 0) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'load-images-btn';
+        btn.textContent = `Load ${blockedCount} image${blockedCount > 1 ? 's' : ''}`;
+        btn.addEventListener('click', () => {
+          const doc = iframe.contentDocument;
+          if (!doc) return;
+          doc.querySelectorAll('.heimdal-blocked-image').forEach((img) => {
+            img.src = img.dataset.blockedSrc;
+            img.classList.remove('heimdal-blocked-image');
+            delete img.dataset.blockedSrc;
+          });
+          btn.remove();
+        });
+        bodyWrap.appendChild(btn);
+      }
+    }
+
     // Fetches one message's full content (body, attachments) on demand —
     // only called when a card is actually expanded. The list/feed itself
     // no longer needs this: listMessages() now returns a real, bounded
@@ -477,8 +597,12 @@
         if (!res.ok) throw new Error(`status ${res.status}`);
         const message = await res.json();
         card.dataset.fullyLoaded = 'true';
-        const bodyEl = card.querySelector('.card-body');
-        bodyEl.textContent = bestPreviewText(message) || '(empty message)';
+        if (typeof message.body?.html === 'string' && message.body.html.trim()) {
+          renderHtmlBody(card, message.body.html);
+        } else {
+          const bodyEl = card.querySelector('.card-body');
+          bodyEl.textContent = bestPreviewText(message) || '(empty message)';
+        }
         updateBodyOverflow(card);
       } catch (err) {
         // Keep showing the existing preview snippet rather than replacing
@@ -509,7 +633,18 @@
       const card = e.target.closest('.card');
       if (!card) return;
       const expanded = card.classList.toggle('expanded');
-      if (expanded) ensureFullBodyLoaded(card);
+      if (expanded) {
+        ensureFullBodyLoaded(card);
+      } else {
+        // Re-measure now that we're back to the clipped, collapsed
+        // height: while expanded, .card-body-wrap has no max-height at
+        // all, so scrollHeight always equals clientHeight and
+        // updateBodyOverflow's own call (in ensureFullBodyLoaded, right
+        // after the full body loads) sets .no-overflow based on that —
+        // which is meaningless there but would otherwise stick around
+        // and wrongly suppress the fade-out gradient once collapsed again.
+        updateBodyOverflow(card);
+      }
     });
 
     // A batch is fetched over a single IMAP connection (see the backend's
@@ -536,7 +671,6 @@
     let batchesLoaded = 0;
     let loadingAhead = false;
     const batchBoundaries = []; // batchBoundaries[i] = permanent marker at the start of batch i (0-indexed)
-    let nextCardIndex = 1; // temporary debug aid — see buildCard()
     let previousBatchAvailableAt = null; // temporary debug timing — see loadMore()
 
     let nextPageToken = null;
@@ -628,7 +762,7 @@
         // single list fetch above already gave us.
         if (toFetch.length) {
           for (const summary of toFetch) {
-            const card = buildCard(summary, nextCardIndex++);
+            const card = buildCard(summary);
             feed.insertBefore(card, anchor);
             updateBodyOverflow(card);
             readObserver.observe(card);
@@ -758,11 +892,7 @@
     }
 
     function prependCard(message) {
-      // Not meaningfully orderable against the loaded list (this arrives
-      // live, out of band) — marked distinctly rather than assigned the
-      // next sequential number, which would be misleading up here at the
-      // top of the feed.
-      const card = buildCard(message, 'new');
+      const card = buildCard(message);
       feed.insertBefore(card, feed.querySelector('.card') || sentinel);
       updateBodyOverflow(card);
       if (feedStatus.isConnected) feedStatus.remove();

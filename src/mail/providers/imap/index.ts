@@ -1,5 +1,5 @@
 import { ImapFlow, type FetchMessageObject, type MessageEnvelopeObject } from 'imapflow';
-import { simpleParser } from 'mailparser';
+import { simpleParser, type Attachment as MailparserAttachment } from 'mailparser';
 import { BaseProvider } from '../../base-provider';
 import { InvalidRequestError, type ListMessagesOptions, type ProviderKind } from '../../provider';
 import type {
@@ -105,6 +105,23 @@ function stripHtmlForSnippet(html: string): string {
     .replace(/<[^>]+>/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+/** Rewrites `cid:` image references (inline-embedded images like a
+ *  signature logo) into base64 data URIs using the bytes already pulled
+ *  down for this message — no second round trip, and no route that would
+ *  let a caller probe for arbitrary attachment ids. Non-inline attachments
+ *  are untouched; unresolvable cids are left as-is (the img just won't
+ *  render, same as it wouldn't in any other mail client without the
+ *  original context). */
+function resolveInlineImages(html: string, inlineImages: MailparserAttachment[]): string {
+  if (!inlineImages.length) return html;
+  return html.replace(/\bsrc=(["'])cid:([^"']+)\1/gi, (match, quote, rawCid) => {
+    const cid = decodeURIComponent(rawCid);
+    const image = inlineImages.find((a) => a.cid === cid);
+    if (!image) return match;
+    return `src=${quote}data:${image.contentType};base64,${image.content.toString('base64')}${quote}`;
+  });
 }
 
 function folderKindFromSpecialUse(specialUse: string | undefined, path: string): Folder['kind'] {
@@ -275,7 +292,7 @@ export class ImapProvider extends BaseProvider {
       receivedAt: (envelope?.date ?? new Date()).toISOString(),
       isRead: flags.has('\\Seen'),
       isFlagged: flags.has('\\Flagged'),
-      hasAttachments: (parsed?.attachments.length ?? 0) > 0,
+      hasAttachments: (parsed?.attachments ?? []).some((a) => !a.related),
     };
   }
 
@@ -368,6 +385,14 @@ export class ImapProvider extends BaseProvider {
       (parsed?.inReplyTo ? stripAngleBrackets(parsed.inReplyTo) : undefined) ??
       (envelope?.messageId ? stripAngleBrackets(envelope.messageId) : '');
 
+    // `related` attachments are inline-embedded (e.g. a signature logo
+    // referenced via cid: in the HTML body) rather than something a user
+    // would want to see offered for download — keep those out of the
+    // downloadable attachments list and hasAttachments, and use them only
+    // to resolve the cid: references in the body itself.
+    const inlineImages = (parsed?.attachments ?? []).filter((a) => a.related);
+    const downloadableAttachments = (parsed?.attachments ?? []).filter((a) => !a.related);
+
     return {
       id: encodeMessageId(folderPath, msg.uid),
       messageId: envelope?.messageId ? stripAngleBrackets(envelope.messageId) : undefined,
@@ -382,12 +407,13 @@ export class ImapProvider extends BaseProvider {
       receivedAt: (envelope?.date ?? new Date()).toISOString(),
       isRead: flags.has('\\Seen'),
       isFlagged: flags.has('\\Flagged'),
-      hasAttachments: (parsed?.attachments.length ?? 0) > 0,
+      hasAttachments: downloadableAttachments.length > 0,
       body: {
         text: parsed?.text,
-        html: typeof parsed?.html === 'string' ? parsed.html : undefined,
+        html:
+          typeof parsed?.html === 'string' ? resolveInlineImages(parsed.html, inlineImages) : undefined,
       },
-      attachments: (parsed?.attachments ?? []).map((a, i) => ({
+      attachments: downloadableAttachments.map((a, i) => ({
         id: a.cid ?? String(i),
         filename: a.filename ?? `attachment-${i}`,
         mimeType: a.contentType,

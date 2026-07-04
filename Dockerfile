@@ -8,7 +8,7 @@ COPY src/ ./src/
 RUN npm run build
 
 FROM alpine:latest
-RUN apk add --no-cache caddy nodejs
+RUN apk add --no-cache caddy nodejs npm
 WORKDIR /app
 COPY --from=builder /app/dist ./dist
 COPY package*.json ./

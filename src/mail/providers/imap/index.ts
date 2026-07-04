@@ -280,6 +280,28 @@ export class ImapProvider extends BaseProvider {
       0,
       200
     );
+    const hasAttachments = (parsed?.attachments ?? []).some((a) => !a.related);
+
+    // If the bounded fetch above wasn't actually truncated — the whole
+    // message fit under MAX_PREVIEW_SOURCE_BYTES — then `parsed` isn't a
+    // preview, it's the complete message. Ship the full body now so
+    // expanding this card can skip a second full-message fetch entirely
+    // (see ensureFullBodyLoaded() on the frontend). Messages with real
+    // attachments are excluded even when otherwise complete, since those
+    // still need the dedicated full fetch to do anything with the
+    // attachment itself later.
+    const isComplete = msg.source !== undefined && msg.source.length < MAX_PREVIEW_SOURCE_BYTES;
+    const body =
+      isComplete && !hasAttachments
+        ? {
+            text: parsed?.text,
+            html:
+              typeof parsed?.html === 'string'
+                ? resolveInlineImages(parsed.html, (parsed?.attachments ?? []).filter((a) => a.related))
+                : undefined,
+          }
+        : undefined;
+
     return {
       id: encodeMessageId(folderId, msg.uid),
       messageId: envelope?.messageId ? stripAngleBrackets(envelope.messageId) : undefined,
@@ -292,7 +314,8 @@ export class ImapProvider extends BaseProvider {
       receivedAt: (envelope?.date ?? new Date()).toISOString(),
       isRead: flags.has('\\Seen'),
       isFlagged: flags.has('\\Flagged'),
-      hasAttachments: (parsed?.attachments ?? []).some((a) => !a.related),
+      hasAttachments,
+      body,
     };
   }
 

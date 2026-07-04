@@ -28,6 +28,14 @@ export interface EmailSummary {
   isRead: boolean;
   isFlagged: boolean;
   hasAttachments: boolean;
+  /** Present only when the list view's bounded preview fetch happened to
+   *  capture the *entire* message (small body, no attachments) — in that
+   *  case this already *is* the complete body, so the client can skip a
+   *  second full-message fetch entirely when the card is expanded. Absent
+   *  whenever the preview was actually truncated or attachments exist;
+   *  callers must fall back to fetching the full EmailMessage in that
+   *  case. */
+  body?: EmailBody;
 }
 
 export interface EmailBody {

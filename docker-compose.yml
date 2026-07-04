@@ -9,3 +9,23 @@ services:
     volumes:
       - ./data:/app/data
     restart: unless-stopped
+
+  # Local LLM backend — a separate concern from Heimdal itself (see
+  # README.md "Local AI models (Ollama)"). Heimdal reaches it at
+  # http://ollama:11434 over the Compose network; nothing outside this
+  # machine can reach it, since the port below is bound to loopback only
+  # (127.0.0.1), not 0.0.0.0 — it has no authentication of its own.
+  # mem_limit caps it well under the Pi's 8GB total, leaving headroom for
+  # the OS and the heimdal container; drop this line entirely on a bigger
+  # machine, or raise it if a larger model needs more.
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "127.0.0.1:11434:11434"
+    volumes:
+      - ollama-models:/root/.ollama
+    mem_limit: 6g
+    restart: unless-stopped
+
+volumes:
+  ollama-models:

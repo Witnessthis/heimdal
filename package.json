@@ -3,13 +3,26 @@
   "private": true,
   "version": "0.0.0",
   "scripts": {
-    "dev": "live-server web --port=8080 --host=:: --no-browser"
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc",
+    "start": "node dist/server.js"
+  },
+  "dependencies": {
+    "@fastify/cookie": "^9.3.1",
+    "@fastify/static": "^6.12.0",
+    "fastify": "^4.28.0",
+    "imapflow": "^1.4.3",
+    "mailparser": "^3.9.12",
+    "nodemailer": "^9.0.3",
+    "otplib": "^12.0.1",
+    "qrcode": "^1.5.3"
   },
   "devDependencies": {
-    "live-server": "^1.2.2"
-  },
-  "overrides": {
-    "chokidar": "^3.6.0",
-    "uuid": "^11.1.1"
+    "@types/mailparser": "^3.4.6",
+    "@types/node": "^20.12.0",
+    "@types/nodemailer": "^8.0.1",
+    "@types/qrcode": "^1.5.5",
+    "tsx": "^4.7.0",
+    "typescript": "^5.4.0"
   }
 }

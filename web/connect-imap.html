@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Heimdal — Connect IMAP / SMTP</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Philosopher:wght@700&display=swap" />
+  <style>
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      background: #1a1a2e;
+      color: #f1f1f1;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    body { display: flex; flex-direction: column; align-items: center; padding: 24px; }
+
+    .top-bar { width: 100%; max-width: 400px; margin-bottom: 8px; }
+    .back-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: #888;
+      text-decoration: none;
+      font-size: 0.875rem;
+      padding: 6px 0;
+    }
+    .back-link:hover { color: #e94560; }
+
+    h1 { font-size: 2rem; margin: 8px 0 4px; color: #e94560; font-family: 'Philosopher', serif; letter-spacing: 0.05em; }
+    .subtitle { color: #aaa; margin: 0 0 28px; }
+
+    form { width: 100%; max-width: 400px; display: flex; flex-direction: column; gap: 18px; }
+    .field { display: flex; flex-direction: column; gap: 6px; }
+    .field-label { font-size: 0.875rem; color: #ccc; }
+    .hint { font-size: 0.78rem; color: #888; margin: 2px 0 0; }
+
+    input[type="text"], input[type="email"], input[type="password"], input[type="number"] {
+      padding: 10px 14px;
+      border-radius: 6px;
+      border: 1px solid #333;
+      background: #0d0d1a;
+      color: #f1f1f1;
+      font-size: 1rem;
+      width: 100%;
+    }
+    input:focus { outline: none; border-color: #e94560; }
+
+    .row { display: grid; grid-template-columns: 2fr 1fr; gap: 10px; }
+    .checkbox-row { display: flex; align-items: center; gap: 8px; font-size: 0.875rem; color: #ccc; }
+    .checkbox-row input { width: 16px; height: 16px; }
+
+    details {
+      border: 1px solid #2a2a44;
+      border-radius: 8px;
+      padding: 4px 14px;
+    }
+    details[open] { padding-bottom: 14px; }
+    summary {
+      cursor: pointer;
+      padding: 10px 0;
+      font-size: 0.875rem;
+      color: #ccc;
+      list-style: none;
+    }
+    summary::-webkit-details-marker { display: none; }
+    summary::before { content: '▸ '; color: #666; }
+    details[open] summary::before { content: '▾ '; }
+    .advanced-fields { display: flex; flex-direction: column; gap: 14px; margin-top: 6px; }
+
+    button[type="submit"] {
+      padding: 12px;
+      border-radius: 6px;
+      border: none;
+      background: #e94560;
+      color: white;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 4px;
+    }
+    button[type="submit"]:hover { background: #c73a52; }
+    button[type="submit"]:disabled { background: #5a2530; cursor: wait; }
+
+    .error { color: #e94560; font-size: 0.875rem; min-height: 20px; margin: 0; white-space: pre-wrap; }
+
+    .note {
+      font-size: 0.78rem;
+      color: #666;
+      margin: -6px 0 0;
+      line-height: 1.4;
+    }
+  </style>
+</head>
+<body>
+  <div class="top-bar">
+    <a class="back-link" href="/connect-provider.html">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="m15 18-6-6 6-6" />
+      </svg>
+      Choose a different provider
+    </a>
+  </div>
+
+  <h1>IMAP / SMTP</h1>
+  <p class="subtitle">Enter your mail account's server settings.</p>
+
+  <form id="form">
+    <div class="field">
+      <label class="field-label" for="username">Email address</label>
+      <input type="email" id="username" required autocomplete="off" placeholder="you@example.com" />
+    </div>
+
+    <div class="field">
+      <label class="field-label" for="password">Password</label>
+      <input type="password" id="password" required autocomplete="off" placeholder="App password, if your provider requires one" />
+      <p class="note">Stored encrypted on the server — never in plain text — and only sent over this connection to sign in to your mailbox.</p>
+    </div>
+
+    <div class="field">
+      <label class="field-label" for="host">IMAP server</label>
+      <div class="row">
+        <input type="text" id="host" required autocomplete="off" placeholder="imap.example.com" />
+        <input type="number" id="port" required value="993" min="1" max="65535" />
+      </div>
+      <label class="checkbox-row">
+        <input type="checkbox" id="secure" checked />
+        Use TLS (recommended, usually port 993)
+      </label>
+    </div>
+
+    <details id="advanced">
+      <summary>SMTP settings (for sending mail)</summary>
+      <div class="advanced-fields">
+        <p class="hint" style="margin:0;">Leave blank to derive from your IMAP server above.</p>
+        <div class="field">
+          <label class="field-label" for="smtpHost">SMTP server</label>
+          <div class="row">
+            <input type="text" id="smtpHost" autocomplete="off" placeholder="smtp.example.com" />
+            <input type="number" id="smtpPort" min="1" max="65535" placeholder="465" />
+          </div>
+          <label class="checkbox-row">
+            <input type="checkbox" id="smtpSecure" checked />
+            Use TLS (recommended, usually port 465)
+          </label>
+        </div>
+        <div class="field">
+          <label class="field-label" for="smtpPassword">SMTP password</label>
+          <input type="password" id="smtpPassword" autocomplete="off" placeholder="Same as password above" />
+        </div>
+      </div>
+    </details>
+
+    <p class="error" id="error"></p>
+    <button type="submit" id="submit-btn">Connect account</button>
+  </form>
+
+  <script>
+    (async function () {
+      const meRes = await fetch('/api/me');
+      if (meRes.status === 401) {
+        window.location.replace('/login.html?next=/connect-imap.html');
+        return;
+      }
+      const status = await fetch('/api/provider/status').then((r) => r.json());
+      if (status.configured) window.location.replace('/');
+    })();
+
+    function deriveSmtpHost(host) {
+      return host.replace(/^imap\./i, 'smtp.');
+    }
+
+    document.getElementById('form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const errorEl = document.getElementById('error');
+      const submitBtn = document.getElementById('submit-btn');
+      errorEl.textContent = '';
+
+      const host = document.getElementById('host').value.trim();
+      const smtpHost = document.getElementById('smtpHost').value.trim() || deriveSmtpHost(host);
+      const smtpPortInput = document.getElementById('smtpPort').value.trim();
+      const smtpPasswordInput = document.getElementById('smtpPassword').value;
+
+      const body = {
+        username: document.getElementById('username').value.trim(),
+        password: document.getElementById('password').value,
+        host,
+        port: Number(document.getElementById('port').value),
+        secure: document.getElementById('secure').checked,
+        smtpHost,
+        smtpPort: smtpPortInput ? Number(smtpPortInput) : 465,
+        smtpSecure: document.getElementById('smtpSecure').checked,
+      };
+      if (smtpPasswordInput) body.smtpPassword = smtpPasswordInput;
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Connecting…';
+
+      try {
+        const res = await fetch('/api/provider/imap', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+
+        if (res.ok) {
+          window.location.replace('/');
+          return;
+        }
+
+        const data = await res.json().catch(() => ({}));
+        errorEl.textContent = [data.error, data.detail].filter(Boolean).join('\n') || 'Could not connect. Check your settings and try again.';
+      } catch (err) {
+        errorEl.textContent = 'Network error — is the server reachable?';
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Connect account';
+      }
+    });
+  </script>
+</body>
+</html>

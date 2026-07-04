@@ -1,0 +1,503 @@
+import { ImapFlow, type FetchMessageObject, type MessageEnvelopeObject } from 'imapflow';
+import { simpleParser } from 'mailparser';
+import { BaseProvider } from '../../base-provider';
+import { InvalidRequestError, type ListMessagesOptions, type ProviderKind } from '../../provider';
+import type {
+  DraftInput,
+  EmailAddress,
+  EmailMessage,
+  EmailSummary,
+  Folder,
+  Page,
+  Thread,
+} from '../../types';
+import type { ImapSecret, ProviderConfig } from '../../../lib/provider-credentials';
+import { ReconnectingConnection } from '../../lifecycle';
+import { renderRawMessage, sendMail } from './smtp';
+
+export type ImapProviderConfig = Extract<ProviderConfig, { kind: 'imap' }>;
+
+const PROVIDER_PREFIX = 'imap';
+/** IDLE only ever watches one mailbox at a time (an IMAP protocol
+ *  limitation) — INBOX covers the "near-real-time new mail" case the
+ *  product actually needs; other folders are still fully readable/writable
+ *  via the request-driven methods below, they just don't push events. */
+const IDLE_FOLDER = 'INBOX';
+
+function encodeMessageId(folderPath: string, uid: number): string {
+  return `${PROVIDER_PREFIX}:${encodeURIComponent(folderPath)}:${uid}`;
+}
+
+function decodeMessageId(messageId: string): { folderPath: string; uid: number } {
+  const parts = messageId.split(':');
+  if (parts.length !== 3 || parts[0] !== PROVIDER_PREFIX) {
+    throw new InvalidRequestError(`Invalid message id: ${messageId}`);
+  }
+  const uid = Number(parts[2]);
+  if (!Number.isInteger(uid) || uid < 1) {
+    throw new InvalidRequestError(`Invalid message id: ${messageId}`);
+  }
+  return { folderPath: decodeURIComponent(parts[1]), uid };
+}
+
+function toEmailAddress(addr: { name?: string; address?: string } | undefined): EmailAddress {
+  return { name: addr?.name || undefined, address: addr?.address ?? '' };
+}
+
+function stripAngleBrackets(id: string): string {
+  return id.replace(/[<>]/g, '');
+}
+
+/** Parses the raw `References:` header block (as returned by a targeted
+ *  `headers: ['references']` fetch) into an ordered list of message-ids,
+ *  oldest first — the format mail clients use to record a message's full
+ *  ancestor chain, not just its immediate parent. Line-based rather than a
+ *  single regex so folded continuation lines (RFC 5322 — a long References
+ *  header wrapped across multiple lines, each continuation starting with
+ *  whitespace) are joined correctly instead of truncating at the first
+ *  fold. */
+function parseReferencesHeader(headers: Buffer | undefined): string[] {
+  if (!headers) return [];
+  const lines = headers.toString('utf8').split(/\r\n|\r|\n/);
+  let collecting = false;
+  let value = '';
+  for (const line of lines) {
+    if (/^References:/i.test(line)) {
+      collecting = true;
+      value = line.replace(/^References:/i, '');
+      continue;
+    }
+    if (collecting && /^[ \t]/.test(line)) {
+      value += ' ' + line.trim();
+      continue;
+    }
+    if (collecting) break;
+  }
+  const ids = value.match(/<[^>]+>/g) ?? [];
+  return ids.map(stripAngleBrackets);
+}
+
+/** Thread root id for a message: the oldest ancestor in its References
+ *  chain when available (covers 3+-message threads correctly), falling
+ *  back to In-Reply-To (immediate parent only) and finally the message's
+ *  own id for thread starters. */
+function computeThreadId(envelope: MessageEnvelopeObject | undefined, headers: Buffer | undefined): string {
+  const references = parseReferencesHeader(headers);
+  if (references.length > 0) return references[0];
+  const raw = envelope?.inReplyTo || envelope?.messageId || '';
+  return stripAngleBrackets(raw);
+}
+
+function folderKindFromSpecialUse(specialUse: string | undefined, path: string): Folder['kind'] {
+  switch (specialUse) {
+    case '\\Inbox':
+      return 'inbox';
+    case '\\Sent':
+      return 'sent';
+    case '\\Drafts':
+      return 'drafts';
+    case '\\Junk':
+      return 'spam';
+    case '\\Trash':
+      return 'trash';
+    case '\\Archive':
+      return 'archive';
+  }
+  const lower = path.toLowerCase();
+  if (lower === 'inbox') return 'inbox';
+  if (/sent/.test(lower)) return 'sent';
+  if (/draft/.test(lower)) return 'drafts';
+  if (/(junk|spam)/.test(lower)) return 'spam';
+  if (/(trash|deleted)/.test(lower)) return 'trash';
+  if (/archive/.test(lower)) return 'archive';
+  return 'custom';
+}
+
+export class ImapProvider extends BaseProvider {
+  readonly kind: ProviderKind = 'imap';
+
+  private folderCache = new Map<string, Folder>();
+  private idleConn: ReconnectingConnection;
+  private idleClient: ImapFlow | null = null;
+
+  constructor(
+    private config: ImapProviderConfig,
+    private secret: ImapSecret
+  ) {
+    super();
+    this.idleConn = new ReconnectingConnection({
+      connect: () => this.runIdleSession(),
+      backoff: { initialMs: 2000, maxMs: 60_000 },
+      onStateChange: (state) => this.emitEvent({ type: 'connectionState', state }),
+    });
+  }
+
+  private newClient(): ImapFlow {
+    const client = new ImapFlow({
+      host: this.config.host,
+      port: this.config.port,
+      secure: this.config.secure,
+      auth: { user: this.config.username, pass: this.secret.password },
+      disableAutoIdle: true,
+      logger: false,
+    });
+    // ImapFlow emits 'error' on the underlying socket for things like a
+    // timeout (closeAfter() has already torn the connection down by the
+    // time it does) — Node throws and crashes the *entire process* if an
+    // EventEmitter's 'error' event has no listener. The in-flight
+    // operation on this client still fails on its own (idle()'s loop sees
+    // `client.usable` go false and exits, withClient()'s caller sees a
+    // rejected promise), which is what actually drives reconnect/error
+    // handling — this listener exists purely to stop a transient network
+    // hiccup from taking down the whole server.
+    client.on('error', (err) => {
+      console.error('IMAP client error:', err instanceof Error ? err.message : err);
+    });
+    return client;
+  }
+
+  private async withClient<T>(fn: (client: ImapFlow) => Promise<T>): Promise<T> {
+    const client = this.newClient();
+    await client.connect();
+    try {
+      return await fn(client);
+    } finally {
+      await client.logout().catch(() => client.close());
+    }
+  }
+
+  async connect(): Promise<void> {
+    // Validate credentials with a short-lived connection before trusting them
+    // and before starting the persistent IDLE session.
+    await this.withClient(async () => {});
+    this.emitEvent({ type: 'connectionState', state: 'connected' });
+    this.idleConn.start();
+  }
+
+  async disconnect(): Promise<void> {
+    // Order matters: stop() first so ReconnectingConnection's loop sees
+    // `stopped` and doesn't schedule a retry once close() below makes the
+    // in-flight idle() reject.
+    this.idleConn.stop();
+    this.idleClient?.close();
+    this.idleClient = null;
+  }
+
+  private async runIdleSession(): Promise<void> {
+    const client = this.newClient();
+    this.idleClient = client;
+    await client.connect();
+    this.emitEvent({ type: 'connectionState', state: 'connected' });
+    const lock = await client.getMailboxLock(IDLE_FOLDER);
+    try {
+      client.on('exists', (data) => {
+        // 'exists' fires on any mailbox-size change, including decreases
+        // (e.g. a bulk server-side expunge) — only a genuine increase means
+        // a new message arrived.
+        if (data.count > data.prevCount) {
+          void this.emitNewestMessageEvent(client, data.path);
+        }
+      });
+      client.on('expunge', (data) => {
+        if (data.uid !== undefined) {
+          this.emitEvent({ type: 'messageDeleted', messageId: encodeMessageId(IDLE_FOLDER, data.uid) });
+        }
+      });
+      client.on('flags', (data) => {
+        if (data.uid !== undefined) {
+          this.emitEvent({ type: 'messageUpdated', messageId: encodeMessageId(IDLE_FOLDER, data.uid) });
+        }
+      });
+      while (client.usable) {
+        await client.idle();
+      }
+    } finally {
+      lock.release();
+      await client.logout().catch(() => client.close());
+      if (this.idleClient === client) this.idleClient = null;
+    }
+  }
+
+  private async emitNewestMessageEvent(client: ImapFlow, path: string): Promise<void> {
+    const mailbox = client.mailbox;
+    if (!mailbox) return;
+    const msg = await client.fetchOne(String(mailbox.exists), { uid: true });
+    if (msg) {
+      this.emitEvent({ type: 'newMessage', folderId: path, messageId: encodeMessageId(path, msg.uid) });
+    }
+  }
+
+  private toSummary(folderId: string, msg: FetchMessageObject): EmailSummary {
+    const envelope = msg.envelope;
+    const flags = msg.flags ?? new Set<string>();
+    return {
+      id: encodeMessageId(folderId, msg.uid),
+      messageId: envelope?.messageId ? stripAngleBrackets(envelope.messageId) : undefined,
+      threadId: computeThreadId(envelope, msg.headers),
+      folderId,
+      from: toEmailAddress(envelope?.from?.[0]),
+      to: (envelope?.to ?? []).map(toEmailAddress),
+      subject: envelope?.subject ?? '(no subject)',
+      snippet: '',
+      receivedAt: (envelope?.date ?? new Date()).toISOString(),
+      isRead: flags.has('\\Seen'),
+      isFlagged: flags.has('\\Flagged'),
+      hasAttachments: false,
+    };
+  }
+
+  async listFolders(): Promise<Folder[]> {
+    return this.withClient(async (client) => {
+      const list = await client.list();
+      const folders: Folder[] = list.map((m) => ({
+        id: m.path,
+        displayName: m.name,
+        kind: folderKindFromSpecialUse(m.specialUse, m.path),
+      }));
+      this.folderCache = new Map(folders.map((f) => [f.id, f]));
+      return folders;
+    });
+  }
+
+  private async findFolderByKind(kind: Folder['kind']): Promise<Folder | undefined> {
+    if (this.folderCache.size === 0) await this.listFolders();
+    return [...this.folderCache.values()].find((f) => f.kind === kind);
+  }
+
+  /** IMAP has no native paging cursor. This pages by sequence-number range
+   *  within the currently-locked mailbox, newest first — pageToken encodes
+   *  the upper sequence bound of the next page. Sequence numbers can shift
+   *  if messages are expunged between page fetches; acceptable for a
+   *  single-user mailbox browsed interactively. */
+  async listMessages(options: ListMessagesOptions): Promise<Page<EmailSummary>> {
+    const pageSize = options.pageSize ?? 25;
+    return this.withClient(async (client) => {
+      const lock = await client.getMailboxLock(options.folderId);
+      try {
+        const mailbox = client.mailbox;
+        if (!mailbox) return { items: [] };
+        let upperBound = mailbox.exists;
+        if (options.pageToken !== undefined) {
+          upperBound = Number(options.pageToken);
+          if (!Number.isInteger(upperBound) || upperBound < 1) {
+            throw new InvalidRequestError(`Invalid pageToken: ${options.pageToken}`);
+          }
+        }
+        if (upperBound < 1) return { items: [] };
+        const lowerBound = Math.max(1, upperBound - pageSize + 1);
+
+        const items: EmailSummary[] = [];
+        for await (const msg of client.fetch(`${lowerBound}:${upperBound}`, {
+          uid: true,
+          envelope: true,
+          flags: true,
+          headers: ['references'],
+        })) {
+          items.push(this.toSummary(options.folderId, msg));
+        }
+        items.reverse();
+
+        const nextPageToken = lowerBound > 1 ? String(lowerBound - 1) : undefined;
+        return { items, nextPageToken };
+      } finally {
+        lock.release();
+      }
+    });
+  }
+
+  async getMessage(messageId: string): Promise<EmailMessage> {
+    const { folderPath, uid } = decodeMessageId(messageId);
+    return this.withClient(async (client) => {
+      const lock = await client.getMailboxLock(folderPath);
+      try {
+        const msg = await client.fetchOne(
+          String(uid),
+          { envelope: true, flags: true, source: true },
+          { uid: true }
+        );
+        if (!msg) throw new Error(`Message not found: ${messageId}`);
+
+        const parsed = msg.source ? await simpleParser(msg.source) : undefined;
+        const envelope = msg.envelope;
+        const flags = msg.flags ?? new Set<string>();
+        const references = (
+          Array.isArray(parsed?.references)
+            ? parsed.references
+            : parsed?.references
+              ? [parsed.references]
+              : []
+        ).map(stripAngleBrackets);
+        const threadId =
+          references[0] ??
+          (parsed?.inReplyTo ? stripAngleBrackets(parsed.inReplyTo) : undefined) ??
+          (envelope?.messageId ? stripAngleBrackets(envelope.messageId) : '');
+
+        return {
+          id: messageId,
+          messageId: envelope?.messageId ? stripAngleBrackets(envelope.messageId) : undefined,
+          threadId,
+          folderId: folderPath,
+          from: toEmailAddress(envelope?.from?.[0]),
+          to: (envelope?.to ?? []).map(toEmailAddress),
+          cc: (envelope?.cc ?? []).map(toEmailAddress),
+          bcc: (envelope?.bcc ?? []).map(toEmailAddress),
+          subject: envelope?.subject ?? '(no subject)',
+          snippet: (parsed?.text ?? '').slice(0, 200),
+          receivedAt: (envelope?.date ?? new Date()).toISOString(),
+          isRead: flags.has('\\Seen'),
+          isFlagged: flags.has('\\Flagged'),
+          hasAttachments: (parsed?.attachments.length ?? 0) > 0,
+          body: {
+            text: parsed?.text,
+            html: typeof parsed?.html === 'string' ? parsed.html : undefined,
+          },
+          attachments: (parsed?.attachments ?? []).map((a, i) => ({
+            id: a.cid ?? String(i),
+            filename: a.filename ?? `attachment-${i}`,
+            mimeType: a.contentType,
+            sizeBytes: a.size,
+          })),
+          inReplyTo: parsed?.inReplyTo,
+          references,
+        };
+      } finally {
+        lock.release();
+      }
+    });
+  }
+
+  /** No portable cross-folder threading over generic IMAP without a
+   *  server-side SEARCH/THREAD extension. This v1 implementation scans
+   *  INBOX only and groups client-side by the same root-id heuristic used
+   *  in toSummary (References-chain root, falling back to In-Reply-To) —
+   *  O(n) per call, acceptable for a personal mailbox. Revisit if/when a
+   *  persisted message index exists. */
+  async getThread(threadId: string): Promise<Thread> {
+    return this.withClient(async (client) => {
+      const lock = await client.getMailboxLock(IDLE_FOLDER);
+      try {
+        const matches: EmailSummary[] = [];
+        for await (const msg of client.fetch('1:*', {
+          uid: true,
+          envelope: true,
+          flags: true,
+          headers: ['references'],
+        })) {
+          const summary = this.toSummary(IDLE_FOLDER, msg);
+          if (summary.threadId === threadId || summary.messageId === threadId) {
+            matches.push(summary);
+          }
+        }
+        matches.sort((a, b) => a.receivedAt.localeCompare(b.receivedAt));
+
+        const participants = new Map<string, EmailAddress>();
+        for (const m of matches) participants.set(m.from.address, m.from);
+
+        return {
+          id: threadId,
+          subject: matches[0]?.subject ?? '',
+          messageIds: matches.map((m) => m.id),
+          participantAddresses: [...participants.values()],
+          lastMessageAt: matches[matches.length - 1]?.receivedAt ?? new Date().toISOString(),
+          isRead: matches.every((m) => m.isRead),
+        };
+      } finally {
+        lock.release();
+      }
+    });
+  }
+
+  async setRead(messageId: string, read: boolean): Promise<void> {
+    const { folderPath, uid } = decodeMessageId(messageId);
+    await this.withClient(async (client) => {
+      const lock = await client.getMailboxLock(folderPath);
+      try {
+        if (read) await client.messageFlagsAdd(String(uid), ['\\Seen'], { uid: true });
+        else await client.messageFlagsRemove(String(uid), ['\\Seen'], { uid: true });
+      } finally {
+        lock.release();
+      }
+    });
+    this.emitEvent({ type: 'messageUpdated', messageId });
+  }
+
+  async setFlagged(messageId: string, flagged: boolean): Promise<void> {
+    const { folderPath, uid } = decodeMessageId(messageId);
+    await this.withClient(async (client) => {
+      const lock = await client.getMailboxLock(folderPath);
+      try {
+        if (flagged) await client.messageFlagsAdd(String(uid), ['\\Flagged'], { uid: true });
+        else await client.messageFlagsRemove(String(uid), ['\\Flagged'], { uid: true });
+      } finally {
+        lock.release();
+      }
+    });
+    this.emitEvent({ type: 'messageUpdated', messageId });
+  }
+
+  async moveToFolder(messageId: string, folderId: string): Promise<void> {
+    const { folderPath, uid } = decodeMessageId(messageId);
+    await this.withClient(async (client) => {
+      const lock = await client.getMailboxLock(folderPath);
+      try {
+        await client.messageMove(String(uid), folderId, { uid: true });
+      } finally {
+        lock.release();
+      }
+    });
+    // The old composite id (folder+uid) is no longer valid — signal removal
+    // from its previous location. The new location surfaces on next list.
+    this.emitEvent({ type: 'messageDeleted', messageId });
+  }
+
+  async archive(messageId: string): Promise<void> {
+    const folder = await this.findFolderByKind('archive');
+    if (!folder) throw new Error('No archive folder found on this account');
+    await this.moveToFolder(messageId, folder.id);
+  }
+
+  async trash(messageId: string): Promise<void> {
+    const folder = await this.findFolderByKind('trash');
+    if (!folder) throw new Error('No trash folder found on this account');
+    await this.moveToFolder(messageId, folder.id);
+  }
+
+  async saveDraft(input: DraftInput): Promise<{ draftId: string }> {
+    const folder = await this.findFolderByKind('drafts');
+    if (!folder) throw new Error('No drafts folder found on this account');
+    const raw = await renderRawMessage(input, this.config.username);
+    return this.withClient(async (client) => {
+      const result = await client.append(folder.id, raw, ['\\Draft']);
+      if (!result || result.uid === undefined) throw new Error('Failed to save draft');
+      return { draftId: encodeMessageId(folder.id, result.uid) };
+    });
+  }
+
+  async updateDraft(draftId: string, input: DraftInput): Promise<void> {
+    const { folderPath, uid } = decodeMessageId(draftId);
+    const raw = await renderRawMessage(input, this.config.username);
+    await this.withClient(async (client) => {
+      const lock = await client.getMailboxLock(folderPath);
+      try {
+        await client.messageDelete(String(uid), { uid: true });
+      } finally {
+        lock.release();
+      }
+      await client.append(folderPath, raw, ['\\Draft']);
+    });
+  }
+
+  async send(input: DraftInput): Promise<{ messageId: string }> {
+    const smtpPassword = this.secret.smtpPassword ?? this.secret.password;
+    return sendMail(
+      {
+        smtpHost: this.config.smtpHost,
+        smtpPort: this.config.smtpPort,
+        smtpSecure: this.config.smtpSecure,
+        username: this.config.username,
+        smtpPassword,
+      },
+      input
+    );
+  }
+}

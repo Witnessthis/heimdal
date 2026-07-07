@@ -101,19 +101,23 @@
       content-visibility: auto;
       contain-intrinsic-size: auto 80px;
       /* Telegraphs the swipe-to-reveal-actions affordance, same idea as
-         the compose address bar's glow: a soft accent halo emanating
-         from the card's RIGHT edge (where Reply/Forward hide), fading
-         outward. A one-sided box-shadow (positive x-offset, negative
-         spread) rather than a child glow element: an earlier version
-         painted a gradient child behind the card, but the card is
-         opaque, so the only visible part was ever its blur bleeding
-         past the edge — and per-card animated blur was the main thing
-         making the app slow on phones (and paint containment above
-         would clip a child's bleed anyway). The element's own shadow is
-         exempt from its paint containment, renders outside the box by
-         nature, and is a static one-time raster. Do not re-add per-card
-         filters or always-on animations. */
-      box-shadow: 10px 0 14px -8px color-mix(in srgb, var(--accent) 50%, transparent);
+         the compose address bar's glow: a faint accent halo around the
+         whole card (first shadow), leaning slightly stronger off the
+         RIGHT edge (second shadow, positive x-offset + negative spread)
+         to match the border gradient's strong edge, where Reply/Forward
+         hide. Box-shadows on the wrap itself rather than a child glow
+         element: an earlier version painted a gradient child behind the
+         card, but the card is opaque, so the only visible part was ever
+         its blur bleeding past the edge — and per-card animated blur
+         was the main thing making the app slow on phones (and paint
+         containment above would clip a child's bleed anyway). The
+         element's own shadow is exempt from its paint containment,
+         renders outside the box by nature, and is a static one-time
+         raster. Do not re-add per-card filters or always-on
+         animations. */
+      box-shadow:
+        0 0 9px color-mix(in srgb, var(--accent) 16%, transparent),
+        7px 0 12px -7px color-mix(in srgb, var(--accent) 30%, transparent);
     }
     /* .card is now just a thin positioning/clipping shell — border and
        radius live here so the card's outer look is unaffected by swipe

@@ -305,11 +305,14 @@
        loadMore()) — nothing here changes size after it's first shown, so
        max-height (shrink-to-fit, capped) rather than a fixed height is
        correct: short bodies just take up less room instead of leaving
-       padding. --fade-height is set in JS (updateBodyOverflow) as a
-       fraction of the wrap's own actual rendered height, capped at 1.5em
-       — so a one-line body gets a small, proportional fade instead of
-       either a fixed-size fade that swamps it or (the previous approach)
-       no fade at all just because nothing happened to be truncated. */
+       padding. The fade height is a fraction of the wrap's own height,
+       capped at 1.8em — so a one-line body gets a small, proportional
+       fade instead of either a fixed-size fade that swamps it or no fade
+       at all just because nothing happened to be truncated. Pure CSS
+       (min() of an em cap and a percentage of the wrap): an earlier JS
+       version computed the same thing per card via getComputedStyle +
+       clientHeight, which forced a reflow for every card in the batch
+       insert loop. */
     .card-body-wrap {
       position: relative;
       max-height: 4.5em; /* ~3 lines at the line-height below */
@@ -321,7 +324,7 @@
       left: 0;
       right: 0;
       bottom: 0;
-      height: var(--fade-height, 1.8em);
+      height: min(1.8em, 60%);
       /* A plain two-stop transparent-to-opaque gradient isn't perceived as
          linear — the eye reads it as fading fast, then hitting a wall near
          the opaque end. These extra stops follow an eased curve instead,
@@ -1274,8 +1277,8 @@
       // #feed — see the call sites below, which insert card.parentElement
       // rather than card. Keeping buildCard() return the .card element
       // itself (unchanged) means everything else that already treats its
-      // return value as the card — cardData, updateBodyOverflow, the
-      // click/swipe gesture handling's closest('.card') — needs no change.
+      // return value as the card — cardData, the click/swipe gesture
+      // handling's closest('.card') — needs no change.
       const wrap = document.createElement('div');
       wrap.className = 'card-wrap';
       const hum = document.createElement('div');
@@ -1283,20 +1286,6 @@
       wrap.append(hum, card);
 
       return card;
-    }
-
-    // Only relevant once a card is actually laid out in the DOM (a
-    // detached element always reports 0 for these) — call right after
-    // inserting. Sizes the fade to a fraction of the wrap's own actual
-    // height (capped at 1.8em) rather than a fixed height, so a one-line
-    // body — sender/address/time, then a one-word subject, then a single
-    // line of text — still visibly fades instead of the effect only ever
-    // showing up on cards tall enough for a fixed-size fade to fit inside.
-    function updateBodyOverflow(card) {
-      const wrap = card.querySelector('.card-body-wrap');
-      const maxFadeHeightPx = 1.8 * parseFloat(getComputedStyle(wrap).fontSize);
-      const fadeHeightPx = Math.min(wrap.clientHeight * 0.6, maxFadeHeightPx);
-      wrap.style.setProperty('--fade-height', `${fadeHeightPx}px`);
     }
 
     // Settings > Reading > "Automatically load images" — off by default
@@ -1504,7 +1493,6 @@
         const bodyEl = card.querySelector('.card-body');
         bodyEl.textContent = bestPreviewText(data) || '(empty message)';
       }
-      updateBodyOverflow(card);
     }
 
     async function ensureFullBodyLoaded(card) {
@@ -2182,7 +2170,6 @@
         // and rebuild the render.
         clearRenderedBody(card);
         delete card.dataset.renderedWithSettings;
-        updateBodyOverflow(card);
       }
     });
 
@@ -2299,7 +2286,6 @@
           for (const summary of toFetch) {
             const card = buildCard(summary);
             feed.insertBefore(card.parentElement, anchor);
-            updateBodyOverflow(card);
           }
           if (feedStatus.isConnected) feedStatus.remove();
         }
@@ -2402,7 +2388,6 @@
     function prependCard(message) {
       const card = buildCard(message);
       feed.insertBefore(card.parentElement, feed.querySelector('.card-wrap') || sentinel);
-      updateBodyOverflow(card);
       if (feedStatus.isConnected) feedStatus.remove();
     }
 

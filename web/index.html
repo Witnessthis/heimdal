@@ -2210,7 +2210,6 @@
     let batchesLoaded = 0;
     let loadingAhead = false;
     const batchBoundaries = []; // batchBoundaries[i] = permanent marker at the start of batch i (0-indexed)
-    let previousBatchAvailableAt = null; // temporary debug timing — see loadMore()
 
     let nextPageToken = null;
     let loadingMore = false;
@@ -2252,11 +2251,6 @@
       if (loadingMore || !folderId) return;
       loadingMore = true;
       const requestedPageToken = nextPageToken;
-      // Temporary debug timing — total time for this page, now that
-      // listMessages() returns real preview snippets directly (see the
-      // backend): there's no longer a separate content-fetch step to time
-      // apart from this.
-      const batchStartedAt = performance.now();
       try {
         const url = new URL('/api/mail/messages', window.location.origin);
         url.searchParams.set('folderId', folderId);
@@ -2310,19 +2304,6 @@
           if (feedStatus.isConnected) feedStatus.remove();
         }
 
-        // "Available" means cards are actually inserted and visible — the
-        // gap is measured from here, against the same point in the
-        // previous batch, so it reflects what the reader actually
-        // experiences.
-        const availableAt = performance.now();
-        const batchDurationMs = Math.round(availableAt - batchStartedAt);
-        const gapSincePreviousBatchMs =
-          previousBatchAvailableAt !== null ? Math.round(availableAt - previousBatchAvailableAt) : null;
-        previousBatchAvailableAt = availableAt;
-        console.debug(
-          `[batch] #${batchesLoaded + 1} size=${toFetch.length} totalMs=${batchDurationMs} msPerMessage=${toFetch.length ? (batchDurationMs / toFetch.length).toFixed(1) : 'n/a'} gapSincePreviousBatchAvailableMs=${gapSincePreviousBatchMs}`
-        );
-
         nextPageToken = page.nextPageToken || null;
         batchesLoaded++;
         if (!page.items?.length && !feed.querySelector('.card')) {
@@ -2358,7 +2339,6 @@
       const marker = targetIndex >= 0 ? batchBoundaries[targetIndex] : null;
       if (!marker) return;
       const reached = marker.offsetTop <= feed.scrollTop + feed.clientHeight;
-      console.debug('[pagination] checkBatchTrigger: batchesLoaded=', batchesLoaded, 'targetIndex=', targetIndex, 'reached=', reached);
       if (reached) loadMoreBatches(LOAD_AHEAD_BATCHES);
     }
 
@@ -2620,12 +2600,24 @@
       }
       lastScrollY = scrollTop;
     }
+    // Scroll events fire far more often than frames render, and both
+    // handleScroll and checkBatchTrigger read layout (scrollTop,
+    // offsetTop, clientHeight) — running them per event forces redundant
+    // synchronous layout work between frames. Coalesce to at most one run
+    // per frame; only closing an open swipe stays immediate, since that's
+    // gesture correctness rather than layout-dependent work.
+    let scrollWorkScheduled = false;
     feed.addEventListener(
       'scroll',
       () => {
-        handleScroll(feed.scrollTop);
-        checkBatchTrigger();
         if (openSwipeCard) closeSwipe(openSwipeCard);
+        if (scrollWorkScheduled) return;
+        scrollWorkScheduled = true;
+        requestAnimationFrame(() => {
+          scrollWorkScheduled = false;
+          handleScroll(feed.scrollTop);
+          checkBatchTrigger();
+        });
       },
       { passive: true }
     );

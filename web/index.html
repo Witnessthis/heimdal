@@ -85,6 +85,20 @@
     .card-wrap {
       position: relative;
       margin: 0 12px 10px;
+      /* Skip rendering (style/layout/paint) for cards outside the
+         viewport — with hundreds of cards loaded, only the visible
+         handful cost anything. The intrinsic-size is a stand-in height
+         for not-yet-rendered cards (meta + subject + padding; collapsed
+         cards have no body text in the list view) so scrollbar math
+         stays sane; the `auto` keyword makes the browser remember each
+         card's real size once rendered, so expanded cards keep their
+         true height when scrolled away and back. Everything inside a
+         card (glow, swipe layers) paints within the wrap's box, so
+         containment clips nothing visible. Browsers without support
+         (iOS Safari < 18) simply ignore this and render everything, as
+         before. */
+      content-visibility: auto;
+      contain-intrinsic-size: auto 80px;
     }
     /* Telegraphs the same swipe-to-reveal-actions affordance the compose
        address bar's glow does — always on here, since every card is

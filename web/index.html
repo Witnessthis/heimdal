@@ -2184,15 +2184,20 @@
     const PAGE_SIZE = 100;
 
     // Buffer is measured in batches, not pixels — see the reasoning below
-    // at checkBatchTrigger. Load 10 batches to start, then whenever
-    // scrolling brings the reader within 5 loaded batches of the end,
-    // load 10 more. So: load 1-10 up front; reaching batch 5 (5 of the 10
-    // remaining) loads 11-20; reaching batch 15 (5 of those 20 remaining)
-    // loads 21-30; and so on indefinitely, always keeping at least 5
-    // batches of runway ahead once warmed up.
-    const INITIAL_BATCHES = 10;
-    const LOAD_AHEAD_BATCHES = 10;
-    const TRIGGER_BATCHES_REMAINING = 5;
+    // at checkBatchTrigger. Load 3 batches (300 cards) up front, then
+    // whenever scrolling brings the reader within 1 loaded batch (~100
+    // cards, 10+ phone screens) of the end, load 3 more. These used to be
+    // 10/10/5 — a 1000-card cold start chosen to hide slow IMAP bursts,
+    // from back when every inserted card also cost a blurred animated
+    // layer and a forced reflow. Now that cards are cheap to insert,
+    // these are the tuning knobs if the runway ever feels short against a
+    // slow IMAP server: bumping them back up is safe, just start-up
+    // weight. (TRIGGER at 1, not 2: with 3 initial batches, a trigger of
+    // 2 resolves to the marker at offset ~0, which is always "reached" —
+    // it would cascade an extra load immediately on startup.)
+    const INITIAL_BATCHES = 3;
+    const LOAD_AHEAD_BATCHES = 3;
+    const TRIGGER_BATCHES_REMAINING = 1;
 
     let batchesLoaded = 0;
     let loadingAhead = false;
@@ -2308,8 +2313,9 @@
     sentinel.style.height = '1px';
     feed.appendChild(sentinel);
 
-    // Triggers 10 more batches once the reader has scrolled to within 5
-    // loaded batches of the end. A plain scroll-position check against the
+    // Triggers LOAD_AHEAD_BATCHES more batches once the reader has
+    // scrolled to within TRIGGER_BATCHES_REMAINING loaded batches of the
+    // end. A plain scroll-position check against the
     // marker recorded at the start of that batch (see boundaryMarker in
     // loadMore()), not IntersectionObserver — two attempts at an
     // IntersectionObserver-based version of this in a row still didn't

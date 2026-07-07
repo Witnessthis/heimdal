@@ -2171,11 +2171,17 @@
         ensureFullBodyLoaded(card);
         markRead(card);
       } else {
-        // Re-measure now that we're back to the clipped, collapsed
-        // height: while expanded, .card-body-wrap has no max-height at
-        // all, so the fade computed there was sized against the full,
-        // uncapped content — needs recomputing against the collapsed
-        // height now that it's clipped again.
+        // Tear the rendered body down, don't just clip it: an HTML email
+        // leaves behind a live iframe (its own document, styles, decoded
+        // images) plus the ResizeObserver watching it, and before this
+        // teardown every message expanded during a session stayed
+        // resident forever — a leak that grew with reading activity.
+        // Re-expanding is cheap: the full message stays cached in
+        // cardData, and clearing renderedWithSettings makes
+        // ensureFullBodyLoaded fall through to that cache (no refetch)
+        // and rebuild the render.
+        clearRenderedBody(card);
+        delete card.dataset.renderedWithSettings;
         updateBodyOverflow(card);
       }
     });

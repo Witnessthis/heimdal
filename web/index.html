@@ -237,12 +237,25 @@
 
     .card-content { min-width: 0; }
 
+    /* .card-time is pulled out of normal flow (see below) and pinned to
+       the top-right corner here, rather than being a normal flex item
+       pushed there with margin-left:auto — that meant when name+address
+       together were too wide, address (last in flow) got shoved down to
+       its own line *together with time*, since time immediately
+       followed it. Keeping time out of the wrapping flow entirely means
+       it's always in the same corner regardless: name and address (the
+       only two items actually wrapping between themselves) simply run
+       out of room and drop address to its own line beneath name, with
+       time staying put where it's always been. padding-right reserves
+       room so wrapped text doesn't run underneath it. */
     .card-meta {
+      position: relative;
       display: flex;
       align-items: baseline;
       gap: 8px;
       flex-wrap: wrap;
       margin-bottom: 6px;
+      padding-right: 72px;
     }
     /* Same size for all three fields, terminal-style — a real terminal
        can't vary glyph size within a line, so emphasis comes from weight
@@ -256,7 +269,7 @@
        terminal log output (journalctl, dmesg, etc.). */
     .card-from-name { font-weight: 700; font-size: 0.8rem; color: var(--identity); }
     .card-from-address { font-size: 0.8rem; color: var(--muted); }
-    .card-time { font-size: 0.8rem; color: var(--highlight); margin-left: auto; }
+    .card-time { position: absolute; top: 0; right: 0; font-size: 0.8rem; color: var(--highlight); }
 
     .card-subject {
       font-size: 1.05rem;

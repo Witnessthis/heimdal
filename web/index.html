@@ -77,14 +77,13 @@
       color: var(--fg-dim);
     }
 
-    /* Holds .card plus .card-hum as siblings — the margin between cards
-       lives here now (not on .card itself), giving the glow below
-       somewhere to actually bleed into, the same reasoning as the
-       compose address bar's .address-hum needing to sit outside
-       .address-swipe-wrap's own overflow:hidden clip. */
+    /* Wraps each .card — the margin between cards lives here (not on
+       .card itself), and the swipe-affordance glow is this element's own
+       box-shadow (see below for why it can't be a child element). */
     .card-wrap {
       position: relative;
       margin: 0 12px 10px;
+      border-radius: 10px; /* shapes the glow shadow below to the card's corners */
       /* Skip rendering (style/layout/paint) for cards outside the
          viewport — with hundreds of cards loaded, only the visible
          handful cost anything. The intrinsic-size is a stand-in height
@@ -92,43 +91,29 @@
          cards have no body text in the list view) so scrollbar math
          stays sane; the `auto` keyword makes the browser remember each
          card's real size once rendered, so expanded cards keep their
-         true height when scrolled away and back. Everything inside a
-         card (glow, swipe layers) paints within the wrap's box, so
-         containment clips nothing visible. Browsers without support
-         (iOS Safari < 18) simply ignore this and render everything, as
-         before. */
+         true height when scrolled away and back. Note: this also turns
+         on paint containment, which clips all DESCENDANT painting to
+         the wrap's box — anything meant to bleed past the card's edge
+         (like the swipe-affordance glow below) must be an own-property
+         of the wrap (box-shadow, outline), never a child element.
+         Browsers without support (iOS Safari < 18) simply ignore this
+         and render everything, as before. */
       content-visibility: auto;
       contain-intrinsic-size: auto 80px;
-    }
-    /* Telegraphs the same swipe-to-reveal-actions affordance the compose
-       address bar's glow does — always on here, since every card is
-       always swipeable (there's no "locked" state to gate it behind).
-       Static on purpose: this element exists once PER CARD, and an
-       earlier version paired filter:blur() with an infinite opacity
-       animation — meaning hundreds of blurred compositing layers all
-       animating forever (CSS animations don't pause offscreen, only
-       display:none does), which was measurably what made the whole app
-       slow on phones. The gradient now carries both the color intensity
-       (color-mix ≈ the old animation's perceptual midpoint) and the
-       softness (eased multi-stop fade, same idiom as the card-body fade
-       below, instead of blur). Do not re-add an always-on animation or a
-       filter here. */
-    .card-hum {
-      position: absolute;
-      top: 0;
-      bottom: 0;
-      right: 0;
-      width: 40%;
-      border-radius: 0 10px 10px 0;
-      background: linear-gradient(
-        to left,
-        color-mix(in srgb, var(--accent) 27%, transparent) 0%,
-        color-mix(in srgb, var(--accent) 15%, transparent) 30%,
-        color-mix(in srgb, var(--accent) 7%, transparent) 55%,
-        color-mix(in srgb, var(--accent) 2%, transparent) 78%,
-        transparent 100%
-      );
-      pointer-events: none;
+      /* Telegraphs the swipe-to-reveal-actions affordance, same idea as
+         the compose address bar's glow: a soft accent halo emanating
+         from the card's RIGHT edge (where Reply/Forward hide), fading
+         outward. A one-sided box-shadow (positive x-offset, negative
+         spread) rather than a child glow element: an earlier version
+         painted a gradient child behind the card, but the card is
+         opaque, so the only visible part was ever its blur bleeding
+         past the edge — and per-card animated blur was the main thing
+         making the app slow on phones (and paint containment above
+         would clip a child's bleed anyway). The element's own shadow is
+         exempt from its paint containment, renders outside the box by
+         nature, and is a static one-time raster. Do not re-add per-card
+         filters or always-on animations. */
+      box-shadow: 10px 0 14px -8px color-mix(in srgb, var(--accent) 50%, transparent);
     }
     /* .card is now just a thin positioning/clipping shell — border and
        radius live here so the card's outer look is unaffected by swipe
@@ -1281,9 +1266,7 @@
       // handling's closest('.card') — needs no change.
       const wrap = document.createElement('div');
       wrap.className = 'card-wrap';
-      const hum = document.createElement('div');
-      hum.className = 'card-hum';
-      wrap.append(hum, card);
+      wrap.append(card);
 
       return card;
     }
@@ -2385,7 +2368,7 @@
 
         if (event.type === 'messageDeleted') {
           // .closest('.card-wrap') — removing just the .card would leave
-          // an empty wrapper (and its .card-hum glow) behind.
+          // an empty wrapper (and its glow shadow) behind.
           feed.querySelector(`[data-id="${CSS.escape(event.messageId)}"]`)?.closest('.card-wrap')?.remove();
         }
       };

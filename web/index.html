@@ -89,10 +89,16 @@
     /* Telegraphs the same swipe-to-reveal-actions affordance the compose
        address bar's glow does — always on here, since every card is
        always swipeable (there's no "locked" state to gate it behind).
-       Much smaller/gentler than a first pass at this: with many cards
-       stacked in a whole list (rather than one address bar), the same
-       reach/blur/opacity that worked for a single small bar added up to
-       a wash across the entire screen. */
+       Static on purpose: this element exists once PER CARD, and an
+       earlier version paired filter:blur() with an infinite opacity
+       animation — meaning hundreds of blurred compositing layers all
+       animating forever (CSS animations don't pause offscreen, only
+       display:none does), which was measurably what made the whole app
+       slow on phones. The gradient now carries both the color intensity
+       (color-mix ≈ the old animation's perceptual midpoint) and the
+       softness (eased multi-stop fade, same idiom as the card-body fade
+       below, instead of blur). Do not re-add an always-on animation or a
+       filter here. */
     .card-hum {
       position: absolute;
       top: 0;
@@ -100,14 +106,15 @@
       right: 0;
       width: 40%;
       border-radius: 0 10px 10px 0;
-      background: linear-gradient(to left, var(--accent), transparent);
-      filter: blur(10px);
+      background: linear-gradient(
+        to left,
+        color-mix(in srgb, var(--accent) 27%, transparent) 0%,
+        color-mix(in srgb, var(--accent) 15%, transparent) 30%,
+        color-mix(in srgb, var(--accent) 7%, transparent) 55%,
+        color-mix(in srgb, var(--accent) 2%, transparent) 78%,
+        transparent 100%
+      );
       pointer-events: none;
-      animation: card-hum-breathe 4.2s ease-in-out infinite;
-    }
-    @keyframes card-hum-breathe {
-      0%, 100% { opacity: 0.16; }
-      50% { opacity: 0.38; }
     }
     /* .card is now just a thin positioning/clipping shell — border and
        radius live here so the card's outer look is unaffected by swipe

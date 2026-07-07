@@ -853,12 +853,13 @@
        inputs just sat there in the same muted border regardless of focus,
        and would've fallen back to the browser's own default blue focus
        ring (which clashes with every theme) since nothing overrode it. */
-    /* --highlight instead of --accent — now that resting borders are
-       full-strength --accent too, a focus state using that same color
-       was indistinguishable from any other field just sitting there. */
+    /* Same --accent as the resting border — thickness marks focus
+       instead of a different color now, same reasoning as unread cards:
+       a distinct color is for a genuinely different state, not just
+       "this field happens to be focused right now". */
     .compose-fields input:focus, .compose-fields textarea:focus {
       outline: none;
-      border-color: var(--highlight);
+      border-width: 2px;
     }
     .compose-fields textarea {
       flex: 1;

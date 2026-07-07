@@ -23,11 +23,6 @@ const PROVIDER_PREFIX = 'imap';
  *  product actually needs; other folders are still fully readable/writable
  *  via the request-driven methods below, they just don't push events. */
 const IDLE_FOLDER = 'INBOX';
-/** How much of a message's raw source to pull for list-view previews —
- *  generous enough to comfortably cover headers (including long Received:
- *  chains) plus a few hundred characters of body, without ever reaching
- *  into attachment content on a typical message. */
-const MAX_PREVIEW_SOURCE_BYTES = 8192;
 
 function encodeMessageId(folderPath: string, uid: number): string {
   return `${PROVIDER_PREFIX}:${encodeURIComponent(folderPath)}:${uid}`;
@@ -91,20 +86,6 @@ function computeThreadId(envelope: MessageEnvelopeObject | undefined, headers: B
   if (references.length > 0) return references[0];
   const raw = envelope?.inReplyTo || envelope?.messageId || '';
   return stripAngleBrackets(raw);
-}
-
-/** Crude but adequate HTML-to-text for a preview snippet — this only ever
- *  feeds a ~200-char truncated summary, so it doesn't need to be a real
- *  renderer, just good enough that a preview reads as text rather than
- *  markup. The full, properly-converted body is available via getMessage()
- *  when a card is actually expanded. */
-function stripHtmlForSnippet(html: string): string {
-  return html
-    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
 }
 
 /** Rewrites `cid:` image references (inline-embedded images like a
@@ -263,44 +244,19 @@ export class ImapProvider extends BaseProvider {
     }
   }
 
-  /** `msg.source`, when present, is a *bounded* fetch (see
-   *  MAX_PREVIEW_SOURCE_BYTES in listMessages()) — just enough for headers
-   *  plus a preview-length chunk of body, not the full message. Parsing a
-   *  truncated buffer through simpleParser is safe: verified it degrades
-   *  gracefully (missing/partial fields, never throws) rather than
-   *  choking on a message cut off mid-MIME-structure. This deliberately
-   *  never downloads attachment content — hasAttachments comes from
-   *  whether an attachment's *header* was seen before the cutoff, which is
-   *  reliable since headers precede content in MIME structure. */
-  private async toSummary(folderId: string, msg: FetchMessageObject): Promise<EmailSummary> {
+  /** Builds a list-view summary from envelope/flag data only — no body
+   *  fetch at all, not even a bounded preview. The list view no longer
+   *  shows a snippet (see the frontend's buildCard()), so there's nothing
+   *  for a body fetch to buy here; skipping it entirely is what keeps
+   *  batch loading fast regardless of how many messages (or how large
+   *  their attachments) are in a page. `snippet`/`hasAttachments` are
+   *  consequently unavailable without a body fetch — left as
+   *  empty/false, which is fine since neither is read anywhere in the UI
+   *  today. Full content (and real hasAttachments) is only ever fetched
+   *  on demand, via getMessage(), once a card is actually expanded. */
+  private toSummary(folderId: string, msg: FetchMessageObject): EmailSummary {
     const envelope = msg.envelope;
     const flags = msg.flags ?? new Set<string>();
-    const parsed = msg.source ? await simpleParser(msg.source) : undefined;
-    const snippet = (parsed?.text || (typeof parsed?.html === 'string' ? stripHtmlForSnippet(parsed.html) : '')).slice(
-      0,
-      200
-    );
-    const hasAttachments = (parsed?.attachments ?? []).some((a) => !a.related);
-
-    // If the bounded fetch above wasn't actually truncated — the whole
-    // message fit under MAX_PREVIEW_SOURCE_BYTES — then `parsed` isn't a
-    // preview, it's the complete message. Ship the full body now so
-    // expanding this card can skip a second full-message fetch entirely
-    // (see ensureFullBodyLoaded() on the frontend). Messages with real
-    // attachments are excluded even when otherwise complete, since those
-    // still need the dedicated full fetch to do anything with the
-    // attachment itself later.
-    const isComplete = msg.source !== undefined && msg.source.length < MAX_PREVIEW_SOURCE_BYTES;
-    const body =
-      isComplete && !hasAttachments
-        ? {
-            text: parsed?.text,
-            html:
-              typeof parsed?.html === 'string'
-                ? resolveInlineImages(parsed.html, (parsed?.attachments ?? []).filter((a) => a.related))
-                : undefined,
-          }
-        : undefined;
 
     return {
       id: encodeMessageId(folderId, msg.uid),
@@ -310,12 +266,11 @@ export class ImapProvider extends BaseProvider {
       from: toEmailAddress(envelope?.from?.[0]),
       to: (envelope?.to ?? []).map(toEmailAddress),
       subject: envelope?.subject ?? '(no subject)',
-      snippet,
+      snippet: '',
       receivedAt: (envelope?.date ?? new Date()).toISOString(),
       isRead: flags.has('\\Seen'),
       isFlagged: flags.has('\\Flagged'),
-      hasAttachments,
-      body,
+      hasAttachments: false,
     };
   }
 
@@ -360,20 +315,20 @@ export class ImapProvider extends BaseProvider {
         const lowerBound = Math.max(1, upperBound - pageSize + 1);
 
         const items: EmailSummary[] = [];
+        // No `source` fetch at all — envelope/flags/references are enough
+        // for everything the list view shows (sender, time, subject,
+        // read/flagged state), and skipping the body entirely is what
+        // keeps batch loading fast regardless of message size or
+        // attachments (a multi-MB attachment used to single-handedly blow
+        // up a batch's fetch time from ~1s to 10-25s even with a bounded
+        // preview fetch — see the conversation that led here). Full
+        // content is fetched separately, on demand, only when a card is
+        // actually expanded.
         for await (const msg of client.fetch(`${lowerBound}:${upperBound}`, {
           uid: true,
           envelope: true,
           flags: true,
           headers: ['references'],
-          // Bounded, not the full message — headers plus enough of the
-          // body for a preview snippet, without ever pulling attachment
-          // content. This is what makes list loading fast and consistent
-          // regardless of what a given message's attachments happen to be
-          // (verified: a multi-MB attachment used to single-handedly blow
-          // up a batch's fetch time from ~1s to 10-25s — see the
-          // conversation that led here). Full content is fetched
-          // separately, on demand, only when a card is expanded.
-          source: { maxLength: MAX_PREVIEW_SOURCE_BYTES },
         })) {
           items.push(await this.toSummary(options.folderId, msg));
         }

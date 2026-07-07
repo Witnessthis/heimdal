@@ -259,6 +259,12 @@
     // blue-ish, highlight always yellow-ish, regardless of theme).
     root.setProperty('--identity', theme.identity);
     root.setProperty('--highlight', theme.highlight);
+    // Unlike --identity/--highlight above, this one *is* meant to be
+    // "whatever blue this theme has" — Cc/Bcc just need a color distinct
+    // from To (--identity) and the rest (--accent), and each theme's own
+    // ANSI blue is already a real, curated color from that published
+    // palette rather than an arbitrary pick.
+    root.setProperty('--info', theme.blue);
     root.setProperty('--border-soft', `color-mix(in srgb, ${theme.fg}, ${theme.bg} 88%)`);
 
     document.documentElement.dataset.theme = resolve(name);

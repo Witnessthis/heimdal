@@ -77,33 +77,145 @@
       color: var(--fg-dim);
     }
 
+    /* Holds .card plus .card-hum as siblings — the margin between cards
+       lives here now (not on .card itself), giving the glow below
+       somewhere to actually bleed into, the same reasoning as the
+       compose address bar's .address-hum needing to sit outside
+       .address-swipe-wrap's own overflow:hidden clip. */
+    .card-wrap {
+      position: relative;
+      margin: 0 12px 10px;
+    }
+    /* Telegraphs the same swipe-to-reveal-actions affordance the compose
+       address bar's glow does — always on here, since every card is
+       always swipeable (there's no "locked" state to gate it behind).
+       Much smaller/gentler than a first pass at this: with many cards
+       stacked in a whole list (rather than one address bar), the same
+       reach/blur/opacity that worked for a single small bar added up to
+       a wash across the entire screen. */
+    .card-hum {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      right: 0;
+      width: 40%;
+      border-radius: 0 10px 10px 0;
+      background: linear-gradient(to left, var(--accent), transparent);
+      filter: blur(10px);
+      pointer-events: none;
+      animation: card-hum-breathe 4.2s ease-in-out infinite;
+    }
+    @keyframes card-hum-breathe {
+      0%, 100% { opacity: 0.16; }
+      50% { opacity: 0.38; }
+    }
+    /* .card is now just a thin positioning/clipping shell — border and
+       radius live here so the card's outer look is unaffected by swipe
+       state — while .card-front carries the actual visual chrome
+       (background, padding, grid) and slides via `transform` to reveal
+       .card-swipe-actions underneath it. overflow:hidden clips that
+       slide to the card's own rounded corners; position:relative gives
+       .card-swipe-actions (position:absolute) something to anchor to.
+       See the pointerdown/move/up gesture handling in JS for how the
+       swipe itself is driven. */
+    .card {
+      box-sizing: border-box;
+      position: relative;
+      overflow: hidden;
+      /* Same gradient-border technique as the address bar (border-color
+         stays transparent; the actual color comes from a background
+         painted only into the border-box ring) — a flat border-right
+         alone looked like a stray segment stuck to the edge rather than
+         part of the card, since it had no border on the adjacent sides
+         to blend into. Here the gradient itself fades from --accent at
+         the right (where Reply/Forward live) toward transparent well
+         into the card, rather than stopping right at the edge — so the
+         top/bottom borders visibly fade out left-to-right instead of
+         just vanishing outright, and the left edge ends up with no
+         visible border at all. .card-front (an opaque child) covers the
+         entire interior regardless, so no separate padding-box fill
+         layer is needed the way the address bar required. */
+      border: 1px solid transparent;
+      border-radius: 10px;
+      background: linear-gradient(to left, var(--accent), transparent 140%) border-box;
+    }
+    /* An opaque override wins over the gradient background above
+       (border paints over backgrounds within the same box) — the full
+       frame back on all four sides, clearly distinct from a read card's
+       fading one-sided gradient. */
+    .card.unread { border: 2px solid var(--accent); }
+    /* --highlight instead of --accent — same reasoning as compose's
+       focus state: a selected card needs its own distinct color, not
+       one shared with the resting (or unread) state. Applies correctly
+       to whichever sides actually have a border-style set above (just
+       the right edge for read, all four for unread), no extra rule
+       needed for that. */
+    .card.selected { border-color: var(--highlight); }
+    /* .card-front carries the actual visible background now, so the
+       "selected" tint has to apply there — .card itself has no painted
+       area left for it to show through. */
+    .card.selected .card-front { background: color-mix(in srgb, var(--accent) 12%, var(--bg-elevated)); }
+
+    /* Sits behind .card-front, revealed as it slides left. Two fixed-width
+       buttons rather than anything proportional — the reveal distance in
+       JS (SWIPE_REVEAL_PX) is defined to match this exactly. */
+    .card-swipe-actions {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      justify-content: flex-end;
+    }
+    /* Icon + label stacked, same shape as .nav-tab — the two icons alone
+       (mirrored arrows) read as too similar at a glance, so the label
+       does the actual disambiguating work. */
+    .card-swipe-actions button {
+      width: 72px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 3px;
+      border: none;
+      font-family: inherit;
+      color: var(--bg);
+      cursor: pointer;
+    }
+    .card-swipe-actions svg { width: 20px; height: 20px; }
+    .card-swipe-actions span { font-size: 0.7rem; font-weight: 600; }
+    /* Forward sits at the card's true right edge (reply is to its left,
+       revealed second) — the same corner the border's gradient is
+       anchored/anchored strongest at, so it's forward that needs to
+       match --accent for that edge to read as continuous, not reply. */
+    .card-action-reply { background: var(--identity); }
+    .card-action-forward { background: var(--accent); }
+
     /* Grid, not a plain block: once a checkbox column exists (selection
        mode — see #feed.selecting below), it gets its own column so it
        never shifts the meta/subject/body text the way an inline flex item
        would (the same problem the old unread dot had). Single column the
        rest of the time, so nothing about a normal card's layout changes
-       just because selection exists as a feature. */
-    .card {
+       just because selection exists as a feature.
+       touch-action: pan-y tells the browser vertical scrolling is still
+       fine to handle natively — only horizontal panning is left to JS
+       (see the gesture handling), which is what lets a JS
+       preventDefault() during a committed swipe actually suppress native
+       scroll instead of fighting it. Needs its own opaque background
+       (rather than inheriting from .card) so it fully covers
+       .card-swipe-actions until swiped open — painted on top of it
+       through DOM order alone (no z-index needed), since it comes after
+       .card-swipe-actions as a sibling. */
+    .card-front {
+      position: relative;
       box-sizing: border-box;
       display: grid;
       grid-template-columns: 1fr;
       background: var(--bg-elevated);
-      border: 1px solid var(--accent-soft);
-      border-radius: 10px;
-      margin: 0 12px 10px;
       padding: 14px 16px;
       cursor: pointer;
+      touch-action: pan-y;
+      transition: transform 0.2s ease;
     }
-    #feed.selecting .card { grid-template-columns: 20px 1fr; column-gap: 10px; }
-    /* Unread is marked by border strength instead of a separate dot — full
-       --accent instead of the soft/muted default, so an unread card is
-       just visibly "more there" without adding another element to track
-       or align. */
-    .card.unread { border-color: var(--accent); }
-    .card.selected {
-      border-color: var(--accent);
-      background: color-mix(in srgb, var(--accent) 12%, var(--bg-elevated));
-    }
+    #feed.selecting .card-front { grid-template-columns: 20px 1fr; column-gap: 10px; }
 
     /* Hidden until a long-press on any card enters selection mode — see
        the pointerdown/pointerup handling in JS. Not a decoration that's
@@ -444,6 +556,353 @@
     }
     .selection-bar span { font-size: 0.85rem; color: var(--fg-dim); }
     .selection-actions { display: flex; gap: 8px; }
+
+    /* Revealed by pulling down while already at the top of the feed (see
+       the pull-gesture handling in JS) — hidden above the viewport by
+       default via transform, not display:none, so JS can animate it
+       following the drag distance. openShelf()/closeShelf() set the fully
+       open/closed transform; the live drag in between is driven directly
+       off pointer movement. */
+    #new-email-shelf {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 55;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: calc(14px + env(safe-area-inset-top, 0px)) 16px 14px;
+      background: var(--bg-elevated);
+      border-bottom: 1px solid var(--border-soft);
+      transform: translateY(-100%);
+      transition: transform 0.2s ease;
+    }
+    #new-email-shelf button {
+      padding: 8px 20px;
+      border-radius: 6px;
+      border: 1px solid var(--accent);
+      background: transparent;
+      color: var(--accent);
+      font-family: inherit;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    #new-email-shelf button:hover { background: var(--accent); color: var(--bg); }
+
+    /* Compose (new/reply/forward) — a full-screen overlay above
+       everything else (z-index above header/nav/selection-bar's 50),
+       entered only from the inbox (via a card's swipe actions or the
+       new-email shelf), never a bottom-nav destination — so it doesn't
+       need any changes to showView()'s inbox/settings toggle. */
+    #compose-view {
+      position: fixed;
+      inset: 0;
+      z-index: 60;
+      display: flex;
+      flex-direction: column;
+      background: var(--bg);
+    }
+    /* No separate title bar at all anymore — Cancel/Send live in the same
+       row as the To field instead of their own dedicated strip above it,
+       and there's still no title text (the content itself — a filled-in
+       To/quoted body for a reply, a Fwd:-subject for a forward — already
+       says what this is). One row doing three jobs instead of two rows
+       doing one each. */
+    .compose-fields {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: calc(10px + env(safe-area-inset-top, 0px)) 14px calc(10px + env(safe-area-inset-bottom, 0px));
+      overflow-y: auto;
+    }
+    .compose-to-row {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+    .compose-to-field { flex: 1; }
+    /* Ambient telegraphing lives here, as a sibling of .address-swipe-wrap
+       rather than a descendant — see the .address-hum comment below for
+       why that placement matters. */
+    .address-hum {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      /* Wider than the button it sits behind (see .address-swipe-actions)
+         so the gradient below has room to reach further in toward the
+         bar's middle, fading out progressively rather than stopping
+         abruptly at the button's own edge. */
+      width: 140px;
+      filter: blur(10px); /* softens the outer (true bleed) edge specifically */
+      opacity: 0;
+      pointer-events: none;
+    }
+    /* Rounded only on the true (outer, bleeding-past-the-wrap) edge — the
+       inner edge fades to transparent anyway, so a hard corner there is
+       invisible. */
+    .address-hum-discard {
+      left: 0;
+      border-radius: 6px 0 0 6px;
+      background: linear-gradient(to right, var(--danger), transparent);
+    }
+    .address-hum-send {
+      right: 0;
+      border-radius: 0 6px 6px 0;
+      background: linear-gradient(to left, var(--accent), transparent);
+    }
+    /* Animation (and so visibility — see the keyframes' own opacity) only
+       runs once locked; unscoped, .address-hum's base opacity: 0 stays in
+       effect and nothing shows. */
+    .compose-to-row.address-locked .address-hum-discard {
+      animation: address-hum-breathe 4.2s ease-in-out infinite;
+    }
+    .compose-to-row.address-locked .address-hum-send {
+      animation: address-hum-breathe 4.2s ease-in-out infinite;
+      animation-delay: 0.6s; /* out of phase with the discard side, so they don't breathe in lockstep */
+    }
+    /* Always present, never moving — just a slow, continuous breathing
+       intensity in place, right where the button underneath actually is,
+       rather than a glide back and forth. */
+    @keyframes address-hum-breathe {
+      0%, 100% { opacity: 0.35; }
+      50% { opacity: 0.65; }
+    }
+    /* Shell: clips the sliding front layer to the bar's rounded corners and
+       gives .address-swipe-actions (behind it) something to anchor to —
+       same front/actions-behind shape as a card's swipe-reveal, just one
+       row instead of a list, and open on either side instead of only one.
+       Deliberately does NOT contain .address-hum above: overflow:hidden
+       clips only its own descendants, so keeping the glow as a sibling is
+       what lets it bleed past this box's edge into the page instead of
+       being clipped exactly where it'd matter most. */
+    .address-swipe-wrap {
+      position: relative;
+      overflow: hidden;
+      border-radius: 6px;
+      flex: 1;
+    }
+    .address-swipe-actions {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      justify-content: space-between;
+    }
+    .address-swipe-actions button {
+      flex: 0 0 64px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: none;
+      color: var(--bg);
+      cursor: pointer;
+    }
+    .address-swipe-actions svg { width: 20px; height: 20px; }
+    /* Matching border-radius on the outer corner of each button, rather
+       than relying solely on .address-swipe-wrap's own overflow:hidden
+       clip to round it — the two can render a hairline gap at the corner
+       (the wrap's clip and the button's paint landing in separate
+       composited layers during the drag), visible as a sliver of
+       whatever's behind the view. Giving the button the same curve
+       directly means its own solid color already fills that corner. */
+    .address-action-discard { background: var(--danger); border-radius: 6px 0 0 6px; }
+    .address-action-send { background: var(--accent); border-radius: 0 6px 6px 0; }
+    /* Sits on top of .address-swipe-actions until dragged — needs its own
+       opaque background (from whichever of input/.address-lock-bar is
+       showing inside it) to fully hide the actions until swiped.
+       touch-action: pan-y matches .card-front: native vertical scroll of
+       .compose-fields still works right up until a horizontal drag is
+       recognized (see the address gesture handlers below). */
+    .address-swipe-front {
+      position: relative;
+      transition: transform 0.2s ease;
+      touch-action: pan-y;
+    }
+    /* The locked, non-editable display of a confirmed recipient — the
+       pencil icon is the only way back into edit mode, never the bar
+       itself, so a swipe can never accidentally land back in editing.
+       No justify-content: space-between here on purpose — the edit icon
+       should sit immediately after the address text (wherever that ends),
+       not pinned out at the bar's far edge regardless of how short the
+       address is. */
+    /* The fill stays the plain, original --bg-elevated — only the border
+       itself carries color, via the standard dual background-clip
+       technique (a padding-box layer for the interior, a border-box layer
+       for the 1px ring around it), rather than border-image, which
+       ignores border-radius and would square off these rounded corners.
+       The border-box gradient fades danger → the ordinary gray
+       border-soft → accent, so each side reads as tinted right at the
+       frame and dissolves back to the neutral color by the middle —
+       reinforcing the same two-tone hint on the bar's own surface without
+       washing over the fill. Static, unlike .address-hum: it's part of
+       the bar's own surface, so it's expected to slide away with the bar
+       during a swipe rather than staying anchored like the button hint. */
+    .address-lock-bar {
+      position: relative;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 10px 12px;
+      border-radius: 6px;
+      border: 1px solid transparent;
+      background:
+        linear-gradient(var(--bg-elevated), var(--bg-elevated)) padding-box,
+        linear-gradient(to right, var(--danger), var(--border-soft) 50%, var(--accent)) border-box;
+    }
+    .address-lock-text {
+      flex: 0 1 auto;
+      min-width: 0; /* lets this actually shrink+ellipsize instead of overflowing the row for a long address */
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      /* --identity instead of the --accent tint the other fields use below
+         — the recipient reads as its own kind of thing, not just another
+         text field, and matches in both the editable and locked states. */
+      color: color-mix(in srgb, var(--identity) 55%, var(--fg));
+      font-size: 16px;
+    }
+    /* The locked bar's equivalent of the other fields' .field-hint — those
+       stay visible next to short content (only hiding once typed text
+       actually reaches them), but the locked bar had nothing playing that
+       role at all. No width measurement needed here like .field-hint
+       requires: .address-lock-text already ellipsizes on its own, so this
+       just sits after it, shrink-proof, same as the edit button. */
+    .address-lock-hint {
+      /* Pushes itself (and the edit button after it) to the bar's right
+         edge, same as the other fields' hints — regardless of how short
+         the address text is, rather than trailing right after it. */
+      margin-left: auto;
+      flex-shrink: 0;
+      /* Matches .field-hint (the other fields' help text) exactly, rather
+         than the --identity tint .address-lock-text itself uses. */
+      color: color-mix(in srgb, var(--accent) 60%, var(--muted));
+      font-size: 0.85rem;
+      pointer-events: none;
+    }
+    #compose-to-edit {
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 26px;
+      height: 26px;
+      padding: 0;
+      border: none;
+      border-radius: 50%;
+      background: none;
+      color: var(--muted);
+      cursor: pointer;
+    }
+    #compose-to-edit:hover { background: var(--border-soft); color: var(--fg); }
+    #compose-to-edit svg { width: 15px; height: 15px; }
+    /* Positioning context for .field-hint below. */
+    .field-inline { position: relative; }
+    .compose-fields input, .compose-fields textarea {
+      width: 100%;
+      padding: 10px 12px;
+      border-radius: 6px;
+      /* Full-strength --accent, matching the intensity of the address
+         bar's gradient border (its danger/accent endpoints are pure, not
+         diluted) — --accent-soft (35% opacity) looked noticeably fainter
+         by comparison. */
+      border: 1px solid var(--accent);
+      background: var(--bg-elevated);
+      /* A theme-accent tint on typed text instead of plain --fg — blended
+         rather than pure --accent so a full body of prose doesn't read as
+         saturated/loud, just tinted. */
+      color: color-mix(in srgb, var(--accent) 55%, var(--fg));
+      font-family: inherit;
+      /* 16px, not smaller — iOS Safari auto-zooms the page on focus for
+         any text input/textarea under this size, and that zoom can
+         persist (misaligning everything, including views underneath)
+         until the user manually pinches back out or reloads. This is the
+         actual bug behind "the reply screen doesn't fit and messes up the
+         inbox afterward" — not a layout/overflow issue in this view
+         itself, a zoom the browser triggered and never cleanly undid. */
+      font-size: 16px;
+    }
+    /* The recipient's own color (--identity), matching .address-lock-text
+       — an id selector so it wins over the shared --accent tint above
+       without needing !important. */
+    #compose-to { color: color-mix(in srgb, var(--identity) 55%, var(--fg)); }
+    /* --info (each theme's own blue) — distinct from To's --identity and
+       the lighter --accent tint Subject/body use below. */
+    #compose-cc, #compose-bcc { color: color-mix(in srgb, var(--info) 55%, var(--fg)); }
+    /* Subject and body are both a lot more text to actually read/write
+       than To/Cc/Bcc, and a strongly-tinted color (the 55% blend those
+       use) gets tiring fast over a whole line or message — a much
+       lighter touch here, closer to plain --fg, stays comfortable while
+       still picking up a hint of the theme. */
+    #compose-subject, #compose-body { color: color-mix(in srgb, var(--accent) 15%, var(--fg)); }
+    /* The theme accent barely showed up anywhere in this view before —
+       inputs just sat there in the same muted border regardless of focus,
+       and would've fallen back to the browser's own default blue focus
+       ring (which clashes with every theme) since nothing overrode it. */
+    /* --highlight instead of --accent — now that resting borders are
+       full-strength --accent too, a focus state using that same color
+       was indistinguishable from any other field just sitting there. */
+    .compose-fields input:focus, .compose-fields textarea:focus {
+      outline: none;
+      border-color: var(--highlight);
+    }
+    .compose-fields textarea {
+      flex: 1;
+      min-height: 200px;
+      resize: none;
+      line-height: 1.5;
+    }
+    /* A right-aligned hint drawn inside the field itself, instead of a
+       separate label row (costs vertical space permanently) or a native
+       placeholder (left-aligned, no positioning control, vanishes
+       outright the instant you type rather than just getting out of the
+       way). Hidden via updateFieldHint() once the field actually has
+       content — well before typed text could reach it — and shown again
+       if it's cleared. */
+    .field-hint {
+      position: absolute;
+      top: 50%;
+      right: 12px;
+      transform: translateY(-50%);
+      /* A theme-accent tint instead of plain --muted — still de-emphasized
+         next to real typed text, but no longer flat gray against the new
+         --accent-soft borders. */
+      color: color-mix(in srgb, var(--accent) 60%, var(--muted));
+      font-size: 0.85rem;
+      pointer-events: none;
+      transition: opacity 0.15s ease;
+    }
+    .field-hint.hidden { opacity: 0; }
+    /* Reveals Cc/Bcc *and* Subject together — a small left-aligned chevron
+       + label rather than its own full row of prominent text. Points
+       right (›) collapsed, rotates 90° to point down (⌄) when open — the
+       two states read as "more this way" vs. "here it is", rather than an
+       arbitrary flip. */
+    #compose-expand-toggle {
+      align-self: flex-start;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      height: 20px;
+      margin: -2px 0;
+      padding: 0;
+      border: none;
+      background: none;
+      color: var(--muted);
+      font-family: inherit;
+      font-size: 0.78rem;
+      cursor: pointer;
+    }
+    #compose-expand-toggle svg { width: 18px; height: 18px; transition: transform 0.15s ease; }
+    #compose-expand-toggle:hover { color: var(--accent); }
+    #compose-expand-toggle.expanded svg { transform: rotate(90deg); }
+    #compose-extra-fields { display: flex; flex-direction: column; gap: 8px; }
+    /* No reserved min-height — empty means genuinely zero height, giving
+       that space back to the body textarea below rather than holding a
+       blank line open for an error that (usually) never appears. */
+    #compose-error:empty { margin: 0; }
+    #compose-error { color: var(--danger); font-size: 0.85rem; margin: 4px 0 0; }
   </style>
 </head>
 <body>
@@ -526,6 +985,78 @@
     <div class="selection-actions">
       <button class="btn-action" id="selection-cancel" type="button">Cancel</button>
       <button class="btn-action" id="selection-mark-read" type="button">Mark as read</button>
+    </div>
+  </div>
+
+  <div id="new-email-shelf">
+    <button type="button" id="new-email-btn">New Email</button>
+  </div>
+
+  <div id="compose-view" style="display: none">
+    <div class="compose-fields">
+      <div class="compose-to-row" id="compose-to-row">
+        <!-- Cancel/Send are no longer separate buttons — swiping this bar
+             either direction reveals one action icon (discard on the left,
+             send on the right), which must then be tapped to actually fire;
+             the swipe itself never commits anything. Same reveal-then-tap
+             shape as a card's Reply/Forward, just bidirectional. -->
+        <!-- Ambient telegraphing — deliberately siblings of
+             .address-swipe-wrap, not descendants, so they aren't clipped
+             by its overflow:hidden and can bleed past its edge into the
+             page. Sized/positioned to match the button hidden underneath
+             exactly, so they stay put as the bar is dragged instead of
+             sliding with it — the illusion is that the button (and its
+             glow) was there all along; the bar just moves out of the way. -->
+        <div class="address-hum address-hum-discard"></div>
+        <div class="address-hum address-hum-send"></div>
+        <div class="address-swipe-wrap" id="compose-to-wrap">
+          <div class="address-swipe-actions">
+            <button type="button" class="address-action-discard" id="compose-to-discard" aria-label="Discard">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+            </button>
+            <button type="button" class="address-action-send" id="compose-to-send" aria-label="Send">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            </button>
+          </div>
+          <div class="address-swipe-front" id="compose-to-front">
+            <div class="field-inline compose-to-field" id="compose-to-field">
+              <input type="text" id="compose-to" autocomplete="off" />
+              <span class="field-hint" id="compose-to-hint">To</span>
+            </div>
+            <!-- Shown once composeTo is blurred with a real value — a
+                 non-editable bar, tapping the pencil is the only way back
+                 into edit mode (never the bar text itself), so a swipe can
+                 never accidentally re-enter editing. -->
+            <div class="address-lock-bar" id="compose-to-lock" style="display: none">
+              <span class="address-lock-text" id="compose-to-lock-text"></span>
+              <button type="button" id="compose-to-edit" aria-label="Edit recipient">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+              </button>
+              <span class="address-lock-hint">To</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <button type="button" id="compose-expand-toggle">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg>
+        <span>More</span>
+      </button>
+      <div id="compose-extra-fields" style="display: none">
+        <div class="field-inline">
+          <input type="text" id="compose-cc" autocomplete="off" />
+          <span class="field-hint" id="compose-cc-hint">Cc</span>
+        </div>
+        <div class="field-inline">
+          <input type="text" id="compose-bcc" autocomplete="off" />
+          <span class="field-hint" id="compose-bcc-hint">Bcc</span>
+        </div>
+        <div class="field-inline">
+          <input type="text" id="compose-subject" autocomplete="off" />
+          <span class="field-hint" id="compose-subject-hint">Subject</span>
+        </div>
+      </div>
+      <textarea id="compose-body" placeholder="Write your message…"></textarea>
+      <p id="compose-error"></p>
     </div>
   </div>
 
@@ -614,20 +1145,44 @@
     // should disappear on its own once a card is removed from the feed.
     const cardData = new WeakMap();
 
-    // `data` is either an EmailSummary (list view, from loadMore() — has
-    // `.snippet` but no `.body`, unless the backend's preview fetch
-    // happened to capture the whole message) or a full EmailMessage (from
-    // a live SSE new-mail update via prependCard()). bestPreviewText()
-    // handles both shapes via its `body.text ?? body.html ?? snippet`
-    // fallback chain. Cards are only ever built with their initial content
-    // already known, so nothing about a card changes size after it first
-    // appears; expand (which triggers ensureFullBodyLoaded) is the only
-    // resize that ever happens post-insertion.
+    // `data` is either an EmailSummary (list view, from loadMore() — no
+    // body content at all, see the backend's toSummary()) or a full
+    // EmailMessage (from a live SSE new-mail update via prependCard(),
+    // which does carry a body). Either way, buildCard() itself never
+    // shows body content — only ensureFullBodyLoaded(), on expand, does —
+    // so nothing about a card changes size after it first appears except
+    // that expand.
     function buildCard(data) {
       const card = document.createElement('article');
       card.className = 'card';
       card.classList.toggle('unread', !data.isRead);
       card.dataset.id = data.id;
+
+      // Sits behind .card-front — see the swipe gesture handling below for
+      // how .card-front's transform reveals these. Icons (not text) match
+      // the same stroke-based SVG set the bottom nav uses (viewBox 0 0 24
+      // 24, stroke-width 1.8, round caps/joins) — the markup here is
+      // static and app-authored, never derived from data, so innerHTML is
+      // safe (unlike the strict never-innerHTML rule for actual email
+      // content elsewhere in this file).
+      const swipeActions = document.createElement('div');
+      swipeActions.className = 'card-swipe-actions';
+      const replyBtn = document.createElement('button');
+      replyBtn.type = 'button';
+      replyBtn.className = 'card-action-reply';
+      replyBtn.innerHTML =
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></svg><span>Reply</span>';
+      replyBtn.addEventListener('click', () => openReplyCompose(card));
+      const forwardBtn = document.createElement('button');
+      forwardBtn.type = 'button';
+      forwardBtn.className = 'card-action-forward';
+      forwardBtn.innerHTML =
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 17 20 12 15 7"/><path d="M4 18v-2a4 4 0 0 1 4-4h12"/></svg><span>Forward</span>';
+      forwardBtn.addEventListener('click', () => openForwardCompose(card));
+      swipeActions.append(replyBtn, forwardBtn);
+
+      const front = document.createElement('div');
+      front.className = 'card-front';
 
       const selectBtn = document.createElement('button');
       selectBtn.type = 'button';
@@ -661,17 +1216,37 @@
       subject.className = 'card-subject';
       subject.textContent = data.subject || '(no subject)';
 
+      // Left empty deliberately — the collapsed card only ever shows
+      // sender/time/subject now, never a body preview (see the backend's
+      // toSummary(), which no longer fetches any body content for the
+      // list view at all, bounded or otherwise). ensureFullBodyLoaded()
+      // populates this element once the card is actually expanded; the
+      // element still needs to exist here so that (and the fade/overflow
+      // logic below) has something to find via querySelector.
       const body = document.createElement('div');
       body.className = 'card-body';
-      body.textContent = bestPreviewText(data) || '(empty message)';
 
       const bodyWrap = document.createElement('div');
       bodyWrap.className = 'card-body-wrap';
       bodyWrap.appendChild(body);
 
       content.append(meta, subject, bodyWrap);
-      card.append(selectBtn, content);
+      front.append(selectBtn, content);
+      card.append(swipeActions, front);
       cardData.set(card, data);
+
+      // .card-wrap (not .card itself) is what actually gets inserted into
+      // #feed — see the call sites below, which insert card.parentElement
+      // rather than card. Keeping buildCard() return the .card element
+      // itself (unchanged) means everything else that already treats its
+      // return value as the card — cardData, updateBodyOverflow, the
+      // click/swipe gesture handling's closest('.card') — needs no change.
+      const wrap = document.createElement('div');
+      wrap.className = 'card-wrap';
+      const hum = document.createElement('div');
+      hum.className = 'card-hum';
+      wrap.append(hum, card);
+
       return card;
     }
 
@@ -997,48 +1572,541 @@
       clearSelection();
     });
 
-    // Long-press to enter selection mode — Pointer Events unify mouse
-    // (PC: press and hold) and touch (phone: press and hold) behind one
-    // event model, so this works the same way on both without separate
-    // mousedown/touchstart handling. A press that moves more than a few
-    // px (a scroll/drag, not a hold) or releases early cancels the timer
-    // and falls through to a normal click instead.
+    // New-email shelf — revealed by pulling down while already at the top
+    // of the feed (see the pull-gesture handling in the recognizer below).
+    // openShelf()/closeShelf() set its fully-open/closed resting state;
+    // the drag itself live-updates the same transform directly.
+    const shelf = document.getElementById('new-email-shelf');
+    function openShelf() {
+      shelf.style.transition = '';
+      shelf.style.transform = 'translateY(0)';
+      shelf.classList.add('open');
+    }
+    function closeShelf() {
+      shelf.style.transition = '';
+      shelf.style.transform = '';
+      shelf.classList.remove('open');
+    }
+    document.getElementById('new-email-btn').addEventListener('click', () => {
+      closeShelf();
+      openCompose({ mode: 'new' });
+    });
+
+    // --- Compose (new/reply/forward) ------------------------------------
+    // One shared view for all three entry points (the shelf's New Email,
+    // and a card's swipe-revealed Reply/Forward). openCompose() takes a
+    // plain data object rather than reading anything off a card itself, so
+    // a future "load an AI-prepared draft" entry point can call it the
+    // same way without this view needing to change.
+    const composeView = document.getElementById('compose-view');
+    const composeTo = document.getElementById('compose-to');
+    const composeToField = document.getElementById('compose-to-field');
+    const composeToRow = document.getElementById('compose-to-row');
+    const addressWrap = document.getElementById('compose-to-wrap');
+    const addressFront = document.getElementById('compose-to-front');
+    const addressLockBar = document.getElementById('compose-to-lock');
+    const addressLockText = document.getElementById('compose-to-lock-text');
+    const addressEditBtn = document.getElementById('compose-to-edit');
+    const addressDiscardBtn = document.getElementById('compose-to-discard');
+    const addressSendBtn = document.getElementById('compose-to-send');
+    const composeCc = document.getElementById('compose-cc');
+    const composeBcc = document.getElementById('compose-bcc');
+    const composeExpandToggle = document.getElementById('compose-expand-toggle');
+    const composeExtraFields = document.getElementById('compose-extra-fields');
+    const composeSubject = document.getElementById('compose-subject');
+    const composeBody = document.getElementById('compose-body');
+    const composeError = document.getElementById('compose-error');
+
+    let composeThreadContext = null; // { inReplyTo, threadId } for the message currently being composed, if any
+
+    // Right-aligned inline hints (see .field-hint CSS) stand in for a
+    // separate label row or a native placeholder — but should stay
+    // visible for as long as there's room, only hiding once the typed
+    // text's actual rendered width would reach them. A single shared
+    // canvas 2D context does the width measurement (matching the input's
+    // own font) rather than a cruder length-based guess, which hid the
+    // hint the instant you typed a single character regardless of how
+    // short that character was.
+    const COMPOSE_HINTED_FIELDS = [composeTo, composeCc, composeBcc, composeSubject];
+    const hintMeasureCanvas = document.createElement('canvas');
+    const hintMeasureCtx = hintMeasureCanvas.getContext('2d');
+    const HINT_GAP_PX = 10; // minimum breathing room to keep between typed text and the hint
+
+    function updateFieldHint(input) {
+      const hint = input.parentElement.querySelector('.field-hint');
+      if (!hint) return;
+      if (!input.value) {
+        hint.classList.remove('hidden');
+        return;
+      }
+      const style = getComputedStyle(input);
+      hintMeasureCtx.font = `${style.fontSize} ${style.fontFamily}`;
+      const textWidth = hintMeasureCtx.measureText(input.value).width;
+      const availableWidth = input.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+      hint.classList.toggle('hidden', textWidth + hint.offsetWidth + HINT_GAP_PX > availableWidth);
+    }
+    COMPOSE_HINTED_FIELDS.forEach((input) => input.addEventListener('input', () => updateFieldHint(input)));
+    // Field width can change (phone rotation, resizing a desktop window),
+    // which changes how much text fits before the hint regardless of what
+    // was typed — re-check rather than waiting for the next keystroke.
+    // Only ever measures fields that are actually visible right now — To
+    // always, Cc/Bcc/Subject only when the collapsible section is open —
+    // same reasoning as setExtraFieldsExpanded() above.
+    window.addEventListener('resize', () => {
+      updateFieldHint(composeTo);
+      if (composeExtraFields.style.display !== 'none') {
+        [composeCc, composeBcc, composeSubject].forEach(updateFieldHint);
+      }
+    });
+
+    function setExtraFieldsExpanded(expanded) {
+      composeExtraFields.style.display = expanded ? 'flex' : 'none';
+      composeExpandToggle.classList.toggle('expanded', expanded);
+      // Cc/Bcc/Subject live inside this collapsible section, so any
+      // updateFieldHint() call made while it was display:none measured
+      // against a 0-width hidden box (clientWidth/offsetWidth are both 0
+      // for anything inside a display:none ancestor) — that always came
+      // out as "not enough room, hide the hint", regardless of how short
+      // the actual text was. Recompute now that they're genuinely
+      // visible and measurable.
+      if (expanded) [composeCc, composeBcc, composeSubject].forEach(updateFieldHint);
+    }
+    composeExpandToggle.addEventListener('click', () => {
+      setExtraFieldsExpanded(composeExtraFields.style.display === 'none');
+    });
+
+    // Locking swaps the raw input for a non-editable display of the same
+    // text; the pencil icon (never the bar itself) is the only way back
+    // into edit mode. This exists so the address row can be safely
+    // swiped — see the gesture handlers below — without ever risking a
+    // swipe landing back in editing.
+    function setAddressLocked(locked) {
+      if (locked) addressLockText.textContent = composeTo.value;
+      composeToField.style.display = locked ? 'none' : '';
+      addressLockBar.style.display = locked ? 'flex' : 'none';
+      composeToRow.classList.toggle('address-locked', locked);
+    }
+    composeTo.addEventListener('blur', () => {
+      if (composeTo.value.trim()) setAddressLocked(true);
+    });
+    addressEditBtn.addEventListener('click', () => {
+      setAddressLocked(false);
+      updateFieldHint(composeTo);
+      composeTo.focus();
+      composeTo.setSelectionRange(composeTo.value.length, composeTo.value.length);
+    });
+
+    function openCompose({ mode, to = '', subject = '', body = '', inReplyTo, threadId }) {
+      closeAddressSwipe();
+      composeTo.value = to;
+      composeCc.value = '';
+      composeBcc.value = '';
+      composeSubject.value = subject;
+      composeBody.value = body;
+      // Reply/forward bodies are built as "blank space for your reply,
+      // then the quoted/forwarded original" (see openReplyCompose/
+      // openForwardCompose) — the cursor belongs at the very start, ready
+      // to type, not wherever setting .value happens to leave it (the end,
+      // by default), which would otherwise show the *bottom* of the quote
+      // instead of the top.
+      composeBody.setSelectionRange(0, 0);
+      composeBody.scrollTop = 0;
+      composeError.textContent = '';
+      composeThreadContext = { inReplyTo, threadId };
+      composeView.style.display = 'flex';
+      nav.style.display = 'none';
+      // Always starts collapsed, regardless of mode — even though reply/
+      // forward come with a real (Re:/Fwd:-prefixed) subject already
+      // filled in, the point of the toggle is to stay out of the way by
+      // default; the subject is still there once expanded, just not
+      // forced into view.
+      setExtraFieldsExpanded(false);
+      // Reply already knows its recipient, so it starts locked (swipeable
+      // right away, nothing to blur out of first); new/forward start as a
+      // plain empty input, same as before this field had a locked state.
+      setAddressLocked(Boolean(to));
+      // Only To is ever visible at this point — Cc/Bcc/Subject get their
+      // own recompute inside setExtraFieldsExpanded() once actually shown.
+      // Not needed when locked (the lock bar has no hint of its own).
+      if (!to) updateFieldHint(composeTo);
+      (to ? composeBody : composeTo).focus();
+      // Focusing (and on mobile, the keyboard animating open) can nudge
+      // scroll position again after the reset above — reassert it once
+      // more on the next frame, once that's settled.
+      requestAnimationFrame(() => {
+        composeBody.scrollTop = 0;
+      });
+    }
+
+    function closeCompose() {
+      composeView.style.display = 'none';
+      nav.style.display = '';
+    }
+
+    // Comma-separated plain addresses only, matching the app's existing
+    // "keep compose simple, no rich contact picker" scope for this pass.
+    function parseAddressList(text) {
+      return text
+        .split(',')
+        .map((address) => address.trim())
+        .filter(Boolean)
+        .map((address) => ({ address }));
+    }
+
+    let composeSending = false;
+    async function sendComposeMessage() {
+      if (composeSending) return;
+      const to = parseAddressList(composeTo.value);
+      if (to.length === 0) {
+        composeError.textContent = 'Add at least one recipient.';
+        return;
+      }
+      composeSending = true;
+      composeError.textContent = '';
+      try {
+        const res = await fetch('/api/mail/quick-send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            to,
+            cc: parseAddressList(composeCc.value),
+            bcc: parseAddressList(composeBcc.value),
+            subject: composeSubject.value,
+            text: composeBody.value,
+            inReplyTo: composeThreadContext?.inReplyTo,
+            threadId: composeThreadContext?.threadId,
+          }),
+        });
+        if (!res.ok) throw new Error(`status ${res.status}`);
+        closeCompose();
+      } catch (err) {
+        composeError.textContent = 'Could not send — check your connection and try again.';
+      } finally {
+        composeSending = false;
+      }
+    }
+
+    // --- Address bar swipe-reveal (discard / send) -----------------------
+    // Same reveal-then-tap shape as a card's swipe-revealed Reply/Forward,
+    // just bidirectional and scoped to this one row instead of #feed:
+    // dragging the bar (never while it's an actively-focused input — see
+    // the activeElement checks below) live-follows the finger, snaps open
+    // on whichever side was dragged past a threshold or closed otherwise,
+    // and only a separate subsequent tap on the revealed icon commits
+    // anything. Send is only reachable while the address is locked (a real
+    // recipient is confirmed) — there's nothing to send to otherwise, so
+    // the swipe is clamped to the discard side only in that state.
+    // Deliberately a few px less than the button's own 64px width (see
+    // .address-swipe-actions button) rather than an exact match — the bar
+    // itself has rounded corners (the gradient border), so its trailing
+    // edge curves away right at the corners as it slides open. Matching
+    // the reveal distance to the button's width exactly left that curved
+    // notch landing right at the button's own edge, exposing whatever's
+    // behind through the gap. Stopping a few px short instead means the
+    // button's solid color always extends past where the bar's edge
+    // (curved corners included) ends, so the notch lands on solid button
+    // color with margin to spare.
+    const ADDRESS_REVEAL_PX = 58;
+    const ADDRESS_OPEN_THRESHOLD_PX = 28;
+    let addressGestureDirection = null; // null | 'swipe' | 'scroll'
+    let addressPressStartX = 0;
+    let addressPressStartY = 0;
+    let addressOpenSide = null; // 'send' | 'discard' | null
+
+    function closeAddressSwipe() {
+      addressOpenSide = null;
+      addressFront.style.transition = '';
+      addressFront.style.transform = '';
+    }
+
+    addressFront.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      if (document.activeElement === composeTo) return; // actively typing — leave native cursor/selection alone
+      addressGestureDirection = null;
+      addressPressStartX = e.clientX;
+      addressPressStartY = e.clientY;
+    });
+
+    addressFront.addEventListener('pointermove', (e) => {
+      if (document.activeElement === composeTo && addressGestureDirection === null) return;
+      const dx = e.clientX - addressPressStartX;
+      const dy = e.clientY - addressPressStartY;
+      if (addressGestureDirection === null) {
+        if (Math.hypot(dx, dy) <= LONG_PRESS_MOVE_TOLERANCE_PX) return;
+        addressGestureDirection = Math.abs(dx) > Math.abs(dy) ? 'swipe' : 'scroll';
+        // If the raw input grabbed native focus in the instant before we
+        // could tell this was a drag, drop it now — a swipe should never
+        // leave the field in edit mode or pop the keyboard open mid-drag.
+        if (addressGestureDirection === 'swipe' && document.activeElement === composeTo) composeTo.blur();
+      }
+      if (addressGestureDirection !== 'swipe') return; // vertical — let native scroll of .compose-fields proceed
+      e.preventDefault();
+      const locked = addressLockBar.style.display !== 'none';
+      const openOffset = addressOpenSide === 'send' ? -ADDRESS_REVEAL_PX : addressOpenSide === 'discard' ? ADDRESS_REVEAL_PX : 0;
+      const minX = locked ? -ADDRESS_REVEAL_PX : 0;
+      const offset = Math.min(ADDRESS_REVEAL_PX, Math.max(minX, openOffset + dx));
+      addressFront.style.transition = 'none';
+      addressFront.style.transform = `translateX(${offset}px)`;
+    });
+
+    addressFront.addEventListener('pointerup', (e) => {
+      addressFront.style.transition = '';
+      if (addressGestureDirection !== 'swipe') {
+        addressGestureDirection = null;
+        return;
+      }
+      const dx = e.clientX - addressPressStartX;
+      const locked = addressLockBar.style.display !== 'none';
+      const openOffset = addressOpenSide === 'send' ? -ADDRESS_REVEAL_PX : addressOpenSide === 'discard' ? ADDRESS_REVEAL_PX : 0;
+      const finalOffset = openOffset + dx;
+      if (locked && finalOffset < -ADDRESS_OPEN_THRESHOLD_PX) {
+        addressFront.style.transform = `translateX(${-ADDRESS_REVEAL_PX}px)`;
+        addressOpenSide = 'send';
+      } else if (finalOffset > ADDRESS_OPEN_THRESHOLD_PX) {
+        addressFront.style.transform = `translateX(${ADDRESS_REVEAL_PX}px)`;
+        addressOpenSide = 'discard';
+      } else {
+        closeAddressSwipe();
+      }
+      addressGestureDirection = null;
+    });
+    addressFront.addEventListener('pointercancel', () => {
+      addressGestureDirection = null;
+      closeAddressSwipe();
+    });
+
+    // A tap anywhere else in the compose view closes an open reveal
+    // instead of leaving it hanging open — matches the card swipe's
+    // outside-tap-closes behavior.
+    composeView.addEventListener('click', (e) => {
+      if (addressOpenSide && !addressWrap.contains(e.target)) closeAddressSwipe();
+    });
+
+    addressDiscardBtn.addEventListener('click', () => {
+      closeAddressSwipe();
+      closeCompose();
+    });
+    addressSendBtn.addEventListener('click', () => {
+      closeAddressSwipe();
+      sendComposeMessage();
+    });
+
+    function formatFullDate(iso) {
+      return new Date(iso).toLocaleString(undefined, {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      });
+    }
+
+    // Reply/forward both need the complete message (real Message-ID for
+    // threading, full body to quote/forward) — ensureFullBodyLoaded()
+    // already fetches and caches this on demand and is a no-op if the card
+    // was already expanded, so there's no separate fetch path to maintain
+    // here.
+    async function openReplyCompose(card) {
+      closeSwipe(card);
+      markRead(card);
+      await ensureFullBodyLoaded(card);
+      const msg = cardData.get(card);
+      if (!msg) return;
+      const subject = msg.subject?.startsWith('Re: ') ? msg.subject : `Re: ${msg.subject || ''}`;
+      const quoted = (bestPreviewText(msg) || '')
+        .split('\n')
+        .map((line) => `> ${line}`)
+        .join('\n');
+      const senderLabel = msg.from?.name || msg.from?.address || 'them';
+      openCompose({
+        mode: 'reply',
+        to: msg.from?.address || '',
+        subject,
+        body: `\n\nOn ${formatFullDate(msg.receivedAt)}, ${senderLabel} wrote:\n${quoted}`,
+        inReplyTo: msg.messageId,
+        threadId: msg.threadId,
+      });
+    }
+
+    async function openForwardCompose(card) {
+      closeSwipe(card);
+      markRead(card);
+      await ensureFullBodyLoaded(card);
+      const msg = cardData.get(card);
+      if (!msg) return;
+      const subject = msg.subject?.startsWith('Fwd: ') ? msg.subject : `Fwd: ${msg.subject || ''}`;
+      const fromLabel = msg.from?.name ? `${msg.from.name} <${msg.from.address}>` : msg.from?.address || '';
+      const toLabel = (msg.to || []).map((a) => a.address).join(', ');
+      const original = bestPreviewText(msg) || '';
+      openCompose({
+        mode: 'forward',
+        to: '',
+        subject,
+        body:
+          `\n\n---------- Forwarded message ----------\n` +
+          `From: ${fromLabel}\nDate: ${formatFullDate(msg.receivedAt)}\n` +
+          `Subject: ${msg.subject || ''}\nTo: ${toLabel}\n\n${original}`,
+      });
+    }
+
+    // One consolidated gesture recognizer for #feed, covering four
+    // behaviors that all start as "a pointer went down somewhere in the
+    // feed": tap (expand/collapse or select), long-press (enter selection
+    // mode), horizontal swipe on a card (reveal Reply/Forward), and a
+    // vertical pull while already at the top of the feed (reveal the new
+    // email shelf). Pointer Events unify mouse and touch behind one event
+    // model, so this works the same way on both without separate
+    // mousedown/touchstart handling.
+    //
+    // Direction is decided ONCE per gesture, the first time movement
+    // crosses LONG_PRESS_MOVE_TOLERANCE_PX — horizontal-dominant commits to
+    // 'swipe', vertical-dominant-while-pulling-down-from-the-top commits to
+    // 'pull', anything else vertical is left alone as plain native scroll
+    // (unchanged from before this gesture consolidation existed). Once
+    // committed to 'swipe' or 'pull', the long-press timer is cancelled and
+    // preventDefault() is called on further moves so native scroll doesn't
+    // fight the transform being driven by hand below — .card-front's
+    // touch-action: pan-y (see its CSS) is what lets the browser still own
+    // plain vertical scrolling right up until that point.
     const LONG_PRESS_MS = 500;
     const LONG_PRESS_MOVE_TOLERANCE_PX = 10;
+    const SWIPE_REVEAL_PX = 144; // two 72px action buttons — matches .card-swipe-actions CSS
+    const SWIPE_OPEN_THRESHOLD_PX = 40;
+    const PULL_OPEN_THRESHOLD_PX = 40;
+
     let pressTimer = null;
     let pressStartX = 0;
     let pressStartY = 0;
-    let pressCard = null;
+    let activeCard = null; // the card this gesture started on, for its whole duration
     let longPressFired = false;
+    let gestureDirection = null; // null | 'swipe' | 'pull' | 'scroll'
+    let gestureStartedAtTop = false;
+    let openSwipeCard = null; // the one card currently swiped open, if any
 
-    function cancelPress() {
+    function cancelLongPress() {
       if (pressTimer !== null) clearTimeout(pressTimer);
       pressTimer = null;
-      pressCard = null;
+    }
+
+    // Snaps a card's swipe-reveal shut. Safe to call on a card that isn't
+    // open — used both as the deliberate "close" action and defensively
+    // (e.g. before opening a different card).
+    function closeSwipe(card) {
+      if (!card) return;
+      card.classList.remove('swipe-open');
+      const front = card.querySelector('.card-front');
+      if (front) {
+        front.style.transition = '';
+        front.style.transform = '';
+      }
+      if (openSwipeCard === card) openSwipeCard = null;
     }
 
     feed.addEventListener('pointerdown', (e) => {
       if (e.button !== 0) return; // primary mouse button / the actual touch point only
       const card = e.target.closest('.card');
-      if (!card || e.target.closest('.card-select')) return;
-      pressCard = card;
+      if (!card || e.target.closest('.card-select') || e.target.closest('.card-swipe-actions')) return;
+      activeCard = card;
       pressStartX = e.clientX;
       pressStartY = e.clientY;
+      gestureDirection = null;
+      gestureStartedAtTop = feed.scrollTop <= 0;
       pressTimer = setTimeout(() => {
         longPressFired = true;
         toggleSelect(card);
         pressTimer = null;
       }, LONG_PRESS_MS);
     });
+
     feed.addEventListener('pointermove', (e) => {
-      if (!pressCard) return;
-      const moved = Math.hypot(e.clientX - pressStartX, e.clientY - pressStartY);
-      if (moved > LONG_PRESS_MOVE_TOLERANCE_PX) cancelPress();
+      if (!activeCard) return;
+      const dx = e.clientX - pressStartX;
+      const dy = e.clientY - pressStartY;
+
+      if (gestureDirection === null) {
+        if (Math.hypot(dx, dy) <= LONG_PRESS_MOVE_TOLERANCE_PX) return; // not enough movement to decide yet
+        cancelLongPress();
+        if (Math.abs(dx) > Math.abs(dy)) {
+          gestureDirection = 'swipe';
+        } else if (dy > 0 && gestureStartedAtTop) {
+          gestureDirection = 'pull';
+        } else {
+          gestureDirection = 'scroll'; // vertical, native — nothing further for this gesture to do
+        }
+      }
+
+      if (gestureDirection === 'swipe') {
+        e.preventDefault();
+        const front = activeCard.querySelector('.card-front');
+        const openOffset = activeCard === openSwipeCard ? -SWIPE_REVEAL_PX : 0;
+        const offset = Math.min(0, Math.max(-SWIPE_REVEAL_PX, openOffset + dx));
+        front.style.transition = 'none';
+        front.style.transform = `translateX(${offset}px)`;
+      } else if (gestureDirection === 'pull') {
+        e.preventDefault();
+        // shelf.offsetHeight is its real layout height regardless of its
+        // current transform (transforms don't affect layout box size), so
+        // this stays correct without duplicating the height as a JS
+        // constant that could drift from the CSS.
+        const shelfHeight = shelf.offsetHeight;
+        const offset = Math.min(shelfHeight, Math.max(0, dy));
+        shelf.style.transition = 'none';
+        shelf.style.transform = `translateY(${offset - shelfHeight}px)`;
+      }
     });
-    feed.addEventListener('pointerup', cancelPress);
-    feed.addEventListener('pointercancel', cancelPress);
+
+    feed.addEventListener('pointerup', (e) => {
+      cancelLongPress();
+      if (gestureDirection === 'swipe' && activeCard) {
+        const front = activeCard.querySelector('.card-front');
+        front.style.transition = '';
+        const dx = e.clientX - pressStartX;
+        const wasOpen = activeCard === openSwipeCard;
+        const finalOffset = (wasOpen ? -SWIPE_REVEAL_PX : 0) + dx;
+        if (openSwipeCard && openSwipeCard !== activeCard) closeSwipe(openSwipeCard);
+        if (finalOffset < -SWIPE_OPEN_THRESHOLD_PX) {
+          activeCard.classList.add('swipe-open');
+          front.style.transform = `translateX(${-SWIPE_REVEAL_PX}px)`;
+          openSwipeCard = activeCard;
+        } else {
+          closeSwipe(activeCard);
+        }
+      } else if (gestureDirection === 'pull') {
+        shelf.style.transition = '';
+        const dy = e.clientY - pressStartY;
+        if (dy > PULL_OPEN_THRESHOLD_PX) openShelf();
+        else closeShelf();
+      }
+      activeCard = null;
+      gestureDirection = null;
+    });
+    feed.addEventListener('pointercancel', () => {
+      cancelLongPress();
+      if (gestureDirection === 'swipe' && activeCard) closeSwipe(activeCard);
+      if (gestureDirection === 'pull') closeShelf();
+      activeCard = null;
+      gestureDirection = null;
+    });
 
     feed.addEventListener('click', (e) => {
+      // A tap anywhere in the feed while the shelf is open closes it
+      // instead of acting on whatever was tapped — the shelf's own button
+      // has its own listener and never reaches this handler, since the
+      // shelf isn't a descendant of #feed.
+      if (shelf.classList.contains('open')) {
+        closeShelf();
+        return;
+      }
+
+      // Reply/Forward buttons handle their own clicks (see buildCard) —
+      // don't also run card-click logic for the card they sit behind.
+      if (e.target.closest('.card-swipe-actions')) return;
+
+      // A tap anywhere outside the currently-open swiped card closes it
+      // instead of performing whatever that tap would otherwise do —
+      // standard swipe-list UX (matches e.g. iOS Mail).
+      if (openSwipeCard && !openSwipeCard.contains(e.target)) {
+        closeSwipe(openSwipeCard);
+        return;
+      }
+
       // The click that follows a long-press's pointerup would otherwise
       // also toggle expand right after entering selection mode — consume
       // it here instead.
@@ -1178,7 +2246,9 @@
         // HTMLElement (a Comment works fine for the per-message markers
         // below since those only ever get replaceWith()'d, nothing reads
         // a position off of them).
-        const anchor = requestedPageToken ? sentinel : feed.querySelector('.card') || sentinel;
+        // .card-wrap, not .card — the actual direct child of #feed now
+        // that each card is nested inside a wrapper (see buildCard()).
+        const anchor = requestedPageToken ? sentinel : feed.querySelector('.card-wrap') || sentinel;
         const boundaryMarker = document.createElement('div');
         boundaryMarker.style.cssText = 'height:1px;margin:0;padding:0;border:0;';
         boundaryMarker.dataset.batchIndex = String(batchesLoaded);
@@ -1193,7 +2263,7 @@
         if (toFetch.length) {
           for (const summary of toFetch) {
             const card = buildCard(summary);
-            feed.insertBefore(card, anchor);
+            feed.insertBefore(card.parentElement, anchor);
             updateBodyOverflow(card);
           }
           if (feedStatus.isConnected) feedStatus.remove();
@@ -1301,14 +2371,16 @@
         }
 
         if (event.type === 'messageDeleted') {
-          feed.querySelector(`[data-id="${CSS.escape(event.messageId)}"]`)?.remove();
+          // .closest('.card-wrap') — removing just the .card would leave
+          // an empty wrapper (and its .card-hum glow) behind.
+          feed.querySelector(`[data-id="${CSS.escape(event.messageId)}"]`)?.closest('.card-wrap')?.remove();
         }
       };
     }
 
     function prependCard(message) {
       const card = buildCard(message);
-      feed.insertBefore(card, feed.querySelector('.card') || sentinel);
+      feed.insertBefore(card.parentElement, feed.querySelector('.card-wrap') || sentinel);
       updateBodyOverflow(card);
       if (feedStatus.isConnected) feedStatus.remove();
     }
@@ -1512,6 +2584,7 @@
       () => {
         handleScroll(feed.scrollTop);
         checkBatchTrigger();
+        if (openSwipeCard) closeSwipe(openSwipeCard);
       },
       { passive: true }
     );

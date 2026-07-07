@@ -1,0 +1,6 @@
+# Mechanical, no-behavior-change commits that would otherwise pollute blame.
+# Use with: git config blame.ignoreRevsFile .git-blame-ignore-revs
+# (GitHub picks this file up automatically for its blame view.)
+
+# One-time Biome format/lint pass over src/ and web JS
+ca00e0614a897c4e9af736fa911ab42d7d51b417

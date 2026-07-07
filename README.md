@@ -51,11 +51,57 @@ Single-user. One person's mail, one set of credentials, one backend instance. Mu
 
 ### AI protocol
 
-The backend acts as a strict intermediary: it extracts structured metadata from each incoming email (sender, subject, snippet, thread context — not raw body by default) and sends it to the model as a typed request. The model returns a typed response: classification, priority, suggested action, and optionally a draft reply. The Vercel AI SDK's `generateObject` enforces the response schema, so the model is a pure function from the application's perspective — structured in, structured out, no direct mail access. Swapping models (local or hosted) requires no application code changes.
+The backend acts as a strict intermediary: it extracts structured metadata from each incoming email (sender, subject, snippet, thread context — not raw body by default) and sends it to the model as a typed request. The model returns a typed response — a `ModelDecision` — validated against a schema before any application code sees it. The Vercel AI SDK's `generateObject` enforces this schema at the call site, so the model is a pure function from the application's perspective: structured in, structured out, no direct mail access. Swapping models (local or hosted) requires no application code changes.
+
+#### The "form": `ModelDecision`
+
+`ModelDecision` (`src/ai/types.ts`) is a discriminated union — one member per action the app knows how to carry out, filled out by the model from the email plus whatever context (memories, allowed actions) the request includes. Adding a new capability means adding a new union member; there is deliberately no generic/free-form action, and no send/delete variant exists at all, so a model output can never represent those regardless of what the model tries to produce.
+
+Current + planned members:
+
+- `classify` — labels the email (implemented)
+- `prioritize` — urgent/normal/low (implemented)
+- `move` — file into a folder (implemented)
+- `draftReply` — saves an inert draft for the user to review/edit/send; never auto-sends (implemented)
+- `unsubscribe` *(planned)* — flags a promotional email as an unsubscribe candidate
+- `acceptMeeting` / `addToCalendar` *(planned)* — flags a calendar-invite email and the app's read on it (accept/decline/tentative, conflicts, etc.)
+
+#### Safety principle: the model classifies, the app supplies facts
+
+For any action where a wrong concrete value would be harmful — a URL that gets clicked, a calendar event that gets created — that value must come from the app's own deterministic extraction, never from the model:
+
+- **Unsubscribe**: the app parses the real `List-Unsubscribe` / `List-Unsubscribe-Post` headers (RFC 8058) itself. The model is only ever asked to classify "is this worth unsubscribing from," never to produce or invent the URL.
+- **Calendar invites**: the app parses the real `.ics` / `text/calendar` MIME part itself. The model classifies intent/urgency, never invents event details.
+
+This is a harder guarantee than "the JSON is well-formed" — a model can produce schema-valid output that is still a hallucinated fact. Anything actionable and fact-like is sourced from the app's own parsing; the model's role is limited to judgment calls (classify, prioritize, draft prose, decide relevance).
+
+#### Validation and retry
+
+`generateObject`'s schema enforcement catches structurally invalid output, but a small/local model can still produce validly-shaped JSON with a wrong enum value or a missing piece of required context — this is expected, not exceptional, given the model sizes realistic on self-hosted hardware (see below). The call site wraps `generateObject` in a bounded retry loop: on a validation failure, the error is fed back to the model as a corrective follow-up ("your last response didn't match the schema: `<error>` — try again"), capped at a couple of attempts, then fails gracefully — the email just doesn't get an automated decision that round, rather than retrying forever or crashing the request that triggered it.
+
+#### Tidy plain-text emails — a separate, on-demand call
+
+The classify/route/draft decision above runs for every new email as it arrives — that's the point of the automation. Tidying a plain-text body for readability (see the "Tidy plain-text emails" setting — currently disabled/tagged `AI` in Settings > Reading; a regex-based version was tried and removed as too fragile against real marketing mail) is **not** bundled into that per-arrival call: it only matters for an email the user actually opens, and running it for every arriving message would pay the (CPU-bound, self-hosted) cost for messages nobody reads. It's a separate call, triggered when a card is expanded and the setting is on, using its own small schema (e.g. `{ tidiedText: string }`) — not part of `ModelDecision`.
+
+#### Provider wiring
+
+The model connection uses the Vercel AI SDK's OpenAI-compatible provider pointed at Ollama's OpenAI-compatible endpoint, rather than an Ollama-specific package — the same adapter then works for any other self-hosted OpenAI-compatible server later (vLLM, LM Studio, ...) purely by changing the base URL, keeping the "swap providers with no code changes" promise intact on the self-hosted side. Hosted providers (Anthropic, OpenAI, ...) use their own first-party SDK provider packages; which one is active is a small, contained config choice, not a different code path per feature.
+
+Configuration for now is via environment variables (`OLLAMA_BASE_URL`, `AI_MODEL`) rather than a settings UI — a real settings UI for this is follow-up work, not yet built.
+
+#### Status
+
+Scaffolding exists (`src/ai/types.ts`: `EmailForModel`, `ModelDecision`; `src/ai/apply.ts`: `applyDecision()` turning a `ModelDecision` into `MailProvider` calls) but no live model call site is wired up yet, and the Vercel AI SDK is not yet an installed dependency. Next implementation step is the actual `generateObject` call plus the validation/retry loop described above — built as a standalone, testable-on-its-own function, *not* yet wired into "new mail arrives → auto-classify." Wiring it into that event flow is a separate follow-up once the call site itself is proven out against the real model.
 
 ### Local AI models (Ollama)
 
-Ollama is a separate concern — it is not bundled with Heimdal and is set up independently. Think of it like a database: Heimdal connects to it over HTTP, it does not manage it. When running locally, Ollama is defined as an optional service in the Docker Compose file and configured in the app settings with its URL (e.g. `http://ollama:11434`). If using a hosted provider instead, the Ollama container is simply not started. Ollama can also run on a separate machine entirely — Heimdal only needs a reachable URL.
+Ollama is a separate concern — it is not bundled with Heimdal and is set up independently. Think of it like a database: Heimdal connects to it over HTTP, it does not manage it. When running locally, Ollama is defined as an optional service in the Docker Compose file (`docker-compose.yml`) and configured via the environment variables above. If using a hosted provider instead, the Ollama container is simply not started. Ollama can also run on a separate machine entirely — Heimdal only needs a reachable URL.
+
+The Compose service binds Ollama's port to `127.0.0.1` only (not `0.0.0.0`) — it has no authentication of its own, so nothing outside the host should be able to reach it directly; Heimdal reaches it over the Compose network at `http://ollama:11434` regardless.
+
+**Model choice on constrained hardware** (validated on a Raspberry Pi 5, 8GB RAM, CPU-only inference — no GPU/NPU Ollama can use): `gemma4:e2b-it-qat` (Gemma 4's edge-optimized, quantization-aware-trained ~2B-effective-parameter variant, ~4.3GB) is the current recommendation. Google specifically targets this variant at edge devices including Raspberry Pi, and it has native structured-output/function-calling support — relevant given the AI protocol above leans entirely on schema-constrained generation. Larger variants (7B-class and up) give better output quality, especially for `draftReply`, at the cost of noticeably slower CPU inference and less RAM headroom for Heimdal + the OS alongside it; swapping is a one-line config change, not a code change, so it's worth A/B-ing once the call site exists.
+
+Ollama loads a model into RAM on first use and unloads it after an idle timeout (`keep_alive`, default 5 minutes) — it is not a constant background RAM cost, but a bursty one shaped by how often mail actually arrives relative to that window.
 
 ## Status
 

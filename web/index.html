@@ -77,37 +77,47 @@
       color: var(--fg-dim);
     }
 
-    /* Holds .card plus .card-hum as siblings — the margin between cards
-       lives here now (not on .card itself), giving the glow below
-       somewhere to actually bleed into, the same reasoning as the
-       compose address bar's .address-hum needing to sit outside
-       .address-swipe-wrap's own overflow:hidden clip. */
+    /* Wraps each .card — the margin between cards lives here (not on
+       .card itself), and the swipe-affordance glow is this element's own
+       box-shadow (see below for why it can't be a child element). */
     .card-wrap {
       position: relative;
       margin: 0 12px 10px;
-    }
-    /* Telegraphs the same swipe-to-reveal-actions affordance the compose
-       address bar's glow does — always on here, since every card is
-       always swipeable (there's no "locked" state to gate it behind).
-       Much smaller/gentler than a first pass at this: with many cards
-       stacked in a whole list (rather than one address bar), the same
-       reach/blur/opacity that worked for a single small bar added up to
-       a wash across the entire screen. */
-    .card-hum {
-      position: absolute;
-      top: 0;
-      bottom: 0;
-      right: 0;
-      width: 40%;
-      border-radius: 0 10px 10px 0;
-      background: linear-gradient(to left, var(--accent), transparent);
-      filter: blur(10px);
-      pointer-events: none;
-      animation: card-hum-breathe 4.2s ease-in-out infinite;
-    }
-    @keyframes card-hum-breathe {
-      0%, 100% { opacity: 0.16; }
-      50% { opacity: 0.38; }
+      border-radius: 10px; /* shapes the glow shadow below to the card's corners */
+      /* Skip rendering (style/layout/paint) for cards outside the
+         viewport — with hundreds of cards loaded, only the visible
+         handful cost anything. The intrinsic-size is a stand-in height
+         for not-yet-rendered cards (meta + subject + padding; collapsed
+         cards have no body text in the list view) so scrollbar math
+         stays sane; the `auto` keyword makes the browser remember each
+         card's real size once rendered, so expanded cards keep their
+         true height when scrolled away and back. Note: this also turns
+         on paint containment, which clips all DESCENDANT painting to
+         the wrap's box — anything meant to bleed past the card's edge
+         (like the swipe-affordance glow below) must be an own-property
+         of the wrap (box-shadow, outline), never a child element.
+         Browsers without support (iOS Safari < 18) simply ignore this
+         and render everything, as before. */
+      content-visibility: auto;
+      contain-intrinsic-size: auto 80px;
+      /* Telegraphs the swipe-to-reveal-actions affordance, same idea as
+         the compose address bar's glow: a faint accent halo around the
+         whole card (first shadow), leaning slightly stronger off the
+         RIGHT edge (second shadow, positive x-offset + negative spread)
+         to match the border gradient's strong edge, where Reply/Forward
+         hide. Box-shadows on the wrap itself rather than a child glow
+         element: an earlier version painted a gradient child behind the
+         card, but the card is opaque, so the only visible part was ever
+         its blur bleeding past the edge — and per-card animated blur
+         was the main thing making the app slow on phones (and paint
+         containment above would clip a child's bleed anyway). The
+         element's own shadow is exempt from its paint containment,
+         renders outside the box by nature, and is a static one-time
+         raster. Do not re-add per-card filters or always-on
+         animations. */
+      box-shadow:
+        0 0 9px color-mix(in srgb, var(--accent) 16%, transparent),
+        7px 0 12px -7px color-mix(in srgb, var(--accent) 30%, transparent);
     }
     /* .card is now just a thin positioning/clipping shell — border and
        radius live here so the card's outer look is unaffected by swipe
@@ -284,11 +294,14 @@
        loadMore()) — nothing here changes size after it's first shown, so
        max-height (shrink-to-fit, capped) rather than a fixed height is
        correct: short bodies just take up less room instead of leaving
-       padding. --fade-height is set in JS (updateBodyOverflow) as a
-       fraction of the wrap's own actual rendered height, capped at 1.5em
-       — so a one-line body gets a small, proportional fade instead of
-       either a fixed-size fade that swamps it or (the previous approach)
-       no fade at all just because nothing happened to be truncated. */
+       padding. The fade height is a fraction of the wrap's own height,
+       capped at 1.8em — so a one-line body gets a small, proportional
+       fade instead of either a fixed-size fade that swamps it or no fade
+       at all just because nothing happened to be truncated. Pure CSS
+       (min() of an em cap and a percentage of the wrap): an earlier JS
+       version computed the same thing per card via getComputedStyle +
+       clientHeight, which forced a reflow for every card in the batch
+       insert loop. */
     .card-body-wrap {
       position: relative;
       max-height: 4.5em; /* ~3 lines at the line-height below */
@@ -300,7 +313,7 @@
       left: 0;
       right: 0;
       bottom: 0;
-      height: var(--fade-height, 1.8em);
+      height: min(1.8em, 60%);
       /* A plain two-stop transparent-to-opaque gradient isn't perceived as
          linear — the eye reads it as fading fast, then hitting a wall near
          the opaque end. These extra stops follow an eased curve instead,
@@ -1253,29 +1266,13 @@
       // #feed — see the call sites below, which insert card.parentElement
       // rather than card. Keeping buildCard() return the .card element
       // itself (unchanged) means everything else that already treats its
-      // return value as the card — cardData, updateBodyOverflow, the
-      // click/swipe gesture handling's closest('.card') — needs no change.
+      // return value as the card — cardData, the click/swipe gesture
+      // handling's closest('.card') — needs no change.
       const wrap = document.createElement('div');
       wrap.className = 'card-wrap';
-      const hum = document.createElement('div');
-      hum.className = 'card-hum';
-      wrap.append(hum, card);
+      wrap.append(card);
 
       return card;
-    }
-
-    // Only relevant once a card is actually laid out in the DOM (a
-    // detached element always reports 0 for these) — call right after
-    // inserting. Sizes the fade to a fraction of the wrap's own actual
-    // height (capped at 1.8em) rather than a fixed height, so a one-line
-    // body — sender/address/time, then a one-word subject, then a single
-    // line of text — still visibly fades instead of the effect only ever
-    // showing up on cards tall enough for a fixed-size fade to fit inside.
-    function updateBodyOverflow(card) {
-      const wrap = card.querySelector('.card-body-wrap');
-      const maxFadeHeightPx = 1.8 * parseFloat(getComputedStyle(wrap).fontSize);
-      const fadeHeightPx = Math.min(wrap.clientHeight * 0.6, maxFadeHeightPx);
-      wrap.style.setProperty('--fade-height', `${fadeHeightPx}px`);
     }
 
     // Settings > Reading > "Automatically load images" — off by default
@@ -1483,7 +1480,6 @@
         const bodyEl = card.querySelector('.card-body');
         bodyEl.textContent = bestPreviewText(data) || '(empty message)';
       }
-      updateBodyOverflow(card);
     }
 
     async function ensureFullBodyLoaded(card) {
@@ -2150,12 +2146,17 @@
         ensureFullBodyLoaded(card);
         markRead(card);
       } else {
-        // Re-measure now that we're back to the clipped, collapsed
-        // height: while expanded, .card-body-wrap has no max-height at
-        // all, so the fade computed there was sized against the full,
-        // uncapped content — needs recomputing against the collapsed
-        // height now that it's clipped again.
-        updateBodyOverflow(card);
+        // Tear the rendered body down, don't just clip it: an HTML email
+        // leaves behind a live iframe (its own document, styles, decoded
+        // images) plus the ResizeObserver watching it, and before this
+        // teardown every message expanded during a session stayed
+        // resident forever — a leak that grew with reading activity.
+        // Re-expanding is cheap: the full message stays cached in
+        // cardData, and clearing renderedWithSettings makes
+        // ensureFullBodyLoaded fall through to that cache (no refetch)
+        // and rebuild the render.
+        clearRenderedBody(card);
+        delete card.dataset.renderedWithSettings;
       }
     });
 
@@ -2170,20 +2171,24 @@
     const PAGE_SIZE = 100;
 
     // Buffer is measured in batches, not pixels — see the reasoning below
-    // at checkBatchTrigger. Load 10 batches to start, then whenever
-    // scrolling brings the reader within 5 loaded batches of the end,
-    // load 10 more. So: load 1-10 up front; reaching batch 5 (5 of the 10
-    // remaining) loads 11-20; reaching batch 15 (5 of those 20 remaining)
-    // loads 21-30; and so on indefinitely, always keeping at least 5
-    // batches of runway ahead once warmed up.
-    const INITIAL_BATCHES = 10;
-    const LOAD_AHEAD_BATCHES = 10;
-    const TRIGGER_BATCHES_REMAINING = 5;
+    // at checkBatchTrigger. Load 3 batches (300 cards) up front, then
+    // whenever scrolling brings the reader within 1 loaded batch (~100
+    // cards, 10+ phone screens) of the end, load 3 more. These used to be
+    // 10/10/5 — a 1000-card cold start chosen to hide slow IMAP bursts,
+    // from back when every inserted card also cost a blurred animated
+    // layer and a forced reflow. Now that cards are cheap to insert,
+    // these are the tuning knobs if the runway ever feels short against a
+    // slow IMAP server: bumping them back up is safe, just start-up
+    // weight. (TRIGGER at 1, not 2: with 3 initial batches, a trigger of
+    // 2 resolves to the marker at offset ~0, which is always "reached" —
+    // it would cascade an extra load immediately on startup.)
+    const INITIAL_BATCHES = 3;
+    const LOAD_AHEAD_BATCHES = 3;
+    const TRIGGER_BATCHES_REMAINING = 1;
 
     let batchesLoaded = 0;
     let loadingAhead = false;
     const batchBoundaries = []; // batchBoundaries[i] = permanent marker at the start of batch i (0-indexed)
-    let previousBatchAvailableAt = null; // temporary debug timing — see loadMore()
 
     let nextPageToken = null;
     let loadingMore = false;
@@ -2225,11 +2230,6 @@
       if (loadingMore || !folderId) return;
       loadingMore = true;
       const requestedPageToken = nextPageToken;
-      // Temporary debug timing — total time for this page, now that
-      // listMessages() returns real preview snippets directly (see the
-      // backend): there's no longer a separate content-fetch step to time
-      // apart from this.
-      const batchStartedAt = performance.now();
       try {
         const url = new URL('/api/mail/messages', window.location.origin);
         url.searchParams.set('folderId', folderId);
@@ -2278,23 +2278,9 @@
           for (const summary of toFetch) {
             const card = buildCard(summary);
             feed.insertBefore(card.parentElement, anchor);
-            updateBodyOverflow(card);
           }
           if (feedStatus.isConnected) feedStatus.remove();
         }
-
-        // "Available" means cards are actually inserted and visible — the
-        // gap is measured from here, against the same point in the
-        // previous batch, so it reflects what the reader actually
-        // experiences.
-        const availableAt = performance.now();
-        const batchDurationMs = Math.round(availableAt - batchStartedAt);
-        const gapSincePreviousBatchMs =
-          previousBatchAvailableAt !== null ? Math.round(availableAt - previousBatchAvailableAt) : null;
-        previousBatchAvailableAt = availableAt;
-        console.debug(
-          `[batch] #${batchesLoaded + 1} size=${toFetch.length} totalMs=${batchDurationMs} msPerMessage=${toFetch.length ? (batchDurationMs / toFetch.length).toFixed(1) : 'n/a'} gapSincePreviousBatchAvailableMs=${gapSincePreviousBatchMs}`
-        );
 
         nextPageToken = page.nextPageToken || null;
         batchesLoaded++;
@@ -2314,8 +2300,9 @@
     sentinel.style.height = '1px';
     feed.appendChild(sentinel);
 
-    // Triggers 10 more batches once the reader has scrolled to within 5
-    // loaded batches of the end. A plain scroll-position check against the
+    // Triggers LOAD_AHEAD_BATCHES more batches once the reader has
+    // scrolled to within TRIGGER_BATCHES_REMAINING loaded batches of the
+    // end. A plain scroll-position check against the
     // marker recorded at the start of that batch (see boundaryMarker in
     // loadMore()), not IntersectionObserver — two attempts at an
     // IntersectionObserver-based version of this in a row still didn't
@@ -2331,7 +2318,6 @@
       const marker = targetIndex >= 0 ? batchBoundaries[targetIndex] : null;
       if (!marker) return;
       const reached = marker.offsetTop <= feed.scrollTop + feed.clientHeight;
-      console.debug('[pagination] checkBatchTrigger: batchesLoaded=', batchesLoaded, 'targetIndex=', targetIndex, 'reached=', reached);
       if (reached) loadMoreBatches(LOAD_AHEAD_BATCHES);
     }
 
@@ -2386,7 +2372,7 @@
 
         if (event.type === 'messageDeleted') {
           // .closest('.card-wrap') — removing just the .card would leave
-          // an empty wrapper (and its .card-hum glow) behind.
+          // an empty wrapper (and its glow shadow) behind.
           feed.querySelector(`[data-id="${CSS.escape(event.messageId)}"]`)?.closest('.card-wrap')?.remove();
         }
       };
@@ -2395,7 +2381,6 @@
     function prependCard(message) {
       const card = buildCard(message);
       feed.insertBefore(card.parentElement, feed.querySelector('.card-wrap') || sentinel);
-      updateBodyOverflow(card);
       if (feedStatus.isConnected) feedStatus.remove();
     }
 
@@ -2593,12 +2578,24 @@
       }
       lastScrollY = scrollTop;
     }
+    // Scroll events fire far more often than frames render, and both
+    // handleScroll and checkBatchTrigger read layout (scrollTop,
+    // offsetTop, clientHeight) — running them per event forces redundant
+    // synchronous layout work between frames. Coalesce to at most one run
+    // per frame; only closing an open swipe stays immediate, since that's
+    // gesture correctness rather than layout-dependent work.
+    let scrollWorkScheduled = false;
     feed.addEventListener(
       'scroll',
       () => {
-        handleScroll(feed.scrollTop);
-        checkBatchTrigger();
         if (openSwipeCard) closeSwipe(openSwipeCard);
+        if (scrollWorkScheduled) return;
+        scrollWorkScheduled = true;
+        requestAnimationFrame(() => {
+          scrollWorkScheduled = false;
+          handleScroll(feed.scrollTop);
+          checkBatchTrigger();
+        });
       },
       { passive: true }
     );

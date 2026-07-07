@@ -1,10 +1,10 @@
-import { FastifyPluginAsync } from 'fastify';
-import { requireAuth } from '../lib/require-auth';
+import type { FastifyPluginAsync } from 'fastify';
 import {
+  type ImapSecret,
   loadProviderCredentials,
   saveProviderCredentials,
-  type ImapSecret,
 } from '../lib/provider-credentials';
+import { requireAuth } from '../lib/require-auth';
 import { ImapProvider } from '../mail/providers/imap';
 import { mailService } from '../mail/registry';
 
@@ -20,9 +20,7 @@ interface Options {
 function describeError(err: unknown): string {
   if (err instanceof Error) {
     const responseText = (err as { responseText?: unknown }).responseText;
-    return typeof responseText === 'string' && responseText
-      ? `${err.message}: ${responseText}`
-      : err.message;
+    return typeof responseText === 'string' && responseText ? `${err.message}: ${responseText}` : err.message;
   }
   return String(err);
 }
@@ -115,6 +113,6 @@ export const providerSetupRoutes: FastifyPluginAsync<Options> = async (fastify, 
         });
       }
       return reply.send({ ok: true });
-    }
+    },
   );
 };

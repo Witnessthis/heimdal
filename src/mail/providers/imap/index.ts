@@ -1,18 +1,10 @@
-import { ImapFlow, type FetchMessageObject, type MessageEnvelopeObject } from 'imapflow';
-import { simpleParser, type Attachment as MailparserAttachment } from 'mailparser';
-import { BaseProvider } from '../../base-provider';
-import { InvalidRequestError, type ListMessagesOptions, type ProviderKind } from '../../provider';
-import type {
-  DraftInput,
-  EmailAddress,
-  EmailMessage,
-  EmailSummary,
-  Folder,
-  Page,
-  Thread,
-} from '../../types';
+import { type FetchMessageObject, ImapFlow, type MessageEnvelopeObject } from 'imapflow';
+import { type Attachment as MailparserAttachment, simpleParser } from 'mailparser';
 import type { ImapSecret, ProviderConfig } from '../../../lib/provider-credentials';
+import { BaseProvider } from '../../base-provider';
 import { ReconnectingConnection } from '../../lifecycle';
+import { InvalidRequestError, type ListMessagesOptions, type ProviderKind } from '../../provider';
+import type { DraftInput, EmailAddress, EmailMessage, EmailSummary, Folder, Page, Thread } from '../../types';
 import { renderRawMessage, sendMail } from './smtp';
 
 export type ImapProviderConfig = Extract<ProviderConfig, { kind: 'imap' }>;
@@ -68,7 +60,7 @@ function parseReferencesHeader(headers: Buffer | undefined): string[] {
       continue;
     }
     if (collecting && /^[ \t]/.test(line)) {
-      value += ' ' + line.trim();
+      value += ` ${line.trim()}`;
       continue;
     }
     if (collecting) break;
@@ -139,7 +131,7 @@ export class ImapProvider extends BaseProvider {
 
   constructor(
     private config: ImapProviderConfig,
-    private secret: ImapSecret
+    private secret: ImapSecret,
   ) {
     super();
     this.idleConn = new ReconnectingConnection({
@@ -352,11 +344,7 @@ export class ImapProvider extends BaseProvider {
     const envelope = msg.envelope;
     const flags = msg.flags ?? new Set<string>();
     const references = (
-      Array.isArray(parsed?.references)
-        ? parsed.references
-        : parsed?.references
-          ? [parsed.references]
-          : []
+      Array.isArray(parsed?.references) ? parsed.references : parsed?.references ? [parsed.references] : []
     ).map(stripAngleBrackets);
     const threadId =
       references[0] ??
@@ -388,8 +376,7 @@ export class ImapProvider extends BaseProvider {
       hasAttachments: downloadableAttachments.length > 0,
       body: {
         text: parsed?.text,
-        html:
-          typeof parsed?.html === 'string' ? resolveInlineImages(parsed.html, inlineImages) : undefined,
+        html: typeof parsed?.html === 'string' ? resolveInlineImages(parsed.html, inlineImages) : undefined,
       },
       attachments: downloadableAttachments.map((a, i) => ({
         id: a.cid ?? String(i),
@@ -410,7 +397,7 @@ export class ImapProvider extends BaseProvider {
         const msg = await client.fetchOne(
           String(uid),
           { envelope: true, flags: true, source: true },
-          { uid: true }
+          { uid: true },
         );
         if (!msg) throw new Error(`Message not found: ${messageId}`);
         return this.toEmailMessage(folderPath, msg);
@@ -551,7 +538,7 @@ export class ImapProvider extends BaseProvider {
         username: this.config.username,
         smtpPassword,
       },
-      input
+      input,
     );
   }
 }

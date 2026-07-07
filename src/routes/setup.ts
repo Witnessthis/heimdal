@@ -1,4 +1,4 @@
-import { FastifyPluginAsync } from 'fastify';
+import type { FastifyPluginAsync } from 'fastify';
 import { loadCredentials, saveCredentials } from '../lib/credentials';
 import { consumeSetupToken } from '../lib/session';
 
@@ -39,6 +39,6 @@ export const setupRoutes: FastifyPluginAsync<Options> = async (fastify, { dataDi
 
       await saveCredentials(dataDir, password);
       return reply.send({ ok: true });
-    }
+    },
   );
 };

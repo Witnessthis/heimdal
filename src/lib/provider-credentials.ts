@@ -1,6 +1,6 @@
-import { readFile, writeFile, mkdir } from 'fs/promises';
-import { join } from 'path';
-import { loadOrCreateMasterKey, encrypt, decrypt } from './crypto';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { decrypt, encrypt, loadOrCreateMasterKey } from './crypto';
 
 /** Connection details for the configured provider. No secrets here — those
  *  live separately in ProviderSecret, encrypted at rest. Shaped so Gmail's
@@ -42,7 +42,7 @@ const FILE_NAME = 'provider-credentials.json';
 export async function saveProviderCredentials(
   dataDir: string,
   config: ProviderConfig,
-  secret: ProviderSecret
+  secret: ProviderSecret,
 ): Promise<void> {
   await mkdir(dataDir, { recursive: true });
   const key = await loadOrCreateMasterKey(dataDir);
@@ -54,7 +54,7 @@ export async function saveProviderCredentials(
 }
 
 export async function loadProviderCredentials(
-  dataDir: string
+  dataDir: string,
 ): Promise<{ config: ProviderConfig; secret: ProviderSecret } | null> {
   try {
     const raw = await readFile(join(dataDir, FILE_NAME), 'utf-8');
@@ -70,10 +70,7 @@ export async function loadProviderCredentials(
   }
 }
 
-export async function updateProviderSecret(
-  dataDir: string,
-  secret: ProviderSecret
-): Promise<void> {
+export async function updateProviderSecret(dataDir: string, secret: ProviderSecret): Promise<void> {
   const existing = await loadProviderCredentials(dataDir);
   if (!existing) throw new Error('No provider configured');
   await saveProviderCredentials(dataDir, existing.config, secret);
@@ -81,7 +78,7 @@ export async function updateProviderSecret(
 
 export async function clearProviderCredentials(dataDir: string): Promise<void> {
   try {
-    const { unlink } = await import('fs/promises');
+    const { unlink } = await import('node:fs/promises');
     await unlink(join(dataDir, FILE_NAME));
   } catch {
     // already gone, that's fine

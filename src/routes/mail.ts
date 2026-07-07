@@ -1,7 +1,7 @@
-import { FastifyPluginAsync } from 'fastify';
+import type { FastifyPluginAsync } from 'fastify';
 import { requireAuth } from '../lib/require-auth';
-import { mailService } from '../mail/registry';
 import { InvalidRequestError } from '../mail/provider';
+import { mailService } from '../mail/registry';
 import type { EmailAddress } from '../mail/types';
 
 interface Options {
@@ -105,7 +105,7 @@ export const mailRoutes: FastifyPluginAsync<Options> = async (fastify) => {
         pageSize: pageSize ? Number(pageSize) : undefined,
       });
       return reply.send(page);
-    }
+    },
   );
 
   fastify.get<{ Params: { id: string } }>('/messages/:id', async (request, reply) => {
@@ -147,7 +147,7 @@ export const mailRoutes: FastifyPluginAsync<Options> = async (fastify) => {
     async (request, reply) => {
       await mailService.getProvider().moveToFolder(request.params.id, request.body.folderId);
       return reply.send({ ok: true });
-    }
+    },
   );
 
   fastify.post<{ Params: { id: string } }>('/messages/:id/archive', async (request, reply) => {
@@ -194,6 +194,6 @@ export const mailRoutes: FastifyPluginAsync<Options> = async (fastify) => {
         threadId: body.threadId,
       });
       return reply.send(result);
-    }
+    },
   );
 };

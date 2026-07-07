@@ -1,10 +1,10 @@
-import { EventEmitter } from 'events';
-import type { MailEvent, MailProvider } from './provider';
+import { EventEmitter } from 'node:events';
 import {
   loadProviderCredentials,
   type ProviderConfig,
   type ProviderSecret,
 } from '../lib/provider-credentials';
+import type { MailEvent, MailProvider } from './provider';
 import { ImapProvider } from './providers/imap';
 
 function instantiateProvider(config: ProviderConfig, secret: ProviderSecret): MailProvider {

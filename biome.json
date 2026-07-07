@@ -6,7 +6,7 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": ["**", "!**/*.html", "!web/icons/**"]
+    "includes": ["**", "!**/*.html", "!web/icons"]
   },
   "formatter": {
     "enabled": true,
@@ -22,7 +22,7 @@
   "linter": {
     "enabled": true,
     "rules": {
-      "recommended": true
+      "preset": "recommended"
     }
   }
 }

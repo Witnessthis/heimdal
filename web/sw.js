@@ -8,13 +8,13 @@
 // all, so everything goes to the network. Offline support returns in the
 // upcoming build-tooling refactor as a properly versioned worker at this
 // same URL — do not rename or drop sw.js while old clients may exist.
-self.addEventListener("install", () => self.skipWaiting());
+self.addEventListener('install', () => self.skipWaiting());
 
-self.addEventListener("activate", (event) => {
+self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches
       .keys()
       .then((keys) => Promise.all(keys.map((key) => caches.delete(key))))
-      .then(() => self.clients.claim())
+      .then(() => self.clients.claim()),
   );
 });

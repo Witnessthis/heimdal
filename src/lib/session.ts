@@ -1,4 +1,4 @@
-import { randomBytes, timingSafeEqual } from 'crypto';
+import { randomBytes, timingSafeEqual } from 'node:crypto';
 
 let setupToken: string | null = null;
 const sessions = new Set<string>();
@@ -50,4 +50,3 @@ export function consumePendingTotpToken(token: string): boolean {
   pendingTotpTokens.delete(token);
   return Date.now() < entry.expiresAt;
 }
-

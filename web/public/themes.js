@@ -9,7 +9,7 @@
 // actually uses: a background/elevated-background pair, foreground, and
 // the 8 standard ANSI colors. "heimdal" is the app's original hand-picked
 // palette, kept as the default.
-(function (global) {
+((global) => {
   const THEMES = {
     heimdal: {
       label: 'Heimdal',

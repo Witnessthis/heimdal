@@ -1,5 +1,5 @@
-import { EventEmitter } from 'events';
-import type { MailEvent, MailProvider, ListMessagesOptions, ProviderKind } from './provider';
+import { EventEmitter } from 'node:events';
+import type { ListMessagesOptions, MailEvent, MailProvider, ProviderKind } from './provider';
 import type { DraftInput, EmailMessage, EmailSummary, Folder, Page, Thread } from './types';
 
 /** Shared event plumbing for every provider. Concrete providers call

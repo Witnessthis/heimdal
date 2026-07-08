@@ -1,14 +1,15 @@
-import { FastifyPluginAsync } from 'fastify';
+import type { FastifyPluginAsync } from 'fastify';
 import { authenticator } from 'otplib';
 
 authenticator.options = { window: 2 };
+
 import QRCode from 'qrcode';
 import {
-  loadCredentials,
-  setTotpSecret,
-  savePendingTotpSecret,
-  loadPendingTotpSecret,
   clearPendingTotpSecret,
+  loadCredentials,
+  loadPendingTotpSecret,
+  savePendingTotpSecret,
+  setTotpSecret,
 } from '../lib/credentials';
 import { requireAuth } from '../lib/require-auth';
 
@@ -59,6 +60,6 @@ export const totpRoutes: FastifyPluginAsync<Options> = async (fastify, { dataDir
       await setTotpSecret(dataDir, secret);
       await clearPendingTotpSecret(dataDir);
       return reply.send({ ok: true });
-    }
+    },
   );
 };

@@ -1,9 +1,12 @@
 [Unit]
-Description=Heimdal web dev server (live-reload)
+Description=Heimdal dev servers (API + Vite frontend)
 After=network.target
 
 [Service]
 WorkingDirectory={{REPO_DIR}}
+# Lets the Vite dev server accept requests for the Caddy-fronted domain
+# (Vite rejects unknown Host headers by default — see vite.config.ts).
+Environment=HEIMDAL_DEV_DOMAIN={{DOMAIN}}
 ExecStart=/usr/bin/npm run dev
 Restart=on-failure
 

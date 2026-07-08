@@ -34,7 +34,8 @@ sudo systemctl reload caddy
 
 echo "==> Writing systemd user service for the dev server"
 mkdir -p "$HOME/.config/systemd/user"
-sed "s|{{REPO_DIR}}|$REPO_DIR|" "$REPO_DIR/deploy/heimdal-dev.service.template" \
+sed -e "s|{{REPO_DIR}}|$REPO_DIR|" -e "s|{{DOMAIN}}|$DOMAIN|" \
+  "$REPO_DIR/deploy/heimdal-dev.service.template" \
   > "$HOME/.config/systemd/user/heimdal-dev.service"
 
 echo "==> Enabling dev server user service"
@@ -42,4 +43,4 @@ systemctl --user daemon-reload
 systemctl --user enable heimdal-dev
 systemctl --user restart heimdal-dev
 
-echo "==> Done. Caddy is proxying https://$DOMAIN -> localhost:8080 (live-reload dev server)."
+echo "==> Done. Caddy is proxying https://$DOMAIN -> localhost:5173 (Vite dev server)."

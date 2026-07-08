@@ -11,7 +11,7 @@ export class RenewableLease {
       renew: () => Promise<{ expiresAt: Date }>;
       renewMarginMs: number;
       onError: (err: unknown) => void;
-    }
+    },
   ) {}
 
   async start(): Promise<void> {
@@ -55,7 +55,7 @@ export class ReconnectingConnection {
       connect: () => Promise<void>;
       backoff: { initialMs: number; maxMs: number };
       onStateChange: (state: Extract<ConnectionState, 'reconnecting' | 'degraded'>) => void;
-    }
+    },
   ) {}
 
   start(): void {
@@ -78,10 +78,7 @@ export class ReconnectingConnection {
         this.opts.onStateChange('degraded');
       }
       if (this.stopped) return;
-      const delay = Math.min(
-        this.opts.backoff.initialMs * 2 ** this.attempt,
-        this.opts.backoff.maxMs
-      );
+      const delay = Math.min(this.opts.backoff.initialMs * 2 ** this.attempt, this.opts.backoff.maxMs);
       await sleep(delay);
     }
   }

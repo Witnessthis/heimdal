@@ -1,7 +1,7 @@
-import { readFile, writeFile, mkdir } from 'fs/promises';
-import { join } from 'path';
-import { scrypt, randomBytes, timingSafeEqual } from 'crypto';
-import { promisify } from 'util';
+import { randomBytes, scrypt, timingSafeEqual } from 'node:crypto';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { promisify } from 'node:util';
 
 const scryptAsync = promisify(scrypt);
 
@@ -31,11 +31,9 @@ export async function saveCredentials(dataDir: string, password: string): Promis
 
 export async function savePendingTotpSecret(dataDir: string, secret: string): Promise<void> {
   await mkdir(dataDir, { recursive: true });
-  await writeFile(
-    join(dataDir, 'totp-pending.json'),
-    JSON.stringify({ secret, createdAt: Date.now() }),
-    { mode: 0o600 }
-  );
+  await writeFile(join(dataDir, 'totp-pending.json'), JSON.stringify({ secret, createdAt: Date.now() }), {
+    mode: 0o600,
+  });
 }
 
 export async function loadPendingTotpSecret(dataDir: string): Promise<string | null> {
@@ -52,7 +50,7 @@ export async function loadPendingTotpSecret(dataDir: string): Promise<string | n
 
 export async function clearPendingTotpSecret(dataDir: string): Promise<void> {
   try {
-    const { unlink } = await import('fs/promises');
+    const { unlink } = await import('node:fs/promises');
     await unlink(join(dataDir, 'totp-pending.json'));
   } catch {
     // already gone, that's fine

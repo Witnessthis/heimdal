@@ -42,10 +42,7 @@ export async function renderRawMessage(input: DraftInput, from: string): Promise
 }
 
 /** The only function in the IMAP provider that puts a message on the wire. */
-export async function sendMail(
-  config: ImapSmtpConfig,
-  input: DraftInput
-): Promise<{ messageId: string }> {
+export async function sendMail(config: ImapSmtpConfig, input: DraftInput): Promise<{ messageId: string }> {
   const transporter = nodemailer.createTransport({
     host: config.smtpHost,
     port: config.smtpPort,

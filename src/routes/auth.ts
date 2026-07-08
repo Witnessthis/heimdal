@@ -1,12 +1,12 @@
-import { FastifyPluginAsync } from 'fastify';
+import type { FastifyPluginAsync } from 'fastify';
 import { authenticator } from 'otplib';
 import { loadCredentials, verifyCredentials } from '../lib/credentials';
 import {
-  createSession,
-  validateSession,
-  destroySession,
-  createPendingTotpToken,
   consumePendingTotpToken,
+  createPendingTotpToken,
+  createSession,
+  destroySession,
+  validateSession,
 } from '../lib/session';
 
 interface Options {
@@ -48,7 +48,7 @@ export const authRoutes: FastifyPluginAsync<Options> = async (fastify, { dataDir
 
       const token = createSession();
       return reply.setCookie(COOKIE, token, cookieOpts).send({ ok: true });
-    }
+    },
   );
 
   fastify.post<{ Body: { pendingToken: string; code: string } }>(
@@ -79,7 +79,7 @@ export const authRoutes: FastifyPluginAsync<Options> = async (fastify, { dataDir
 
       const token = createSession();
       return reply.setCookie(COOKIE, token, cookieOpts).send({ ok: true });
-    }
+    },
   );
 
   fastify.post('/logout', async (request, reply) => {

@@ -41,6 +41,16 @@ let pressStartY = 0;
 let gestureActive = false;
 let activeCard: HTMLElement | null = null; // the card this gesture started on, if any
 let longPressFired = false;
+// A drag that ends by revealing something (opening the shelf, or
+// swiping a card open) is immediately followed — on iOS Safari in
+// particular — by a synthetic click at the same target the gesture
+// started on, even though pointermove called preventDefault() the
+// whole time. Without consuming it, that click falls into the generic
+// tap handling below and immediately undoes what the drag just
+// revealed: closes the shelf right back up (isShelfOpen() is now
+// true), or toggles the card's expanded state right after swiping it
+// open. Same shape as longPressFired above, just for this case.
+let dragJustRevealed = false;
 let gestureDirection: 'swipe' | 'pull' | 'scroll' | null = null;
 let gestureStartedAtTop = false;
 
@@ -125,14 +135,19 @@ feed.addEventListener('pointerup', (e) => {
       activeCard.classList.add('swipe-open');
       front.style.transform = `translateX(${-SWIPE_REVEAL_PX}px)`;
       setOpenSwipeCard(activeCard);
+      dragJustRevealed = true;
     } else {
       closeSwipe(activeCard);
     }
   } else if (gestureDirection === 'pull') {
     shelf.style.transition = '';
     const dy = e.clientY - pressStartY;
-    if (dy > PULL_OPEN_THRESHOLD_PX) openShelf();
-    else closeShelf();
+    if (dy > PULL_OPEN_THRESHOLD_PX) {
+      openShelf();
+      dragJustRevealed = true;
+    } else {
+      closeShelf();
+    }
   }
   gestureActive = false;
   activeCard = null;
@@ -148,6 +163,14 @@ feed.addEventListener('pointercancel', () => {
 });
 
 feed.addEventListener('click', (e) => {
+  // The synthetic click trailing the drag that JUST revealed something
+  // (see dragJustRevealed's declaration above) — consume it before any
+  // of the logic below gets a chance to immediately undo that reveal.
+  if (dragJustRevealed) {
+    dragJustRevealed = false;
+    return;
+  }
+
   // A tap anywhere in the feed while the shelf is open closes it
   // instead of acting on whatever was tapped — the shelf's own button
   // has its own listener and never reaches this handler, since the

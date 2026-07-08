@@ -32,7 +32,14 @@ const PULL_OPEN_THRESHOLD_PX = 40;
 let pressTimer: ReturnType<typeof setTimeout> | null = null;
 let pressStartX = 0;
 let pressStartY = 0;
-let activeCard: HTMLElement | null = null; // the card this gesture started on, for its whole duration
+// Whether a gesture is currently being tracked at all — distinct from
+// activeCard, which is null whenever the gesture didn't start on a card
+// (empty feed, or the padding strip above the first card). The pull
+// gesture doesn't need a card under the finger, so it must still be
+// trackable in that case; only swipe (needs a .card-front to drag) and
+// long-press-to-select (needs a card to select) require one.
+let gestureActive = false;
+let activeCard: HTMLElement | null = null; // the card this gesture started on, if any
 let longPressFired = false;
 let gestureDirection: 'swipe' | 'pull' | 'scroll' | null = null;
 let gestureStartedAtTop = false;
@@ -44,34 +51,39 @@ function cancelLongPress(): void {
 
 feed.addEventListener('pointerdown', (e) => {
   if (e.button !== 0) return; // primary mouse button / the actual touch point only
-  const card = (e.target as Element).closest<HTMLElement>('.card');
-  if (
-    !card ||
-    (e.target as Element).closest('.card-select') ||
-    (e.target as Element).closest('.card-swipe-actions')
-  )
-    return;
+  const target = e.target as Element;
+  // The select checkbox and the reply/forward buttons behind a card
+  // handle their own clicks — never start tracking a gesture from them.
+  // Everything else in #feed is fair game, including empty space (no
+  // .card under the finger at all): that's exactly where a pull-to-
+  // reveal gesture starting from the top padding, or in an empty inbox
+  // with no cards yet, needs to still begin.
+  if (target.closest('.card-select') || target.closest('.card-swipe-actions')) return;
+  const card = target.closest<HTMLElement>('.card');
+  gestureActive = true;
   activeCard = card;
   pressStartX = e.clientX;
   pressStartY = e.clientY;
   gestureDirection = null;
   gestureStartedAtTop = feed.scrollTop <= 0;
-  pressTimer = setTimeout(() => {
-    longPressFired = true;
-    toggleSelect(card);
-    pressTimer = null;
-  }, LONG_PRESS_MS);
+  if (card) {
+    pressTimer = setTimeout(() => {
+      longPressFired = true;
+      toggleSelect(card);
+      pressTimer = null;
+    }, LONG_PRESS_MS);
+  }
 });
 
 feed.addEventListener('pointermove', (e) => {
-  if (!activeCard) return;
+  if (!gestureActive) return;
   const dx = e.clientX - pressStartX;
   const dy = e.clientY - pressStartY;
 
   if (gestureDirection === null) {
     if (Math.hypot(dx, dy) <= LONG_PRESS_MOVE_TOLERANCE_PX) return; // not enough movement to decide yet
     cancelLongPress();
-    if (Math.abs(dx) > Math.abs(dy)) {
+    if (activeCard && Math.abs(dx) > Math.abs(dy)) {
       gestureDirection = 'swipe';
     } else if (dy > 0 && gestureStartedAtTop) {
       gestureDirection = 'pull';
@@ -80,7 +92,7 @@ feed.addEventListener('pointermove', (e) => {
     }
   }
 
-  if (gestureDirection === 'swipe') {
+  if (gestureDirection === 'swipe' && activeCard) {
     e.preventDefault();
     const front = activeCard.querySelector<HTMLElement>('.card-front')!;
     const openOffset = activeCard === openSwipeCard ? -SWIPE_REVEAL_PX : 0;
@@ -122,6 +134,7 @@ feed.addEventListener('pointerup', (e) => {
     if (dy > PULL_OPEN_THRESHOLD_PX) openShelf();
     else closeShelf();
   }
+  gestureActive = false;
   activeCard = null;
   gestureDirection = null;
 });
@@ -129,6 +142,7 @@ feed.addEventListener('pointercancel', () => {
   cancelLongPress();
   if (gestureDirection === 'swipe' && activeCard) closeSwipe(activeCard);
   if (gestureDirection === 'pull') closeShelf();
+  gestureActive = false;
   activeCard = null;
   gestureDirection = null;
 });

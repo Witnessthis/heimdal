@@ -10,7 +10,7 @@
 set -euo pipefail
 
 if systemctl is-active --quiet caddy 2>/dev/null; then
-  echo "Caddy is currently running and proxying your domain to localhost:8080." >&2
+  echo "Caddy is currently running and proxying your domain to localhost:5173." >&2
   echo "Starting this now would also expose it through Caddy/your domain," >&2
   echo "which defeats the point of testing purely locally." >&2
   echo "" >&2
@@ -19,7 +19,7 @@ if systemctl is-active --quiet caddy 2>/dev/null; then
 fi
 
 if systemctl --user is-active --quiet heimdal-dev 2>/dev/null; then
-  echo "The heimdal-dev service is already using port 8080." >&2
+  echo "The heimdal-dev service is already using ports 5173 and 3000." >&2
   echo "" >&2
   echo "Stop it first with: deploy/dev-server.sh stop" >&2
   exit 1
@@ -35,10 +35,10 @@ fi
 
 LAN_IP="$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for (i = 1; i < NF; i++) if ($i == "src") {print $(i + 1); exit}}')"
 
-echo "==> Starting dev server on port 8080"
-echo "    From this machine:                          http://localhost:8080"
+echo "==> Starting dev servers (Vite frontend on 5173, API on 3000)"
+echo "    From this machine:                          http://localhost:5173"
 if [ -n "$LAN_IP" ]; then
-  echo "    From your phone or another device on this network: http://$LAN_IP:8080"
+  echo "    From your phone or another device on this network: http://$LAN_IP:5173"
 fi
 echo ""
 

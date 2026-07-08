@@ -1,0 +1,404 @@
+/* Revealed by pulling down while already at the top of the feed (see
+   the pull-gesture handling in JS) — hidden above the viewport by
+   default via transform, not display:none, so JS can animate it
+   following the drag distance. openShelf()/closeShelf() set the fully
+   open/closed transform; the live drag in between is driven directly
+   off pointer movement. */
+#new-email-shelf {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 55;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: calc(14px + env(safe-area-inset-top, 0px)) 16px 14px;
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border-soft);
+  transform: translateY(-100%);
+  transition: transform 0.2s ease;
+}
+#new-email-shelf button {
+  padding: 8px 20px;
+  border-radius: 6px;
+  border: 1px solid var(--accent);
+  background: transparent;
+  color: var(--accent);
+  font-family: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+#new-email-shelf button:hover {
+  background: var(--accent);
+  color: var(--bg);
+}
+
+/* Compose (new/reply/forward) — a full-screen overlay above
+   everything else (z-index above header/nav/selection-bar's 50),
+   entered only from the inbox (via a card's swipe actions or the
+   new-email shelf), never a bottom-nav destination — so it doesn't
+   need any changes to showView()'s inbox/settings toggle. */
+#compose-view {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+}
+/* No separate title bar at all anymore — Cancel/Send live in the same
+   row as the To field instead of their own dedicated strip above it,
+   and there's still no title text (the content itself — a filled-in
+   To/quoted body for a reply, a Fwd:-subject for a forward — already
+   says what this is). One row doing three jobs instead of two rows
+   doing one each. */
+.compose-fields {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: calc(10px + env(safe-area-inset-top, 0px)) 14px calc(10px + env(safe-area-inset-bottom, 0px));
+  overflow-y: auto;
+}
+.compose-to-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.compose-to-field {
+  flex: 1;
+}
+/* Ambient telegraphing lives here, as a sibling of .address-swipe-wrap
+   rather than a descendant — see the .address-hum comment below for
+   why that placement matters. */
+.address-hum {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  /* Wider than the button it sits behind (see .address-swipe-actions)
+     so the gradient below has room to reach further in toward the
+     bar's middle, fading out progressively rather than stopping
+     abruptly at the button's own edge. */
+  width: 140px;
+  filter: blur(10px); /* softens the outer (true bleed) edge specifically */
+  opacity: 0;
+  pointer-events: none;
+}
+/* Rounded only on the true (outer, bleeding-past-the-wrap) edge — the
+   inner edge fades to transparent anyway, so a hard corner there is
+   invisible. */
+.address-hum-discard {
+  left: 0;
+  border-radius: 6px 0 0 6px;
+  background: linear-gradient(to right, var(--danger), transparent);
+}
+.address-hum-send {
+  right: 0;
+  border-radius: 0 6px 6px 0;
+  background: linear-gradient(to left, var(--accent), transparent);
+}
+/* Animation (and so visibility — see the keyframes' own opacity) only
+   runs once locked; unscoped, .address-hum's base opacity: 0 stays in
+   effect and nothing shows. */
+.compose-to-row.address-locked .address-hum-discard {
+  animation: address-hum-breathe 4.2s ease-in-out infinite;
+}
+.compose-to-row.address-locked .address-hum-send {
+  animation: address-hum-breathe 4.2s ease-in-out infinite;
+  animation-delay: 0.6s; /* out of phase with the discard side, so they don't breathe in lockstep */
+}
+/* Always present, never moving — just a slow, continuous breathing
+   intensity in place, right where the button underneath actually is,
+   rather than a glide back and forth. */
+@keyframes address-hum-breathe {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 0.65;
+  }
+}
+/* Shell: clips the sliding front layer to the bar's rounded corners and
+   gives .address-swipe-actions (behind it) something to anchor to —
+   same front/actions-behind shape as a card's swipe-reveal, just one
+   row instead of a list, and open on either side instead of only one.
+   Deliberately does NOT contain .address-hum above: overflow:hidden
+   clips only its own descendants, so keeping the glow as a sibling is
+   what lets it bleed past this box's edge into the page instead of
+   being clipped exactly where it'd matter most. */
+.address-swipe-wrap {
+  position: relative;
+  overflow: hidden;
+  border-radius: 6px;
+  flex: 1;
+}
+.address-swipe-actions {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  justify-content: space-between;
+}
+.address-swipe-actions button {
+  flex: 0 0 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  color: var(--bg);
+  cursor: pointer;
+}
+.address-swipe-actions svg {
+  width: 20px;
+  height: 20px;
+}
+/* Matching border-radius on the outer corner of each button, rather
+   than relying solely on .address-swipe-wrap's own overflow:hidden
+   clip to round it — the two can render a hairline gap at the corner
+   (the wrap's clip and the button's paint landing in separate
+   composited layers during the drag), visible as a sliver of
+   whatever's behind the view. Giving the button the same curve
+   directly means its own solid color already fills that corner. */
+.address-action-discard {
+  background: var(--danger);
+  border-radius: 6px 0 0 6px;
+}
+.address-action-send {
+  background: var(--accent);
+  border-radius: 0 6px 6px 0;
+}
+/* Sits on top of .address-swipe-actions until dragged — needs its own
+   opaque background (from whichever of input/.address-lock-bar is
+   showing inside it) to fully hide the actions until swiped.
+   touch-action: pan-y matches .card-front: native vertical scroll of
+   .compose-fields still works right up until a horizontal drag is
+   recognized (see the address gesture handlers below). */
+.address-swipe-front {
+  position: relative;
+  transition: transform 0.2s ease;
+  touch-action: pan-y;
+}
+/* The locked, non-editable display of a confirmed recipient — the
+   pencil icon is the only way back into edit mode, never the bar
+   itself, so a swipe can never accidentally land back in editing.
+   No justify-content: space-between here on purpose — the edit icon
+   should sit immediately after the address text (wherever that ends),
+   not pinned out at the bar's far edge regardless of how short the
+   address is. */
+/* The fill stays the plain, original --bg-elevated — only the border
+   itself carries color, via the standard dual background-clip
+   technique (a padding-box layer for the interior, a border-box layer
+   for the 1px ring around it), rather than border-image, which
+   ignores border-radius and would square off these rounded corners.
+   The border-box gradient fades danger → the ordinary gray
+   border-soft → accent, so each side reads as tinted right at the
+   frame and dissolves back to the neutral color by the middle —
+   reinforcing the same two-tone hint on the bar's own surface without
+   washing over the fill. Static, unlike .address-hum: it's part of
+   the bar's own surface, so it's expected to slide away with the bar
+   during a swipe rather than staying anchored like the button hint. */
+.address-lock-bar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background:
+    linear-gradient(var(--bg-elevated), var(--bg-elevated)) padding-box,
+    linear-gradient(to right, var(--danger), var(--border-soft) 50%, var(--accent)) border-box;
+}
+.address-lock-text {
+  flex: 0 1 auto;
+  min-width: 0; /* lets this actually shrink+ellipsize instead of overflowing the row for a long address */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  /* --identity instead of the --accent tint the other fields use below
+     — the recipient reads as its own kind of thing, not just another
+     text field, and matches in both the editable and locked states. */
+  color: color-mix(in srgb, var(--identity) 55%, var(--fg));
+  font-size: 16px;
+}
+/* The locked bar's equivalent of the other fields' .field-hint — those
+   stay visible next to short content (only hiding once typed text
+   actually reaches them), but the locked bar had nothing playing that
+   role at all. No width measurement needed here like .field-hint
+   requires: .address-lock-text already ellipsizes on its own, so this
+   just sits after it, shrink-proof, same as the edit button. */
+.address-lock-hint {
+  /* Pushes itself (and the edit button after it) to the bar's right
+     edge, same as the other fields' hints — regardless of how short
+     the address text is, rather than trailing right after it. */
+  margin-left: auto;
+  flex-shrink: 0;
+  /* Matches .field-hint (the other fields' help text) exactly, rather
+     than the --identity tint .address-lock-text itself uses. */
+  color: color-mix(in srgb, var(--accent) 60%, var(--muted));
+  font-size: 0.85rem;
+  pointer-events: none;
+}
+#compose-to-edit {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+#compose-to-edit:hover {
+  background: var(--border-soft);
+  color: var(--fg);
+}
+#compose-to-edit svg {
+  width: 15px;
+  height: 15px;
+}
+/* Positioning context for .field-hint below. */
+.field-inline {
+  position: relative;
+}
+.compose-fields input,
+.compose-fields textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 6px;
+  /* Full-strength --accent, matching the intensity of the address
+     bar's gradient border (its danger/accent endpoints are pure, not
+     diluted) — --accent-soft (35% opacity) looked noticeably fainter
+     by comparison. */
+  border: 1px solid var(--accent);
+  background: var(--bg-elevated);
+  /* A theme-accent tint on typed text instead of plain --fg — blended
+     rather than pure --accent so a full body of prose doesn't read as
+     saturated/loud, just tinted. */
+  color: color-mix(in srgb, var(--accent) 55%, var(--fg));
+  font-family: inherit;
+  /* 16px, not smaller — iOS Safari auto-zooms the page on focus for
+     any text input/textarea under this size, and that zoom can
+     persist (misaligning everything, including views underneath)
+     until the user manually pinches back out or reloads. This is the
+     actual bug behind "the reply screen doesn't fit and messes up the
+     inbox afterward" — not a layout/overflow issue in this view
+     itself, a zoom the browser triggered and never cleanly undid. */
+  font-size: 16px;
+}
+/* The recipient's own color (--identity), matching .address-lock-text
+   — an id selector so it wins over the shared --accent tint above
+   without needing !important. */
+#compose-to {
+  color: color-mix(in srgb, var(--identity) 55%, var(--fg));
+}
+/* --info (each theme's own blue) — distinct from To's --identity and
+   the lighter --accent tint Subject/body use below. */
+#compose-cc,
+#compose-bcc {
+  color: color-mix(in srgb, var(--info) 55%, var(--fg));
+}
+/* Subject and body are both a lot more text to actually read/write
+   than To/Cc/Bcc, and a strongly-tinted color (the 55% blend those
+   use) gets tiring fast over a whole line or message — a much
+   lighter touch here, closer to plain --fg, stays comfortable while
+   still picking up a hint of the theme. */
+#compose-subject,
+#compose-body {
+  color: color-mix(in srgb, var(--accent) 15%, var(--fg));
+}
+/* The theme accent barely showed up anywhere in this view before —
+   inputs just sat there in the same muted border regardless of focus,
+   and would've fallen back to the browser's own default blue focus
+   ring (which clashes with every theme) since nothing overrode it. */
+/* Same --accent as the resting border — thickness marks focus
+   instead of a different color now, same reasoning as unread cards:
+   a distinct color is for a genuinely different state, not just
+   "this field happens to be focused right now". */
+.compose-fields input:focus,
+.compose-fields textarea:focus {
+  outline: none;
+  border-width: 2px;
+}
+.compose-fields textarea {
+  flex: 1;
+  min-height: 200px;
+  resize: none;
+  line-height: 1.5;
+}
+/* A right-aligned hint drawn inside the field itself, instead of a
+   separate label row (costs vertical space permanently) or a native
+   placeholder (left-aligned, no positioning control, vanishes
+   outright the instant you type rather than just getting out of the
+   way). Hidden via updateFieldHint() once the field actually has
+   content — well before typed text could reach it — and shown again
+   if it's cleared. */
+.field-hint {
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  transform: translateY(-50%);
+  /* A theme-accent tint instead of plain --muted — still de-emphasized
+     next to real typed text, but no longer flat gray against the new
+     --accent-soft borders. */
+  color: color-mix(in srgb, var(--accent) 60%, var(--muted));
+  font-size: 0.85rem;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+.field-hint.hidden {
+  opacity: 0;
+}
+/* Reveals Cc/Bcc *and* Subject together — a small left-aligned chevron
+   + label rather than its own full row of prominent text. Points
+   right (›) collapsed, rotates 90° to point down (⌄) when open — the
+   two states read as "more this way" vs. "here it is", rather than an
+   arbitrary flip. */
+#compose-expand-toggle {
+  align-self: flex-start;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  margin: -2px 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+#compose-expand-toggle svg {
+  width: 18px;
+  height: 18px;
+  transition: transform 0.15s ease;
+}
+#compose-expand-toggle:hover {
+  color: var(--accent);
+}
+#compose-expand-toggle.expanded svg {
+  transform: rotate(90deg);
+}
+#compose-extra-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+/* No reserved min-height — empty means genuinely zero height, giving
+   that space back to the body textarea below rather than holding a
+   blank line open for an error that (usually) never appears. */
+#compose-error:empty {
+  margin: 0;
+}
+#compose-error {
+  color: var(--danger);
+  font-size: 0.85rem;
+  margin: 4px 0 0;
+}

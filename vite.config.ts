@@ -73,6 +73,9 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     include: ['src/**/*.test.ts'],
+    // See test-setup.ts: works around a real Node/jsdom localStorage
+    // collision hit while writing the first localStorage-touching tests.
+    setupFiles: ['./src/test-setup.ts'],
     // No test files exist yet — they arrive as modules get extracted out
     // of index.html; a bare `npm test` shouldn't fail until then.
     passWithNoTests: true,

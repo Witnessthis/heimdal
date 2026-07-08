@@ -1,389 +1,17 @@
+import { openForwardCompose, openReplyCompose } from './compose/compose.js';
+import { closeShelf, isShelfOpen, openShelf, shelf } from './compose/shelf.js';
 import { buildCard } from './feed/card.js';
-import { cardData } from './feed/card-data.js';
 import { feed, feedStatus, nav, navInbox, navSettings, settingsView } from './feed/dom.js';
-import { bestPreviewText, formatFullDate } from './feed/preview.js';
+import { LONG_PRESS_MOVE_TOLERANCE_PX } from './feed/gesture-constants.js';
 import { clearRenderedBody, ensureFullBodyLoaded, markRead } from './feed/render-body.js';
 import { selectedIds, toggleSelect } from './feed/selection.js';
+import { closeSwipe, openSwipeCard, setOpenSwipeCard } from './feed/swipe-state.js';
 import {
   isAutoLoadImagesEnabled,
   isRichHtmlEnabled,
   setAutoLoadImagesEnabled,
   setRichHtmlEnabled,
 } from './settings/reading-prefs.js';
-
-// New-email shelf — revealed by pulling down while already at the top
-// of the feed (see the pull-gesture handling in the recognizer below).
-// openShelf()/closeShelf() set its fully-open/closed resting state;
-// the drag itself live-updates the same transform directly.
-const shelf = document.getElementById('new-email-shelf');
-function openShelf() {
-  shelf.style.transition = '';
-  shelf.style.transform = 'translateY(0)';
-  shelf.classList.add('open');
-}
-function closeShelf() {
-  shelf.style.transition = '';
-  shelf.style.transform = '';
-  shelf.classList.remove('open');
-}
-document.getElementById('new-email-btn').addEventListener('click', () => {
-  closeShelf();
-  openCompose({ mode: 'new' });
-});
-
-// --- Compose (new/reply/forward) ------------------------------------
-// One shared view for all three entry points (the shelf's New Email,
-// and a card's swipe-revealed Reply/Forward). openCompose() takes a
-// plain data object rather than reading anything off a card itself, so
-// a future "load an AI-prepared draft" entry point can call it the
-// same way without this view needing to change.
-const composeView = document.getElementById('compose-view');
-const composeTo = document.getElementById('compose-to');
-const composeToField = document.getElementById('compose-to-field');
-const composeToRow = document.getElementById('compose-to-row');
-const addressWrap = document.getElementById('compose-to-wrap');
-const addressFront = document.getElementById('compose-to-front');
-const addressLockBar = document.getElementById('compose-to-lock');
-const addressLockText = document.getElementById('compose-to-lock-text');
-const addressEditBtn = document.getElementById('compose-to-edit');
-const addressDiscardBtn = document.getElementById('compose-to-discard');
-const addressSendBtn = document.getElementById('compose-to-send');
-const composeCc = document.getElementById('compose-cc');
-const composeBcc = document.getElementById('compose-bcc');
-const composeExpandToggle = document.getElementById('compose-expand-toggle');
-const composeExtraFields = document.getElementById('compose-extra-fields');
-const composeSubject = document.getElementById('compose-subject');
-const composeBody = document.getElementById('compose-body');
-const composeError = document.getElementById('compose-error');
-
-let composeThreadContext = null; // { inReplyTo, threadId } for the message currently being composed, if any
-
-// Right-aligned inline hints (see .field-hint CSS) stand in for a
-// separate label row or a native placeholder — but should stay
-// visible for as long as there's room, only hiding once the typed
-// text's actual rendered width would reach them. A single shared
-// canvas 2D context does the width measurement (matching the input's
-// own font) rather than a cruder length-based guess, which hid the
-// hint the instant you typed a single character regardless of how
-// short that character was.
-const COMPOSE_HINTED_FIELDS = [composeTo, composeCc, composeBcc, composeSubject];
-const hintMeasureCanvas = document.createElement('canvas');
-const hintMeasureCtx = hintMeasureCanvas.getContext('2d');
-const HINT_GAP_PX = 10; // minimum breathing room to keep between typed text and the hint
-
-function updateFieldHint(input) {
-  const hint = input.parentElement.querySelector('.field-hint');
-  if (!hint) return;
-  if (!input.value) {
-    hint.classList.remove('hidden');
-    return;
-  }
-  const style = getComputedStyle(input);
-  hintMeasureCtx.font = `${style.fontSize} ${style.fontFamily}`;
-  const textWidth = hintMeasureCtx.measureText(input.value).width;
-  const availableWidth = input.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
-  hint.classList.toggle('hidden', textWidth + hint.offsetWidth + HINT_GAP_PX > availableWidth);
-}
-COMPOSE_HINTED_FIELDS.forEach((input) => {
-  input.addEventListener('input', () => updateFieldHint(input));
-});
-// Field width can change (phone rotation, resizing a desktop window),
-// which changes how much text fits before the hint regardless of what
-// was typed — re-check rather than waiting for the next keystroke.
-// Only ever measures fields that are actually visible right now — To
-// always, Cc/Bcc/Subject only when the collapsible section is open —
-// same reasoning as setExtraFieldsExpanded() above.
-window.addEventListener('resize', () => {
-  updateFieldHint(composeTo);
-  if (composeExtraFields.style.display !== 'none') {
-    [composeCc, composeBcc, composeSubject].forEach(updateFieldHint);
-  }
-});
-
-function setExtraFieldsExpanded(expanded) {
-  composeExtraFields.style.display = expanded ? 'flex' : 'none';
-  composeExpandToggle.classList.toggle('expanded', expanded);
-  // Cc/Bcc/Subject live inside this collapsible section, so any
-  // updateFieldHint() call made while it was display:none measured
-  // against a 0-width hidden box (clientWidth/offsetWidth are both 0
-  // for anything inside a display:none ancestor) — that always came
-  // out as "not enough room, hide the hint", regardless of how short
-  // the actual text was. Recompute now that they're genuinely
-  // visible and measurable.
-  if (expanded) [composeCc, composeBcc, composeSubject].forEach(updateFieldHint);
-}
-composeExpandToggle.addEventListener('click', () => {
-  setExtraFieldsExpanded(composeExtraFields.style.display === 'none');
-});
-
-// Locking swaps the raw input for a non-editable display of the same
-// text; the pencil icon (never the bar itself) is the only way back
-// into edit mode. This exists so the address row can be safely
-// swiped — see the gesture handlers below — without ever risking a
-// swipe landing back in editing.
-function setAddressLocked(locked) {
-  if (locked) addressLockText.textContent = composeTo.value;
-  composeToField.style.display = locked ? 'none' : '';
-  addressLockBar.style.display = locked ? 'flex' : 'none';
-  composeToRow.classList.toggle('address-locked', locked);
-}
-composeTo.addEventListener('blur', () => {
-  if (composeTo.value.trim()) setAddressLocked(true);
-});
-addressEditBtn.addEventListener('click', () => {
-  setAddressLocked(false);
-  updateFieldHint(composeTo);
-  composeTo.focus();
-  composeTo.setSelectionRange(composeTo.value.length, composeTo.value.length);
-});
-
-// Callers also pass a `mode` ('new' | 'reply' | 'forward') that nothing
-// here reads yet — the view's prefilled content already distinguishes the
-// three. Destructure it back in if/when the view needs to branch on it.
-function openCompose({ to = '', subject = '', body = '', inReplyTo, threadId }) {
-  closeAddressSwipe();
-  composeTo.value = to;
-  composeCc.value = '';
-  composeBcc.value = '';
-  composeSubject.value = subject;
-  composeBody.value = body;
-  // Reply/forward bodies are built as "blank space for your reply,
-  // then the quoted/forwarded original" (see openReplyCompose/
-  // openForwardCompose) — the cursor belongs at the very start, ready
-  // to type, not wherever setting .value happens to leave it (the end,
-  // by default), which would otherwise show the *bottom* of the quote
-  // instead of the top.
-  composeBody.setSelectionRange(0, 0);
-  composeBody.scrollTop = 0;
-  composeError.textContent = '';
-  composeThreadContext = { inReplyTo, threadId };
-  composeView.style.display = 'flex';
-  nav.style.display = 'none';
-  // Always starts collapsed, regardless of mode — even though reply/
-  // forward come with a real (Re:/Fwd:-prefixed) subject already
-  // filled in, the point of the toggle is to stay out of the way by
-  // default; the subject is still there once expanded, just not
-  // forced into view.
-  setExtraFieldsExpanded(false);
-  // Reply already knows its recipient, so it starts locked (swipeable
-  // right away, nothing to blur out of first); new/forward start as a
-  // plain empty input, same as before this field had a locked state.
-  setAddressLocked(Boolean(to));
-  // Only To is ever visible at this point — Cc/Bcc/Subject get their
-  // own recompute inside setExtraFieldsExpanded() once actually shown.
-  // Not needed when locked (the lock bar has no hint of its own).
-  if (!to) updateFieldHint(composeTo);
-  (to ? composeBody : composeTo).focus();
-  // Focusing (and on mobile, the keyboard animating open) can nudge
-  // scroll position again after the reset above — reassert it once
-  // more on the next frame, once that's settled.
-  requestAnimationFrame(() => {
-    composeBody.scrollTop = 0;
-  });
-}
-
-function closeCompose() {
-  composeView.style.display = 'none';
-  nav.style.display = '';
-}
-
-// Comma-separated plain addresses only, matching the app's existing
-// "keep compose simple, no rich contact picker" scope for this pass.
-function parseAddressList(text) {
-  return text
-    .split(',')
-    .map((address) => address.trim())
-    .filter(Boolean)
-    .map((address) => ({ address }));
-}
-
-let composeSending = false;
-async function sendComposeMessage() {
-  if (composeSending) return;
-  const to = parseAddressList(composeTo.value);
-  if (to.length === 0) {
-    composeError.textContent = 'Add at least one recipient.';
-    return;
-  }
-  composeSending = true;
-  composeError.textContent = '';
-  try {
-    const res = await fetch('/api/mail/quick-send', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        to,
-        cc: parseAddressList(composeCc.value),
-        bcc: parseAddressList(composeBcc.value),
-        subject: composeSubject.value,
-        text: composeBody.value,
-        inReplyTo: composeThreadContext?.inReplyTo,
-        threadId: composeThreadContext?.threadId,
-      }),
-    });
-    if (!res.ok) throw new Error(`status ${res.status}`);
-    closeCompose();
-  } catch (_err) {
-    composeError.textContent = 'Could not send — check your connection and try again.';
-  } finally {
-    composeSending = false;
-  }
-}
-
-// --- Address bar swipe-reveal (discard / send) -----------------------
-// Same reveal-then-tap shape as a card's swipe-revealed Reply/Forward,
-// just bidirectional and scoped to this one row instead of #feed:
-// dragging the bar (never while it's an actively-focused input — see
-// the activeElement checks below) live-follows the finger, snaps open
-// on whichever side was dragged past a threshold or closed otherwise,
-// and only a separate subsequent tap on the revealed icon commits
-// anything. Send is only reachable while the address is locked (a real
-// recipient is confirmed) — there's nothing to send to otherwise, so
-// the swipe is clamped to the discard side only in that state.
-// Deliberately a few px less than the button's own 64px width (see
-// .address-swipe-actions button) rather than an exact match — the bar
-// itself has rounded corners (the gradient border), so its trailing
-// edge curves away right at the corners as it slides open. Matching
-// the reveal distance to the button's width exactly left that curved
-// notch landing right at the button's own edge, exposing whatever's
-// behind through the gap. Stopping a few px short instead means the
-// button's solid color always extends past where the bar's edge
-// (curved corners included) ends, so the notch lands on solid button
-// color with margin to spare.
-const ADDRESS_REVEAL_PX = 58;
-const ADDRESS_OPEN_THRESHOLD_PX = 28;
-let addressGestureDirection = null; // null | 'swipe' | 'scroll'
-let addressPressStartX = 0;
-let addressPressStartY = 0;
-let addressOpenSide = null; // 'send' | 'discard' | null
-
-function closeAddressSwipe() {
-  addressOpenSide = null;
-  addressFront.style.transition = '';
-  addressFront.style.transform = '';
-}
-
-addressFront.addEventListener('pointerdown', (e) => {
-  if (e.button !== 0) return;
-  if (document.activeElement === composeTo) return; // actively typing — leave native cursor/selection alone
-  addressGestureDirection = null;
-  addressPressStartX = e.clientX;
-  addressPressStartY = e.clientY;
-});
-
-addressFront.addEventListener('pointermove', (e) => {
-  if (document.activeElement === composeTo && addressGestureDirection === null) return;
-  const dx = e.clientX - addressPressStartX;
-  const dy = e.clientY - addressPressStartY;
-  if (addressGestureDirection === null) {
-    if (Math.hypot(dx, dy) <= LONG_PRESS_MOVE_TOLERANCE_PX) return;
-    addressGestureDirection = Math.abs(dx) > Math.abs(dy) ? 'swipe' : 'scroll';
-    // If the raw input grabbed native focus in the instant before we
-    // could tell this was a drag, drop it now — a swipe should never
-    // leave the field in edit mode or pop the keyboard open mid-drag.
-    if (addressGestureDirection === 'swipe' && document.activeElement === composeTo) composeTo.blur();
-  }
-  if (addressGestureDirection !== 'swipe') return; // vertical — let native scroll of .compose-fields proceed
-  e.preventDefault();
-  const locked = addressLockBar.style.display !== 'none';
-  const openOffset =
-    addressOpenSide === 'send' ? -ADDRESS_REVEAL_PX : addressOpenSide === 'discard' ? ADDRESS_REVEAL_PX : 0;
-  const minX = locked ? -ADDRESS_REVEAL_PX : 0;
-  const offset = Math.min(ADDRESS_REVEAL_PX, Math.max(minX, openOffset + dx));
-  addressFront.style.transition = 'none';
-  addressFront.style.transform = `translateX(${offset}px)`;
-});
-
-addressFront.addEventListener('pointerup', (e) => {
-  addressFront.style.transition = '';
-  if (addressGestureDirection !== 'swipe') {
-    addressGestureDirection = null;
-    return;
-  }
-  const dx = e.clientX - addressPressStartX;
-  const locked = addressLockBar.style.display !== 'none';
-  const openOffset =
-    addressOpenSide === 'send' ? -ADDRESS_REVEAL_PX : addressOpenSide === 'discard' ? ADDRESS_REVEAL_PX : 0;
-  const finalOffset = openOffset + dx;
-  if (locked && finalOffset < -ADDRESS_OPEN_THRESHOLD_PX) {
-    addressFront.style.transform = `translateX(${-ADDRESS_REVEAL_PX}px)`;
-    addressOpenSide = 'send';
-  } else if (finalOffset > ADDRESS_OPEN_THRESHOLD_PX) {
-    addressFront.style.transform = `translateX(${ADDRESS_REVEAL_PX}px)`;
-    addressOpenSide = 'discard';
-  } else {
-    closeAddressSwipe();
-  }
-  addressGestureDirection = null;
-});
-addressFront.addEventListener('pointercancel', () => {
-  addressGestureDirection = null;
-  closeAddressSwipe();
-});
-
-// A tap anywhere else in the compose view closes an open reveal
-// instead of leaving it hanging open — matches the card swipe's
-// outside-tap-closes behavior.
-composeView.addEventListener('click', (e) => {
-  if (addressOpenSide && !addressWrap.contains(e.target)) closeAddressSwipe();
-});
-
-addressDiscardBtn.addEventListener('click', () => {
-  closeAddressSwipe();
-  closeCompose();
-});
-addressSendBtn.addEventListener('click', () => {
-  closeAddressSwipe();
-  sendComposeMessage();
-});
-
-// Reply/forward both need the complete message (real Message-ID for
-// threading, full body to quote/forward) — ensureFullBodyLoaded()
-// already fetches and caches this on demand and is a no-op if the card
-// was already expanded, so there's no separate fetch path to maintain
-// here.
-async function openReplyCompose(card) {
-  closeSwipe(card);
-  markRead(card);
-  await ensureFullBodyLoaded(card);
-  const msg = cardData.get(card);
-  if (!msg) return;
-  const subject = msg.subject?.startsWith('Re: ') ? msg.subject : `Re: ${msg.subject || ''}`;
-  const quoted = (bestPreviewText(msg) || '')
-    .split('\n')
-    .map((line) => `> ${line}`)
-    .join('\n');
-  const senderLabel = msg.from?.name || msg.from?.address || 'them';
-  openCompose({
-    mode: 'reply',
-    to: msg.from?.address || '',
-    subject,
-    body: `\n\nOn ${formatFullDate(msg.receivedAt)}, ${senderLabel} wrote:\n${quoted}`,
-    inReplyTo: msg.messageId,
-    threadId: msg.threadId,
-  });
-}
-
-async function openForwardCompose(card) {
-  closeSwipe(card);
-  markRead(card);
-  await ensureFullBodyLoaded(card);
-  const msg = cardData.get(card);
-  if (!msg) return;
-  const subject = msg.subject?.startsWith('Fwd: ') ? msg.subject : `Fwd: ${msg.subject || ''}`;
-  const fromLabel = msg.from?.name ? `${msg.from.name} <${msg.from.address}>` : msg.from?.address || '';
-  const toLabel = (msg.to || []).map((a) => a.address).join(', ');
-  const original = bestPreviewText(msg) || '';
-  openCompose({
-    mode: 'forward',
-    to: '',
-    subject,
-    body:
-      `\n\n---------- Forwarded message ----------\n` +
-      `From: ${fromLabel}\nDate: ${formatFullDate(msg.receivedAt)}\n` +
-      `Subject: ${msg.subject || ''}\nTo: ${toLabel}\n\n${original}`,
-  });
-}
 
 // One consolidated gesture recognizer for #feed, covering four
 // behaviors that all start as "a pointer went down somewhere in the
@@ -405,7 +33,6 @@ async function openForwardCompose(card) {
 // touch-action: pan-y (see its CSS) is what lets the browser still own
 // plain vertical scrolling right up until that point.
 const LONG_PRESS_MS = 500;
-const LONG_PRESS_MOVE_TOLERANCE_PX = 10;
 const SWIPE_REVEAL_PX = 144; // two 72px action buttons — matches .card-swipe-actions CSS
 const SWIPE_OPEN_THRESHOLD_PX = 40;
 const PULL_OPEN_THRESHOLD_PX = 40;
@@ -417,25 +44,10 @@ let activeCard = null; // the card this gesture started on, for its whole durati
 let longPressFired = false;
 let gestureDirection = null; // null | 'swipe' | 'pull' | 'scroll'
 let gestureStartedAtTop = false;
-let openSwipeCard = null; // the one card currently swiped open, if any
 
 function cancelLongPress() {
   if (pressTimer !== null) clearTimeout(pressTimer);
   pressTimer = null;
-}
-
-// Snaps a card's swipe-reveal shut. Safe to call on a card that isn't
-// open — used both as the deliberate "close" action and defensively
-// (e.g. before opening a different card).
-function closeSwipe(card) {
-  if (!card) return;
-  card.classList.remove('swipe-open');
-  const front = card.querySelector('.card-front');
-  if (front) {
-    front.style.transition = '';
-    front.style.transform = '';
-  }
-  if (openSwipeCard === card) openSwipeCard = null;
 }
 
 feed.addEventListener('pointerdown', (e) => {
@@ -503,7 +115,7 @@ feed.addEventListener('pointerup', (e) => {
     if (finalOffset < -SWIPE_OPEN_THRESHOLD_PX) {
       activeCard.classList.add('swipe-open');
       front.style.transform = `translateX(${-SWIPE_REVEAL_PX}px)`;
-      openSwipeCard = activeCard;
+      setOpenSwipeCard(activeCard);
     } else {
       closeSwipe(activeCard);
     }
@@ -529,7 +141,7 @@ feed.addEventListener('click', (e) => {
   // instead of acting on whatever was tapped — the shelf's own button
   // has its own listener and never reaches this handler, since the
   // shelf isn't a descendant of #feed.
-  if (shelf.classList.contains('open')) {
+  if (isShelfOpen()) {
     closeShelf();
     return;
   }

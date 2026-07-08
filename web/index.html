@@ -12,6 +12,7 @@
 
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#1a1a2e" />
+  <script type="module" src="./src/pwa.js"></script>
 
   <!-- iOS PWA support -->
   <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -2382,10 +2383,6 @@
       const card = buildCard(message);
       feed.insertBefore(card.parentElement, feed.querySelector('.card-wrap') || sentinel);
       if (feedStatus.isConnected) feedStatus.remove();
-    }
-
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('sw.js');
     }
 
     // --- Settings view -------------------------------------------------

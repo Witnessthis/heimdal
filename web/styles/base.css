@@ -1,5 +1,8 @@
-* { box-sizing: border-box; }
-html, body {
+* {
+  box-sizing: border-box;
+}
+html,
+body {
   margin: 0;
   height: 100%;
   background: var(--bg);
@@ -7,8 +10,11 @@ html, body {
   font-family: var(--font-mono);
   overflow: hidden; /* the active view scrolls internally, not the page */
 }
-body { position: relative; }
-button:focus-visible, a:focus-visible {
+body {
+  position: relative;
+}
+button:focus-visible,
+a:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
@@ -26,7 +32,9 @@ main#feed {
   padding-top: calc(16px + env(safe-area-inset-top, 0px));
   padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px));
 }
-main#feed::-webkit-scrollbar { display: none; }
+main#feed::-webkit-scrollbar {
+  display: none;
+}
 
 .feed-status {
   display: flex;

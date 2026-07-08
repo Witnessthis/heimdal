@@ -30,7 +30,10 @@
   font-weight: 600;
   cursor: pointer;
 }
-#new-email-shelf button:hover { background: var(--accent); color: var(--bg); }
+#new-email-shelf button:hover {
+  background: var(--accent);
+  color: var(--bg);
+}
 
 /* Compose (new/reply/forward) — a full-screen overlay above
    everything else (z-index above header/nav/selection-bar's 50),
@@ -64,7 +67,9 @@
   display: flex;
   align-items: center;
 }
-.compose-to-field { flex: 1; }
+.compose-to-field {
+  flex: 1;
+}
 /* Ambient telegraphing lives here, as a sibling of .address-swipe-wrap
    rather than a descendant — see the .address-hum comment below for
    why that placement matters. */
@@ -108,8 +113,13 @@
    intensity in place, right where the button underneath actually is,
    rather than a glide back and forth. */
 @keyframes address-hum-breathe {
-  0%, 100% { opacity: 0.35; }
-  50% { opacity: 0.65; }
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 0.65;
+  }
 }
 /* Shell: clips the sliding front layer to the bar's rounded corners and
    gives .address-swipe-actions (behind it) something to anchor to —
@@ -140,7 +150,10 @@
   color: var(--bg);
   cursor: pointer;
 }
-.address-swipe-actions svg { width: 20px; height: 20px; }
+.address-swipe-actions svg {
+  width: 20px;
+  height: 20px;
+}
 /* Matching border-radius on the outer corner of each button, rather
    than relying solely on .address-swipe-wrap's own overflow:hidden
    clip to round it — the two can render a hairline gap at the corner
@@ -148,8 +161,14 @@
    composited layers during the drag), visible as a sliver of
    whatever's behind the view. Giving the button the same curve
    directly means its own solid color already fills that corner. */
-.address-action-discard { background: var(--danger); border-radius: 6px 0 0 6px; }
-.address-action-send { background: var(--accent); border-radius: 0 6px 6px 0; }
+.address-action-discard {
+  background: var(--danger);
+  border-radius: 6px 0 0 6px;
+}
+.address-action-send {
+  background: var(--accent);
+  border-radius: 0 6px 6px 0;
+}
 /* Sits on top of .address-swipe-actions until dragged — needs its own
    opaque background (from whichever of input/.address-lock-bar is
    showing inside it) to fully hide the actions until swiped.
@@ -236,11 +255,20 @@
   color: var(--muted);
   cursor: pointer;
 }
-#compose-to-edit:hover { background: var(--border-soft); color: var(--fg); }
-#compose-to-edit svg { width: 15px; height: 15px; }
+#compose-to-edit:hover {
+  background: var(--border-soft);
+  color: var(--fg);
+}
+#compose-to-edit svg {
+  width: 15px;
+  height: 15px;
+}
 /* Positioning context for .field-hint below. */
-.field-inline { position: relative; }
-.compose-fields input, .compose-fields textarea {
+.field-inline {
+  position: relative;
+}
+.compose-fields input,
+.compose-fields textarea {
   width: 100%;
   padding: 10px 12px;
   border-radius: 6px;
@@ -267,16 +295,24 @@
 /* The recipient's own color (--identity), matching .address-lock-text
    — an id selector so it wins over the shared --accent tint above
    without needing !important. */
-#compose-to { color: color-mix(in srgb, var(--identity) 55%, var(--fg)); }
+#compose-to {
+  color: color-mix(in srgb, var(--identity) 55%, var(--fg));
+}
 /* --info (each theme's own blue) — distinct from To's --identity and
    the lighter --accent tint Subject/body use below. */
-#compose-cc, #compose-bcc { color: color-mix(in srgb, var(--info) 55%, var(--fg)); }
+#compose-cc,
+#compose-bcc {
+  color: color-mix(in srgb, var(--info) 55%, var(--fg));
+}
 /* Subject and body are both a lot more text to actually read/write
    than To/Cc/Bcc, and a strongly-tinted color (the 55% blend those
    use) gets tiring fast over a whole line or message — a much
    lighter touch here, closer to plain --fg, stays comfortable while
    still picking up a hint of the theme. */
-#compose-subject, #compose-body { color: color-mix(in srgb, var(--accent) 15%, var(--fg)); }
+#compose-subject,
+#compose-body {
+  color: color-mix(in srgb, var(--accent) 15%, var(--fg));
+}
 /* The theme accent barely showed up anywhere in this view before —
    inputs just sat there in the same muted border regardless of focus,
    and would've fallen back to the browser's own default blue focus
@@ -285,7 +321,8 @@
    instead of a different color now, same reasoning as unread cards:
    a distinct color is for a genuinely different state, not just
    "this field happens to be focused right now". */
-.compose-fields input:focus, .compose-fields textarea:focus {
+.compose-fields input:focus,
+.compose-fields textarea:focus {
   outline: none;
   border-width: 2px;
 }
@@ -315,7 +352,9 @@
   pointer-events: none;
   transition: opacity 0.15s ease;
 }
-.field-hint.hidden { opacity: 0; }
+.field-hint.hidden {
+  opacity: 0;
+}
 /* Reveals Cc/Bcc *and* Subject together — a small left-aligned chevron
    + label rather than its own full row of prominent text. Points
    right (›) collapsed, rotates 90° to point down (⌄) when open — the
@@ -336,12 +375,30 @@
   font-size: 0.78rem;
   cursor: pointer;
 }
-#compose-expand-toggle svg { width: 18px; height: 18px; transition: transform 0.15s ease; }
-#compose-expand-toggle:hover { color: var(--accent); }
-#compose-expand-toggle.expanded svg { transform: rotate(90deg); }
-#compose-extra-fields { display: flex; flex-direction: column; gap: 8px; }
+#compose-expand-toggle svg {
+  width: 18px;
+  height: 18px;
+  transition: transform 0.15s ease;
+}
+#compose-expand-toggle:hover {
+  color: var(--accent);
+}
+#compose-expand-toggle.expanded svg {
+  transform: rotate(90deg);
+}
+#compose-extra-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
 /* No reserved min-height — empty means genuinely zero height, giving
    that space back to the body textarea below rather than holding a
    blank line open for an error that (usually) never appears. */
-#compose-error:empty { margin: 0; }
-#compose-error { color: var(--danger); font-size: 0.85rem; margin: 4px 0 0; }
+#compose-error:empty {
+  margin: 0;
+}
+#compose-error {
+  color: var(--danger);
+  font-size: 0.85rem;
+  margin: 4px 0 0;
+}

@@ -3,9 +3,9 @@
    (custom-property fallbacks; the real values come from themes.js at
    runtime), then base, then per-area sheets. Vite bundles the whole tree
    into one hashed CSS file at build time. */
-@import './tokens.css';
-@import './base.css';
-@import './feed.css';
-@import './settings.css';
-@import './nav.css';
-@import './compose.css';
+@import "./tokens.css";
+@import "./base.css";
+@import "./feed.css";
+@import "./settings.css";
+@import "./nav.css";
+@import "./compose.css";

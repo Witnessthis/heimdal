@@ -9,7 +9,11 @@ main#settings-view {
   overflow-y: auto;
   padding: calc(16px + env(safe-area-inset-top, 0px)) 20px calc(72px + env(safe-area-inset-bottom, 0px));
 }
-.settings-content { max-width: 480px; width: 100%; margin: 0 auto; }
+.settings-content {
+  max-width: 480px;
+  width: 100%;
+  margin: 0 auto;
+}
 
 .section-label {
   font-size: 0.75rem;
@@ -37,7 +41,10 @@ main#settings-view {
    wrapping, or how tall the parent row happens to render. Only the
    indent and the foot's fixed width are hardcoded here, since neither
    needs to track another element's position. */
-.setting-row-sub { padding-left: 18px; position: relative; }
+.setting-row-sub {
+  padding-left: 18px;
+  position: relative;
+}
 .sub-setting-connector {
   position: absolute;
   left: 4px;
@@ -50,9 +57,18 @@ main#settings-view {
    data-relevance parent toggle is in the "wrong" position for it to do
    anything right now — fades the whole row so it reads as "not
    currently in effect" without being removed or moving anything. */
-.setting-row.setting-inactive { opacity: 0.4; }
-.setting-info { display: flex; flex-direction: column; gap: 3px; }
-.setting-name { font-size: 0.95rem; color: var(--fg); }
+.setting-row.setting-inactive {
+  opacity: 0.4;
+}
+.setting-info {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.setting-name {
+  font-size: 0.95rem;
+  color: var(--fg);
+}
 .setting-tag {
   display: inline-block;
   vertical-align: middle;
@@ -72,15 +88,24 @@ main#settings-view {
   border-radius: 3px;
   padding: 2px 6px;
 }
-.setting-desc { font-size: 0.8rem; color: var(--muted); }
+.setting-desc {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
 .badge {
   font-size: 0.75rem;
   padding: 3px 8px;
   border-radius: 4px;
   font-weight: 600;
 }
-.badge-on { background: color-mix(in srgb, var(--success) 18%, var(--bg)); color: var(--success); }
-.badge-off { background: var(--border-soft); color: var(--muted); }
+.badge-on {
+  background: color-mix(in srgb, var(--success) 18%, var(--bg));
+  color: var(--success);
+}
+.badge-off {
+  background: var(--border-soft);
+  color: var(--muted);
+}
 /* A couple of settings (see the rich-HTML toggle) are a clickable
    badge rather than a separate status-plus-button pair like TOTP —
    scoped to the button element specifically so it doesn't affect the
@@ -90,12 +115,16 @@ button.badge {
   cursor: pointer;
   font: inherit;
 }
-button.badge:hover { border-color: currentColor; }
+button.badge:hover {
+  border-color: currentColor;
+}
 button.badge:disabled {
   opacity: 0.45;
   cursor: not-allowed;
 }
-button.badge:disabled:hover { border-color: transparent; }
+button.badge:disabled:hover {
+  border-color: transparent;
+}
 .btn-action {
   padding: 7px 14px;
   border-radius: 6px;
@@ -106,7 +135,10 @@ button.badge:disabled:hover { border-color: transparent; }
   cursor: pointer;
   white-space: nowrap;
 }
-.btn-action:hover { border-color: var(--accent); color: var(--accent); }
+.btn-action:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
 
 .btn-logout {
   width: 100%;
@@ -119,8 +151,14 @@ button.badge:disabled:hover { border-color: transparent; }
   font-weight: 600;
   cursor: pointer;
 }
-.btn-logout:hover { background: var(--danger); color: var(--bg); }
-.btn-logout:disabled { opacity: 0.6; cursor: wait; }
+.btn-logout:hover {
+  background: var(--danger);
+  color: var(--bg);
+}
+.btn-logout:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
 
 /* Theme picker — see Settings > Appearance. Each swatch previews its
    own theme's real colors via inline styles set in JS (deliberately
@@ -145,7 +183,21 @@ button.badge:disabled:hover { border-color: transparent; }
   font-family: var(--font-mono);
   text-align: left;
 }
-.theme-swatch.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
-.theme-swatch-dots { display: flex; gap: 4px; }
-.theme-swatch-dots span { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
-.theme-swatch-label { font-size: 0.78rem; font-weight: 600; }
+.theme-swatch.active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.theme-swatch-dots {
+  display: flex;
+  gap: 4px;
+}
+.theme-swatch-dots span {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  display: inline-block;
+}
+.theme-swatch-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+}

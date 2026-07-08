@@ -32,9 +32,16 @@
   transition: color 0.15s;
   cursor: pointer;
 }
-.nav-tab.active { color: var(--accent); }
-.nav-tab:not(.active):hover { color: var(--fg-dim); }
-.nav-tab svg { width: 22px; height: 22px; }
+.nav-tab.active {
+  color: var(--accent);
+}
+.nav-tab:not(.active):hover {
+  color: var(--fg-dim);
+}
+.nav-tab svg {
+  width: 22px;
+  height: 22px;
+}
 
 /* Replaces the bottom nav (same position, same fixed footprint) while
    a selection is active — showing both at once would be redundant and
@@ -54,5 +61,11 @@
   background: var(--bg-elevated);
   border-top: 1px solid var(--border-soft);
 }
-.selection-bar span { font-size: 0.85rem; color: var(--fg-dim); }
-.selection-actions { display: flex; gap: 8px; }
+.selection-bar span {
+  font-size: 0.85rem;
+  color: var(--fg-dim);
+}
+.selection-actions {
+  display: flex;
+  gap: 8px;
+}

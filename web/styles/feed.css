@@ -71,18 +71,24 @@
    (border paints over backgrounds within the same box) — the full
    frame back on all four sides, clearly distinct from a read card's
    fading one-sided gradient. */
-.card.unread { border: 2px solid var(--accent); }
+.card.unread {
+  border: 2px solid var(--accent);
+}
 /* --highlight instead of --accent — same reasoning as compose's
    focus state: a selected card needs its own distinct color, not
    one shared with the resting (or unread) state. Applies correctly
    to whichever sides actually have a border-style set above (just
    the right edge for read, all four for unread), no extra rule
    needed for that. */
-.card.selected { border-color: var(--highlight); }
+.card.selected {
+  border-color: var(--highlight);
+}
 /* .card-front carries the actual visible background now, so the
    "selected" tint has to apply there — .card itself has no painted
    area left for it to show through. */
-.card.selected .card-front { background: color-mix(in srgb, var(--accent) 12%, var(--bg-elevated)); }
+.card.selected .card-front {
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg-elevated));
+}
 
 /* Sits behind .card-front, revealed as it slides left. Two fixed-width
    buttons rather than anything proportional — the reveal distance in
@@ -108,14 +114,24 @@
   color: var(--bg);
   cursor: pointer;
 }
-.card-swipe-actions svg { width: 20px; height: 20px; }
-.card-swipe-actions span { font-size: 0.7rem; font-weight: 600; }
+.card-swipe-actions svg {
+  width: 20px;
+  height: 20px;
+}
+.card-swipe-actions span {
+  font-size: 0.7rem;
+  font-weight: 600;
+}
 /* Forward sits at the card's true right edge (reply is to its left,
    revealed second) — the same corner the border's gradient is
    anchored/anchored strongest at, so it's forward that needs to
    match --accent for that edge to read as continuous, not reply. */
-.card-action-reply { background: var(--identity); }
-.card-action-forward { background: var(--accent); }
+.card-action-reply {
+  background: var(--identity);
+}
+.card-action-forward {
+  background: var(--accent);
+}
 
 /* Grid, not a plain block: once a checkbox column exists (selection
    mode — see #feed.selecting below), it gets its own column so it
@@ -143,7 +159,10 @@
   touch-action: pan-y;
   transition: transform 0.2s ease;
 }
-#feed.selecting .card-front { grid-template-columns: 20px 1fr; column-gap: 10px; }
+#feed.selecting .card-front {
+  grid-template-columns: 20px 1fr;
+  column-gap: 10px;
+}
 
 /* Hidden until a long-press on any card enters selection mode — see
    the pointerdown/pointerup handling in JS. Not a decoration that's
@@ -159,11 +178,20 @@
   background: transparent;
   cursor: pointer;
 }
-#feed.selecting .card-select { display: block; }
-.card-select:hover { border-color: var(--accent); }
-.card.selected .card-select { background: var(--accent); border-color: var(--accent); }
+#feed.selecting .card-select {
+  display: block;
+}
+.card-select:hover {
+  border-color: var(--accent);
+}
+.card.selected .card-select {
+  background: var(--accent);
+  border-color: var(--accent);
+}
 
-.card-content { min-width: 0; }
+.card-content {
+  min-width: 0;
+}
 
 /* .card-time is pulled out of normal flow (see below) and pinned to
    the top-right corner here, rather than being a normal flex item
@@ -195,9 +223,22 @@
    scanning for); time picks up --highlight, each theme's own warm
    accent, matching how timestamps get a distinct highlight in most
    terminal log output (journalctl, dmesg, etc.). */
-.card-from-name { font-weight: 700; font-size: 0.8rem; color: var(--identity); }
-.card-from-address { font-size: 0.8rem; color: var(--muted); }
-.card-time { position: absolute; top: 0; right: 0; font-size: 0.8rem; color: var(--highlight); }
+.card-from-name {
+  font-weight: 700;
+  font-size: 0.8rem;
+  color: var(--identity);
+}
+.card-from-address {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.card-time {
+  position: absolute;
+  top: 0;
+  right: 0;
+  font-size: 0.8rem;
+  color: var(--highlight);
+}
 
 .card-subject {
   font-size: 1.05rem;
@@ -226,7 +267,7 @@
   overflow: hidden;
 }
 .card-body-wrap::after {
-  content: '';
+  content: "";
   position: absolute;
   left: 0;
   right: 0;
@@ -288,4 +329,7 @@
   font-size: 0.82rem;
   cursor: pointer;
 }
-.load-images-btn:hover { border-color: var(--accent); color: var(--accent); }
+.load-images-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}

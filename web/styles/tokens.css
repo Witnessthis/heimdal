@@ -1,5 +1,5 @@
 :root {
-  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
   /* Fallback values only — themes.js sets the real ones on this same
      element before first paint (see the two script tags above), so
      these never actually show except if JS somehow failed to run. */

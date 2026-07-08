@@ -1,0 +1,291 @@
+.card-wrap {
+  position: relative;
+  margin: 0 12px 10px;
+  border-radius: 10px; /* shapes the glow shadow below to the card's corners */
+  /* Skip rendering (style/layout/paint) for cards outside the
+     viewport — with hundreds of cards loaded, only the visible
+     handful cost anything. The intrinsic-size is a stand-in height
+     for not-yet-rendered cards (meta + subject + padding; collapsed
+     cards have no body text in the list view) so scrollbar math
+     stays sane; the `auto` keyword makes the browser remember each
+     card's real size once rendered, so expanded cards keep their
+     true height when scrolled away and back. Note: this also turns
+     on paint containment, which clips all DESCENDANT painting to
+     the wrap's box — anything meant to bleed past the card's edge
+     (like the swipe-affordance glow below) must be an own-property
+     of the wrap (box-shadow, outline), never a child element.
+     Browsers without support (iOS Safari < 18) simply ignore this
+     and render everything, as before. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 80px;
+  /* Telegraphs the swipe-to-reveal-actions affordance, same idea as
+     the compose address bar's glow: a faint accent halo around the
+     whole card (first shadow), leaning slightly stronger off the
+     RIGHT edge (second shadow, positive x-offset + negative spread)
+     to match the border gradient's strong edge, where Reply/Forward
+     hide. Box-shadows on the wrap itself rather than a child glow
+     element: an earlier version painted a gradient child behind the
+     card, but the card is opaque, so the only visible part was ever
+     its blur bleeding past the edge — and per-card animated blur
+     was the main thing making the app slow on phones (and paint
+     containment above would clip a child's bleed anyway). The
+     element's own shadow is exempt from its paint containment,
+     renders outside the box by nature, and is a static one-time
+     raster. Do not re-add per-card filters or always-on
+     animations. */
+  box-shadow:
+    0 0 9px color-mix(in srgb, var(--accent) 16%, transparent),
+    7px 0 12px -7px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+/* .card is now just a thin positioning/clipping shell — border and
+   radius live here so the card's outer look is unaffected by swipe
+   state — while .card-front carries the actual visual chrome
+   (background, padding, grid) and slides via `transform` to reveal
+   .card-swipe-actions underneath it. overflow:hidden clips that
+   slide to the card's own rounded corners; position:relative gives
+   .card-swipe-actions (position:absolute) something to anchor to.
+   See the pointerdown/move/up gesture handling in JS for how the
+   swipe itself is driven. */
+.card {
+  box-sizing: border-box;
+  position: relative;
+  overflow: hidden;
+  /* Same gradient-border technique as the address bar (border-color
+     stays transparent; the actual color comes from a background
+     painted only into the border-box ring) — a flat border-right
+     alone looked like a stray segment stuck to the edge rather than
+     part of the card, since it had no border on the adjacent sides
+     to blend into. Here the gradient itself fades from --accent at
+     the right (where Reply/Forward live) toward transparent well
+     into the card, rather than stopping right at the edge — so the
+     top/bottom borders visibly fade out left-to-right instead of
+     just vanishing outright, and the left edge ends up with no
+     visible border at all. .card-front (an opaque child) covers the
+     entire interior regardless, so no separate padding-box fill
+     layer is needed the way the address bar required. */
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: linear-gradient(to left, var(--accent), transparent 140%) border-box;
+}
+/* An opaque override wins over the gradient background above
+   (border paints over backgrounds within the same box) — the full
+   frame back on all four sides, clearly distinct from a read card's
+   fading one-sided gradient. */
+.card.unread { border: 2px solid var(--accent); }
+/* --highlight instead of --accent — same reasoning as compose's
+   focus state: a selected card needs its own distinct color, not
+   one shared with the resting (or unread) state. Applies correctly
+   to whichever sides actually have a border-style set above (just
+   the right edge for read, all four for unread), no extra rule
+   needed for that. */
+.card.selected { border-color: var(--highlight); }
+/* .card-front carries the actual visible background now, so the
+   "selected" tint has to apply there — .card itself has no painted
+   area left for it to show through. */
+.card.selected .card-front { background: color-mix(in srgb, var(--accent) 12%, var(--bg-elevated)); }
+
+/* Sits behind .card-front, revealed as it slides left. Two fixed-width
+   buttons rather than anything proportional — the reveal distance in
+   JS (SWIPE_REVEAL_PX) is defined to match this exactly. */
+.card-swipe-actions {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  justify-content: flex-end;
+}
+/* Icon + label stacked, same shape as .nav-tab — the two icons alone
+   (mirrored arrows) read as too similar at a glance, so the label
+   does the actual disambiguating work. */
+.card-swipe-actions button {
+  width: 72px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  border: none;
+  font-family: inherit;
+  color: var(--bg);
+  cursor: pointer;
+}
+.card-swipe-actions svg { width: 20px; height: 20px; }
+.card-swipe-actions span { font-size: 0.7rem; font-weight: 600; }
+/* Forward sits at the card's true right edge (reply is to its left,
+   revealed second) — the same corner the border's gradient is
+   anchored/anchored strongest at, so it's forward that needs to
+   match --accent for that edge to read as continuous, not reply. */
+.card-action-reply { background: var(--identity); }
+.card-action-forward { background: var(--accent); }
+
+/* Grid, not a plain block: once a checkbox column exists (selection
+   mode — see #feed.selecting below), it gets its own column so it
+   never shifts the meta/subject/body text the way an inline flex item
+   would (the same problem the old unread dot had). Single column the
+   rest of the time, so nothing about a normal card's layout changes
+   just because selection exists as a feature.
+   touch-action: pan-y tells the browser vertical scrolling is still
+   fine to handle natively — only horizontal panning is left to JS
+   (see the gesture handling), which is what lets a JS
+   preventDefault() during a committed swipe actually suppress native
+   scroll instead of fighting it. Needs its own opaque background
+   (rather than inheriting from .card) so it fully covers
+   .card-swipe-actions until swiped open — painted on top of it
+   through DOM order alone (no z-index needed), since it comes after
+   .card-swipe-actions as a sibling. */
+.card-front {
+  position: relative;
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: 1fr;
+  background: var(--bg-elevated);
+  padding: 14px 16px;
+  cursor: pointer;
+  touch-action: pan-y;
+  transition: transform 0.2s ease;
+}
+#feed.selecting .card-front { grid-template-columns: 20px 1fr; column-gap: 10px; }
+
+/* Hidden until a long-press on any card enters selection mode — see
+   the pointerdown/pointerup handling in JS. Not a decoration that's
+   always there; it only shows up once it's actually relevant. */
+.card-select {
+  display: none;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  padding: 0;
+  border: 1px solid var(--border-soft);
+  border-radius: 3px;
+  background: transparent;
+  cursor: pointer;
+}
+#feed.selecting .card-select { display: block; }
+.card-select:hover { border-color: var(--accent); }
+.card.selected .card-select { background: var(--accent); border-color: var(--accent); }
+
+.card-content { min-width: 0; }
+
+/* .card-time is pulled out of normal flow (see below) and pinned to
+   the top-right corner here, rather than being a normal flex item
+   pushed there with margin-left:auto — that meant when name+address
+   together were too wide, address (last in flow) got shoved down to
+   its own line *together with time*, since time immediately
+   followed it. Keeping time out of the wrapping flow entirely means
+   it's always in the same corner regardless: name and address (the
+   only two items actually wrapping between themselves) simply run
+   out of room and drop address to its own line beneath name, with
+   time staying put where it's always been. padding-right reserves
+   room so wrapped text doesn't run underneath it. */
+.card-meta {
+  position: relative;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+  padding-right: 72px;
+}
+/* Same size for all three fields, terminal-style — a real terminal
+   can't vary glyph size within a line, so emphasis comes from weight
+   and color instead. Sender is bold plus each theme's own curated
+   --identity color (its own character, not just "whatever ANSI blue
+   happens to be") so it's the fastest thing to scan at a glance, like
+   a colored From: field in a terminal mail client; the address stays
+   --muted and normal-weight (secondary, rarely the thing you're
+   scanning for); time picks up --highlight, each theme's own warm
+   accent, matching how timestamps get a distinct highlight in most
+   terminal log output (journalctl, dmesg, etc.). */
+.card-from-name { font-weight: 700; font-size: 0.8rem; color: var(--identity); }
+.card-from-address { font-size: 0.8rem; color: var(--muted); }
+.card-time { position: absolute; top: 0; right: 0; font-size: 0.8rem; color: var(--highlight); }
+
+.card-subject {
+  font-size: 1.05rem;
+  font-weight: 700;
+  margin: 0 0 6px;
+  line-height: 1.3;
+}
+
+/* Wraps the body text so the truncation (max-height + overflow) and the
+   gradient fade-to-background live on a separate element from the
+   text itself. Cards are only ever inserted once fully populated (see
+   loadMore()) — nothing here changes size after it's first shown, so
+   max-height (shrink-to-fit, capped) rather than a fixed height is
+   correct: short bodies just take up less room instead of leaving
+   padding. The fade height is a fraction of the wrap's own height,
+   capped at 1.8em — so a one-line body gets a small, proportional
+   fade instead of either a fixed-size fade that swamps it or no fade
+   at all just because nothing happened to be truncated. Pure CSS
+   (min() of an em cap and a percentage of the wrap): an earlier JS
+   version computed the same thing per card via getComputedStyle +
+   clientHeight, which forced a reflow for every card in the batch
+   insert loop. */
+.card-body-wrap {
+  position: relative;
+  max-height: 4.5em; /* ~3 lines at the line-height below */
+  overflow: hidden;
+}
+.card-body-wrap::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: min(1.8em, 60%);
+  /* A plain two-stop transparent-to-opaque gradient isn't perceived as
+     linear — the eye reads it as fading fast, then hitting a wall near
+     the opaque end. These extra stops follow an eased curve instead,
+     so the transition actually looks gradual rather than abrupt. */
+  background: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--bg-elevated) 15%, transparent) 0%,
+    color-mix(in srgb, var(--bg-elevated) 45%, transparent) 35%,
+    color-mix(in srgb, var(--bg-elevated) 75%, transparent) 60%,
+    color-mix(in srgb, var(--bg-elevated) 92%, transparent) 82%,
+    var(--bg-elevated) 100%
+  );
+  pointer-events: none;
+}
+.card.expanded .card-body-wrap {
+  max-height: none;
+}
+.card.expanded .card-body-wrap::after {
+  content: none;
+}
+
+.card-body {
+  color: var(--fg-dim);
+  font-size: 0.92rem;
+  line-height: 1.5em;
+  white-space: pre-wrap;
+}
+
+/* Renders a message's real HTML once a card is expanded (see
+   ensureFullBodyLoaded/renderHtmlBody) — sandboxed so the email's own
+   markup/CSS can never execute script, submit a form, or read
+   anything of ours (see the sandbox attribute set in JS). Starts at 0
+   height and grows once its content loads/resizes, so there's no
+   flash of a default-sized empty iframe before that happens. Kept a
+   plain white canvas regardless of app theme — it's rendering someone
+   else's document, not ours, so it should look the way it would in
+   any other mail client. */
+.card-html-body {
+  display: block;
+  width: 100%;
+  height: 0;
+  border: none;
+  background: #fff;
+  border-radius: 6px;
+}
+.load-images-btn {
+  display: block;
+  margin: 10px 0 0;
+  padding: 7px 14px;
+  border-radius: 6px;
+  border: 1px solid var(--border-soft);
+  background: transparent;
+  color: var(--fg-dim);
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+.load-images-btn:hover { border-color: var(--accent); color: var(--accent); }

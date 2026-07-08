@@ -1,0 +1,18 @@
+:root {
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  /* Fallback values only — themes.js sets the real ones on this same
+     element before first paint (see the two script tags above), so
+     these never actually show except if JS somehow failed to run. */
+  --bg: #1a1a2e;
+  --bg-elevated: #16162e;
+  --fg: #f1f1f1;
+  --fg-dim: #a9a9b3;
+  --muted: #6a6a7a;
+  --accent: #e94560;
+  --accent-soft: rgba(233, 69, 96, 0.35);
+  --danger: #e94560;
+  --success: #4caf50;
+  --identity: #5ac7c0;
+  --highlight: #f6d32d;
+  --border-soft: #26263e;
+}

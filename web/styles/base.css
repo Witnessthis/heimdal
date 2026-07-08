@@ -1,0 +1,42 @@
+* { box-sizing: border-box; }
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-mono);
+  overflow: hidden; /* the active view scrolls internally, not the page */
+}
+body { position: relative; }
+button:focus-visible, a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Feed: a dense, continuous scroll (not one card per screen) — the
+   bottom nav floats above it as a fixed overlay, so the feed reserves
+   matching space at the bottom instead of each card doing it. No top
+   chrome at all — a title bar here didn't add anything the bottom
+   nav's own Inbox/Settings labels don't already say. */
+main#feed {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  scrollbar-width: none;
+  padding-top: calc(16px + env(safe-area-inset-top, 0px));
+  padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+}
+main#feed::-webkit-scrollbar { display: none; }
+
+.feed-status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 48px 24px;
+  color: var(--fg-dim);
+}
+
+/* Wraps each .card — the margin between cards lives here (not on
+   .card itself), and the swipe-affordance glow is this element's own
+   box-shadow (see below for why it can't be a child element). */

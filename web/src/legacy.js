@@ -1,172 +1,15 @@
+import { buildCard } from './feed/card.js';
 import { cardData } from './feed/card-data.js';
-import { bestPreviewText, formatFullDate, formatRelativeTime } from './feed/preview.js';
+import { feed, feedStatus, nav, navInbox, navSettings, settingsView } from './feed/dom.js';
+import { bestPreviewText, formatFullDate } from './feed/preview.js';
 import { clearRenderedBody, ensureFullBodyLoaded, markRead } from './feed/render-body.js';
+import { selectedIds, toggleSelect } from './feed/selection.js';
 import {
   isAutoLoadImagesEnabled,
   isRichHtmlEnabled,
   setAutoLoadImagesEnabled,
   setRichHtmlEnabled,
 } from './settings/reading-prefs.js';
-
-const feed = document.getElementById('feed');
-const feedStatus = document.getElementById('feed-status');
-const settingsView = document.getElementById('settings-view');
-const nav = document.getElementById('bottom-nav');
-const navInbox = document.getElementById('nav-inbox');
-const navSettings = document.getElementById('nav-settings');
-
-// `data` is either an EmailSummary (list view, from loadMore() — no
-// body content at all, see the backend's toSummary()) or a full
-// EmailMessage (from a live SSE new-mail update via prependCard(),
-// which does carry a body). Either way, buildCard() itself never
-// shows body content — only ensureFullBodyLoaded(), on expand, does —
-// so nothing about a card changes size after it first appears except
-// that expand.
-function buildCard(data) {
-  const card = document.createElement('article');
-  card.className = 'card';
-  card.classList.toggle('unread', !data.isRead);
-  card.dataset.id = data.id;
-
-  // Sits behind .card-front — see the swipe gesture handling below for
-  // how .card-front's transform reveals these. Icons (not text) match
-  // the same stroke-based SVG set the bottom nav uses (viewBox 0 0 24
-  // 24, stroke-width 1.8, round caps/joins) — the markup here is
-  // static and app-authored, never derived from data, so innerHTML is
-  // safe (unlike the strict never-innerHTML rule for actual email
-  // content elsewhere in this file).
-  const swipeActions = document.createElement('div');
-  swipeActions.className = 'card-swipe-actions';
-  const replyBtn = document.createElement('button');
-  replyBtn.type = 'button';
-  replyBtn.className = 'card-action-reply';
-  replyBtn.innerHTML =
-    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></svg><span>Reply</span>';
-  replyBtn.addEventListener('click', () => openReplyCompose(card));
-  const forwardBtn = document.createElement('button');
-  forwardBtn.type = 'button';
-  forwardBtn.className = 'card-action-forward';
-  forwardBtn.innerHTML =
-    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 17 20 12 15 7"/><path d="M4 18v-2a4 4 0 0 1 4-4h12"/></svg><span>Forward</span>';
-  forwardBtn.addEventListener('click', () => openForwardCompose(card));
-  swipeActions.append(replyBtn, forwardBtn);
-
-  const front = document.createElement('div');
-  front.className = 'card-front';
-
-  const selectBtn = document.createElement('button');
-  selectBtn.type = 'button';
-  selectBtn.className = 'card-select';
-  selectBtn.setAttribute('aria-label', 'Select email');
-
-  const content = document.createElement('div');
-  content.className = 'card-content';
-
-  const meta = document.createElement('div');
-  meta.className = 'card-meta';
-
-  const fromName = document.createElement('span');
-  fromName.className = 'card-from-name';
-  fromName.textContent = data.from?.name || data.from?.address || '(unknown sender)';
-  meta.appendChild(fromName);
-
-  if (data.from?.name && data.from?.address) {
-    const fromAddress = document.createElement('span');
-    fromAddress.className = 'card-from-address';
-    fromAddress.textContent = data.from.address;
-    meta.appendChild(fromAddress);
-  }
-
-  const time = document.createElement('span');
-  time.className = 'card-time';
-  time.textContent = formatRelativeTime(data.receivedAt);
-  meta.appendChild(time);
-
-  const subject = document.createElement('h2');
-  subject.className = 'card-subject';
-  subject.textContent = data.subject || '(no subject)';
-
-  // Left empty deliberately — the collapsed card only ever shows
-  // sender/time/subject now, never a body preview (see the backend's
-  // toSummary(), which no longer fetches any body content for the
-  // list view at all, bounded or otherwise). ensureFullBodyLoaded()
-  // populates this element once the card is actually expanded; the
-  // element still needs to exist here so that (and the fade/overflow
-  // logic below) has something to find via querySelector.
-  const body = document.createElement('div');
-  body.className = 'card-body';
-
-  const bodyWrap = document.createElement('div');
-  bodyWrap.className = 'card-body-wrap';
-  bodyWrap.appendChild(body);
-
-  content.append(meta, subject, bodyWrap);
-  front.append(selectBtn, content);
-  card.append(swipeActions, front);
-  cardData.set(card, data);
-
-  // .card-wrap (not .card itself) is what actually gets inserted into
-  // #feed — see the call sites below, which insert card.parentElement
-  // rather than card. Keeping buildCard() return the .card element
-  // itself (unchanged) means everything else that already treats its
-  // return value as the card — cardData, the click/swipe gesture
-  // handling's closest('.card') — needs no change.
-  const wrap = document.createElement('div');
-  wrap.className = 'card-wrap';
-  wrap.append(card);
-
-  return card;
-}
-
-// Selection: a lightweight multi-select for bulk actions (currently
-// just "mark as read"). Tracked by id rather than by element reference
-// so it survives a card being replaced/re-synced during pagination.
-// Entered via a long-press (see the pointer handling below) rather
-// than always showing a checkbox on every card — selection is rare
-// enough that it shouldn't cost permanent visual weight on the feed.
-const selectedIds = new Set();
-const selectionBar = document.getElementById('selection-bar');
-const selectionCount = document.getElementById('selection-count');
-
-function updateSelectionBar() {
-  const active = selectedIds.size > 0;
-  selectionBar.style.display = active ? 'flex' : 'none';
-  nav.style.display = active ? 'none' : '';
-  feed.classList.toggle('selecting', active);
-  if (active) selectionCount.textContent = `${selectedIds.size} selected`;
-}
-
-function toggleSelect(card) {
-  const id = card.dataset.id;
-  const nowSelected = !card.classList.contains('selected');
-  card.classList.toggle('selected', nowSelected);
-  if (nowSelected) selectedIds.add(id);
-  else selectedIds.delete(id);
-  updateSelectionBar();
-}
-
-function clearSelection() {
-  for (const id of selectedIds) {
-    feed.querySelector(`[data-id="${CSS.escape(id)}"]`)?.classList.remove('selected');
-  }
-  selectedIds.clear();
-  updateSelectionBar();
-}
-
-document.getElementById('selection-cancel').addEventListener('click', clearSelection);
-
-document.getElementById('selection-mark-read').addEventListener('click', async () => {
-  const ids = [...selectedIds];
-  await Promise.all(
-    ids.map((id) =>
-      fetch(`/api/mail/messages/${encodeURIComponent(id)}/read`, { method: 'POST' }).catch(() => {}),
-    ),
-  );
-  for (const id of ids) {
-    feed.querySelector(`[data-id="${CSS.escape(id)}"]`)?.classList.remove('unread');
-  }
-  clearSelection();
-});
 
 // New-email shelf — revealed by pulling down while already at the top
 // of the feed (see the pull-gesture handling in the recognizer below).
@@ -862,7 +705,7 @@ async function loadMore() {
     // single list fetch above already gave us.
     if (toFetch.length) {
       for (const summary of toFetch) {
-        const card = buildCard(summary);
+        const card = buildCard(summary, openReplyCompose, openForwardCompose);
         feed.insertBefore(card.parentElement, anchor);
       }
       if (feedStatus.isConnected) feedStatus.remove();
@@ -970,7 +813,7 @@ function connectToMailEvents() {
 }
 
 function prependCard(message) {
-  const card = buildCard(message);
+  const card = buildCard(message, openReplyCompose, openForwardCompose);
   feed.insertBefore(card.parentElement, feed.querySelector('.card-wrap') || sentinel);
   if (feedStatus.isConnected) feedStatus.remove();
 }

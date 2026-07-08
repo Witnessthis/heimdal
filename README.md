@@ -32,7 +32,7 @@ Single-user. One person's mail, one set of credentials, one backend instance. Mu
 
 ### Stack
 
-- **Frontend**: TypeScript PWA (existing `web/` shell)
+- **Frontend**: TypeScript PWA, built with Vite (`web/` — a multi-page app: the inbox/compose/settings shell plus standalone auth pages, each its own Vite entry, sharing types with the backend). Biome for lint/format, Vitest for unit tests
 - **Backend**: TypeScript/Node.js — chosen for its library ecosystem (WebAuthn, OAuth2, IMAP) and the ability to share type definitions between frontend and backend, which matters for the AI protocol schema
 - **AI**: [Vercel AI SDK](https://github.com/vercel/ai) (Apache 2.0) providing a unified interface across local and hosted models — Ollama, Anthropic, OpenAI, and others. The model is configured through the app's settings UI; swapping providers requires no code changes
 - **Deployment**: Docker with Caddy handling TLS; backend and frontend in one container
@@ -105,12 +105,17 @@ Ollama loads a model into RAM on first use and unloads it after an idle timeout 
 
 ## Status
 
-Early stage — project intent and direction only. Implementation has not started yet.
+The core mail client — auth, IMAP mail provider, mobile-first read/compose/
+reply/forward UI, settings/themes — is implemented and running. The AI layer
+is scaffolding only; see the AI protocol "Status" subsection above for where
+that stands.
 
 ## Local development
 
-The `web/` folder holds the PWA shell, served with live-reload via
-`npm run dev`. Two ways to try it out, depending on what you need:
+`npm run dev` runs the backend (`tsx watch src/server.ts`, the API on
+`:3000`) and the Vite dev server (the frontend on `:5173`, proxying `/api`
+back to the backend, live reload on save) together. Two ways to reach it,
+depending on what you need:
 
 ### Quick local test (no domain needed)
 
@@ -120,11 +125,11 @@ To just try it out from a browser or phone on the same network:
 deploy/serve-local.sh
 ```
 
-This runs the dev server over plain HTTP and prints the URL to use from
-other devices on your network. No domain, no Caddy, no certificate needed.
-The one limitation: without HTTPS, the service worker won't register (so
-offline caching won't activate), but the page loads normally and
-"Add to Home Screen" still works on iOS/Android.
+This starts both dev servers and prints the URL to use from other devices
+on your network (the Vite server, port 5173). No domain, no Caddy, no
+certificate needed. The one limitation: without HTTPS, the service worker
+won't register (so offline caching won't activate), but the page loads
+normally and "Add to Home Screen" still works on iOS/Android.
 
 If Caddy (see below) is currently running, this refuses to start instead of
 running alongside it — otherwise it'd also be reachable through your domain,
@@ -144,10 +149,10 @@ Prerequisites: Arch Linux (pacman), Node.js/npm, a systemd user session, and a
 domain whose DNS A record points at your machine's public IP with ports 80/443
 forwarded to it.
 
-This installs Caddy, writes `/etc/caddy/Caddyfile`, installs a
-`heimdal-dev.service` systemd user unit that runs `npm run dev`
-(`live-server` on `web/`, port 8080), and enables both to start automatically.
-Re-run the script anytime after editing the templates in `deploy/`.
+This installs Caddy, writes `/etc/caddy/Caddyfile` (proxying to the Vite dev
+server on `:5173`), installs a `heimdal-dev.service` systemd user unit that
+runs `npm run dev`, and enables both to start automatically. Re-run the
+script anytime after editing the templates in `deploy/`.
 
 Once set up, control the dev server and Caddy together with:
 
@@ -165,12 +170,25 @@ This stops and disables both services and removes the files the setup script
 generated. It leaves the `caddy` package and `node_modules/` installed; the
 script prints how to remove those too if you want a fully clean machine.
 
+### Building, testing, and linting
+
+```sh
+npm run build      # tsc (backend -> dist/) + vite build (frontend -> dist/web/)
+npm start           # runs the production build (node dist/server.js)
+npm test            # Vitest
+npm run typecheck   # tsc --noEmit, backend and frontend
+npm run lint        # Biome
+npm run format      # Biome, writes fixes
+```
+
 ### Docker (distro-agnostic)
 
 For deployment or preview without live-reload. Use `npm run dev` above for
 active development with instant browser reload on file changes.
 
-Build and run the static PWA via Caddy in a container:
+Build and run in a container — the builder stage runs the same
+`npm run build` as above; the runtime stage ships only the compiled
+output plus Caddy:
 
 **Local (HTTP, no domain needed):**
 

@@ -45,7 +45,11 @@ function cancelLongPress(): void {
 feed.addEventListener('pointerdown', (e) => {
   if (e.button !== 0) return; // primary mouse button / the actual touch point only
   const card = (e.target as Element).closest<HTMLElement>('.card');
-  if (!card || (e.target as Element).closest('.card-select') || (e.target as Element).closest('.card-swipe-actions'))
+  if (
+    !card ||
+    (e.target as Element).closest('.card-select') ||
+    (e.target as Element).closest('.card-swipe-actions')
+  )
     return;
   activeCard = card;
   pressStartX = e.clientX;

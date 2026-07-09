@@ -1,28 +1,32 @@
+import { dragNewEmailReveal, isNewEmailRevealed, settleNewEmailReveal } from '../compose/new-email-reveal';
 import { feed } from './dom';
 import { LONG_PRESS_MOVE_TOLERANCE_PX } from './gesture-constants';
 import { clearRenderedBody, ensureFullBodyLoaded, markRead } from './render-body';
 import { selectedIds, toggleSelect } from './selection';
 import { closeSwipe, openSwipeCard, setOpenSwipeCard } from './swipe-state';
 
-// One consolidated gesture recognizer for #feed, covering three
+// One consolidated gesture recognizer for #feed, covering four
 // behaviors that all start as "a pointer went down somewhere in the
 // feed": tap (expand/collapse or select), long-press (enter selection
-// mode), and a horizontal swipe on a card (reveal Reply/Forward).
-// Pointer Events unify mouse and touch behind one event model, so this
-// works the same way on both without separate mousedown/touchstart
-// handling. Revealing the New Email button is deliberately NOT here —
-// it's just the feed's own native vertical scroll, since the button is
-// the first element in the scroll content (see
-// compose/new-email-reveal.ts).
+// mode), a horizontal swipe on a card (reveal Reply/Forward), and a
+// downward pull while already at the top (reveal the New Email button —
+// see compose/new-email-reveal.ts). Pointer Events unify mouse and
+// touch behind one event model, so this works the same way on both
+// without separate mousedown/touchstart handling.
 //
 // Direction is decided ONCE per gesture, the first time movement
 // crosses LONG_PRESS_MOVE_TOLERANCE_PX — horizontal-dominant commits to
-// 'swipe', anything vertical is left alone as plain native scroll. Once
-// committed to 'swipe', the long-press timer is cancelled and
-// preventDefault() is called on further moves so native scroll doesn't
-// fight the transform being driven by hand below — #feed's
-// touch-action: pan-y (see its CSS) is what lets the browser still own
-// plain vertical scrolling right up until that point.
+// 'swipe', a downward drag that began at the very top (with the button
+// still hidden) commits to 'pull', anything else vertical is left alone
+// as plain native scroll. Once committed to 'swipe' or 'pull', the
+// long-press timer is cancelled and preventDefault() is called so
+// native scroll/overscroll doesn't fight the reveal being driven by
+// hand — #feed's touch-action: pan-y (see its CSS) is what lets the
+// browser still own plain vertical scrolling right up until that point.
+// The pull only ever starts at the top boundary (scrollTop <= 0), where
+// there is no vertical scroll to compete with, only the overscroll
+// bounce — which is why it's speed-independent, unlike a mid-scroll
+// gesture would be.
 const LONG_PRESS_MS = 500;
 const SWIPE_REVEAL_PX = 144; // two 72px action buttons — matches .card-swipe-actions CSS
 const SWIPE_OPEN_THRESHOLD_PX = 40;
@@ -46,7 +50,15 @@ let longPressFired = false;
 // right after swiping it open. Same shape as longPressFired, just for
 // this case.
 let dragJustSettled = false;
-let gestureDirection: 'swipe' | 'scroll' | null = null;
+let gestureDirection: 'swipe' | 'pull' | 'scroll' | null = null;
+// Whether the feed was already scrolled to the very top when this
+// gesture began — a precondition for the pull-to-reveal, so the reveal
+// can only ever begin at the boundary (never mid-scroll).
+let gestureStartedAtTop = false;
+// Last pull distance seen, remembered so a pull that ends via
+// pointercancel (which carries no reliable coordinates) can still be
+// settled by how far it actually got.
+let pullDy = 0;
 
 function cancelLongPress(): void {
   if (pressTimer !== null) clearTimeout(pressTimer);
@@ -65,6 +77,8 @@ feed.addEventListener('pointerdown', (e) => {
   pressStartX = e.clientX;
   pressStartY = e.clientY;
   gestureDirection = null;
+  gestureStartedAtTop = feed.scrollTop <= 0;
+  pullDy = 0;
   dragJustSettled = false;
   if (card) {
     pressTimer = setTimeout(() => {
@@ -80,11 +94,23 @@ feed.addEventListener('pointermove', (e) => {
   const dx = e.clientX - pressStartX;
   const dy = e.clientY - pressStartY;
 
+  // A downward drag that began at the top, with the button still hidden,
+  // is a reveal pull. preventDefault() the moment it looks like one —
+  // before the tolerance check below — so the browser never starts an
+  // overscroll bounce it could then refuse to hand back (this is what
+  // makes the reveal work the same at any drag speed). Horizontal-
+  // dominant drags are left for the swipe branch, which preventDefaults
+  // itself once committed.
+  const pulling = gestureStartedAtTop && !isNewEmailRevealed() && dy > 0 && dy >= Math.abs(dx);
+  if (pulling) e.preventDefault();
+
   if (gestureDirection === null) {
     if (Math.hypot(dx, dy) <= LONG_PRESS_MOVE_TOLERANCE_PX) return; // not enough movement to decide yet
     cancelLongPress();
     if (activeCard && Math.abs(dx) > Math.abs(dy)) {
       gestureDirection = 'swipe';
+    } else if (pulling) {
+      gestureDirection = 'pull';
     } else {
       gestureDirection = 'scroll'; // vertical, native — nothing further for this gesture to do
     }
@@ -97,6 +123,10 @@ feed.addEventListener('pointermove', (e) => {
     const offset = Math.min(0, Math.max(-SWIPE_REVEAL_PX, openOffset + dx));
     front.style.transition = 'none';
     front.style.transform = `translateX(${offset}px)`;
+  } else if (gestureDirection === 'pull') {
+    e.preventDefault();
+    pullDy = dy;
+    dragNewEmailReveal(dy);
   }
 });
 
@@ -117,6 +147,9 @@ feed.addEventListener('pointerup', (e) => {
     } else {
       closeSwipe(activeCard);
     }
+  } else if (gestureDirection === 'pull') {
+    settleNewEmailReveal(pullDy);
+    dragJustSettled = true;
   }
   gestureActive = false;
   activeCard = null;
@@ -125,6 +158,11 @@ feed.addEventListener('pointerup', (e) => {
 feed.addEventListener('pointercancel', () => {
   cancelLongPress();
   if (gestureDirection === 'swipe' && activeCard) closeSwipe(activeCard);
+  // Settle the same as a release: a cancel during a committed pull is
+  // the browser reclaiming the gesture for overscroll, not a reason to
+  // discard how far the button was already pulled — pullDy remembers
+  // that distance since the cancel event's own coordinates don't.
+  if (gestureDirection === 'pull') settleNewEmailReveal(pullDy);
   gestureActive = false;
   activeCard = null;
   gestureDirection = null;

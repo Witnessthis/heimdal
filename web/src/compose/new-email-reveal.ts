@@ -1,72 +1,85 @@
 import { feed } from '../feed/dom';
 import { openCompose } from './compose';
 
-// The "New Email" button is the first element inside the feed's scroll
-// content, above the cards — not a separate panel and not anything the
-// JS animates into place. Revealing/hiding it is the feed's own native
-// vertical scroll: the feed rests scrolled down by the button's height
-// so it's parked just off the top, scrolling up reveals it, scrolling
-// back down hides it. The only scripted part is settling a half-
-// finished reveal (below).
+// The "New Email" button lives at the very top of the feed, collapsed to
+// zero height by default so the first card sits at the natural top of the
+// scroll (scrollTop 0). That's what keeps momentum honest: a flick to the
+// top rests on the mail, never on the button. The button is revealed only
+// by a deliberate pull-down while already at the top — the feed's gesture
+// recognizer (gestures.ts) drives dragNewEmailReveal/settleNewEmailReveal
+// during that pull — and hidden again by simply scrolling it back off the
+// top (see the scroll settle at the bottom of this file). It expands the
+// strip's own height, pushing the cards down, rather than floating over
+// them, so it reads as part of the same surface the cards sit on.
 const newEmailBg = document.getElementById('new-email-bg') as HTMLElement;
 
-// Reveal the button into the layout and park it just off the top of the
-// feed. It's kept out of the layout (#feed:not(.loaded) in the CSS)
-// until this runs, so it can't be stranded on screen during the initial
-// load, when the feed is still too short to scroll it out of view.
-// Called once after the first batch renders (inbox.ts), and again before
-// composing so returning from compose doesn't leave it hanging open.
-export function hideNewEmail(): void {
-  feed.classList.add('loaded');
-  feed.scrollTop = newEmailBg.offsetHeight;
+let revealed = false;
+
+// Full height the strip expands to when revealed. Read from scrollHeight
+// so it always reflects the real content + safe-area padding, even while
+// the element is clamped to height:0 (collapsed).
+function fullHeight(): number {
+  return newEmailBg.scrollHeight;
+}
+
+export function isNewEmailRevealed(): boolean {
+  return revealed;
+}
+
+// Live drag: follow the finger, clamped to [0, full height], no
+// transition so it tracks the pointer directly.
+export function dragNewEmailReveal(offset: number): void {
+  newEmailBg.style.transition = 'none';
+  newEmailBg.style.height = `${Math.max(0, Math.min(fullHeight(), offset))}px`;
+}
+
+// Release: snap fully open or shut depending on how far it was pulled,
+// animating there via the strip's CSS height transition.
+export function settleNewEmailReveal(offset: number): void {
+  const h = fullHeight();
+  newEmailBg.style.transition = '';
+  revealed = offset > h / 2;
+  newEmailBg.style.height = revealed ? `${h}px` : '0px';
+}
+
+// Snap shut immediately (no animation) — used when the strip is already
+// off-screen or about to be covered (dismiss-by-scroll, opening compose).
+function collapse(): void {
+  newEmailBg.style.transition = 'none';
+  newEmailBg.style.height = '0px';
+  revealed = false;
 }
 
 document.getElementById('new-email-btn')!.addEventListener('click', () => {
-  hideNewEmail();
+  collapse();
   openCompose({ mode: 'new' });
 });
 
-// --- Snap a half-finished reveal to fully-shown or fully-hidden ------
-// Done here in JS rather than with CSS scroll-snap on purpose: a snap
-// point attracts from both sides, so the "hidden" point (which sits
-// right where the reveal meets the feed) would yank the feed back to
-// the top the instant you scrolled down past the parked button. This
-// only acts while the scroll is resting *strictly inside* the button's
-// height — mid-reveal — so at or past the parked position, i.e. anywhere
-// in the feed proper, it does nothing at all.
-let snapTimer: ReturnType<typeof setTimeout> | null = null;
-let snapping = false;
-
-function animateScrollTo(to: number): void {
-  const from = feed.scrollTop;
-  const start = performance.now();
-  const DURATION_MS = 180;
-  snapping = true;
-  function step(now: number): void {
-    const t = Math.min(1, (now - start) / DURATION_MS);
-    const eased = 1 - (1 - t) * (1 - t); // ease-out quad
-    feed.scrollTop = from + (to - from) * eased;
-    if (t < 1) {
-      requestAnimationFrame(step);
-    } else {
-      snapping = false;
-    }
-  }
-  requestAnimationFrame(step);
-}
-
+// Dismiss-by-scrolling. While revealed, the strip is real content at the
+// top of the feed, so scrolling up pushes it off like anything else. Once
+// that scroll settles, resolve it: snap back fully open if it was barely
+// nudged, otherwise collapse. If it was scrolled entirely past, collapse
+// without moving the cards — drop the strip's height from both the
+// content above and the scroll offset so nothing jumps.
+let settleTimer: ReturnType<typeof setTimeout> | null = null;
 feed.addEventListener(
   'scroll',
   () => {
-    if (snapping) return; // our own animation is driving scrollTop — leave it be
-    if (snapTimer !== null) clearTimeout(snapTimer);
-    // Debounced: fire once the scroll has actually come to rest, not on
-    // every event during a flick or momentum.
-    snapTimer = setTimeout(() => {
-      const revealHeight = newEmailBg.offsetHeight;
+    if (!revealed) return; // hidden: momentum already rests at the top on its own
+    if (settleTimer !== null) clearTimeout(settleTimer);
+    settleTimer = setTimeout(() => {
+      if (!revealed) return;
+      const h = fullHeight();
       const scrolled = feed.scrollTop;
-      if (scrolled > 0 && scrolled < revealHeight) {
-        animateScrollTo(scrolled < revealHeight / 2 ? 0 : revealHeight);
+      if (scrolled <= 0) return; // still fully revealed
+      if (scrolled >= h) {
+        collapse();
+        feed.scrollTop = scrolled - h;
+      } else if (scrolled < h / 2) {
+        feed.scrollTop = 0; // barely nudged — snap back fully open
+      } else {
+        collapse();
+        feed.scrollTop = 0;
       }
     }, 90);
   },

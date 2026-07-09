@@ -1,7 +1,6 @@
 import type { MailEvent } from '@server/mail/provider';
 import type { EmailMessage, EmailSummary, Folder, Page } from '@server/mail/types';
 import { openForwardCompose, openReplyCompose } from '../compose/compose';
-import { hideNewEmail } from '../compose/new-email-reveal';
 import { buildCard } from './card';
 import { feed, feedStatus } from './dom';
 
@@ -48,11 +47,6 @@ async function loadInbox(): Promise<void> {
   }
   folderId = inbox.id;
   await loadMoreBatches(INITIAL_BATCHES);
-  // Now that there are cards to scroll over, park the New Email button
-  // just off the top of the feed (it's the first element in the scroll
-  // content — see new-email-reveal.ts). Done here rather than at page
-  // load because the feed has to be tall enough to scroll first.
-  hideNewEmail();
 }
 
 // Loads up to `n` further batches back-to-back, stopping early if the

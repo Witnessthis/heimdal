@@ -31,26 +31,19 @@ main#feed {
   scrollbar-width: none;
   /* Horizontal card swipes (Reply/Forward) are hand-driven transforms
      that call preventDefault(); pan-y keeps the browser owning plain
-     vertical scrolling — including the scroll that reveals the New
-     Email button parked at the top of the feed (see
-     new-email-reveal.ts) — right up until a gesture commits to
-     horizontal. overscroll-behavior-y: contain suppresses the
-     rubber-band bounce at the top edge, so scrolling up to reveal that
-     button lands on a clean stop rather than a springy overshoot. */
+     vertical scrolling right up until a gesture commits to horizontal
+     or to a top pull. overscroll-behavior-y: contain suppresses the
+     rubber-band bounce at the top edge, so the pull-to-reveal begins
+     from a clean stop rather than fighting a springy overshoot. The New
+     Email button is collapsed content at the top (see #new-email-bg),
+     so the first card is the natural scroll top — a flick to the top
+     rests on the mail, and the button is only reached by a deliberate
+     pull past that top (gestures.ts). There is deliberately no top
+     padding here: the notch/safe-area clearance lives on the button
+     strip and .feed-top-spacer instead, so it can't scroll away and
+     drop the first card under the notch. */
   touch-action: pan-y;
   overscroll-behavior-y: contain;
-  /* Settling a half-finished reveal to fully-shown or fully-hidden is
-     done in JS (see new-email-reveal.ts), NOT CSS scroll-snap: a snap
-     point attracts from both sides, so the "hidden" point — which sits
-     right at the boundary between the reveal and the feed — would drag
-     the feed back to the top the moment you scrolled down past the
-     parked button. The JS snap only engages while resting inside the
-     button's height, leaving the feed proper untouched. There is also
-     deliberately no top padding here — the notch/safe-area clearance
-     lives on the button strip and .feed-top-spacer instead, so it
-     survives being scrolled (a top padding on #feed would scroll away
-     when the button is parked, dropping the first card under the
-     notch). */
   padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px));
 }
 main#feed::-webkit-scrollbar {

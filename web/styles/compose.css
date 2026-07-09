@@ -1,34 +1,28 @@
 /* The New Email button lives at the very top of the feed's scroll
    content, above the cards — not a floating panel. Same background as
    the feed/body surface (not --bg-elevated, no border) so it reads as
-   part of that surface rather than a distinct strip. The feed starts
-   scrolled just past it (see hideNewEmail in new-email-reveal.ts), so
-   it's revealed by scrolling the feed up to the very top and hidden by
-   scrolling back down — the same native scroll that moves the cards.
+   part of that surface rather than a distinct strip. It's collapsed to
+   height:0 by default so the first card sits at the natural top of the
+   scroll; a downward pull while already at the top expands it (JS drives
+   the height, snapping via the transition — see new-email-reveal.ts and
+   gestures.ts), pushing the cards down rather than floating over them.
    Being inside #feed, it's also hidden automatically whenever #feed is
-   (e.g. while Settings is showing), with no special-casing. Its
-   padding-top carries the safe-area inset so the button clears the
-   notch when it's scrolled to the very top. */
+   (e.g. while Settings is showing). Its padding-top carries the safe-
+   area inset so the button clears the notch when fully revealed. */
 #new-email-bg {
   display: flex;
   align-items: center;
   justify-content: center;
   padding: calc(14px + env(safe-area-inset-top, 0px)) 16px 14px;
   background: var(--bg);
-}
-/* Kept out of the layout until the feed has cards to scroll over (see
-   hideNewEmail / the .loaded class): during the initial load the feed
-   is too short to scroll the button off screen, so it would otherwise
-   sit stranded at the top. */
-#feed:not(.loaded) #new-email-bg {
-  display: none;
+  height: 0;
+  overflow: hidden;
+  transition: height 0.2s ease;
 }
 /* Clearance sitting between the button and the first card. Its height
-   is the notch/safe-area inset for the first card in the parked state
-   (button scrolled off, this at the top) — the padding that #feed can't
-   carry itself without it scrolling away (see base.css). Parked scroll
-   position is exactly the button's height, which lands the top of this
-   spacer at the top of the viewport. */
+   is the notch/safe-area inset for the first card in the default state
+   (button collapsed, this at the top) — the padding that #feed can't
+   carry itself without it scrolling away (see base.css). */
 .feed-top-spacer {
   height: calc(16px + env(safe-area-inset-top, 0px));
 }

@@ -131,15 +131,31 @@ feed.addEventListener('pointermove', (e) => {
   const dy = e.clientY - pressStartY;
 
   if (gestureDirection === null) {
+    // Whether this move, however tiny, is heading the direction that
+    // would pull the reveal open (closed, dragging down) or shut
+    // (revealed, dragging up). Opening drags down while closed, closing
+    // drags up while revealed — either way the feed's own scrollTop
+    // hasn't moved (revealed is a transform, not a scroll), so
+    // gestureStartedAtTop still holds throughout, including while
+    // closing.
+    const pulling = gestureStartedAtTop && (isNewEmailRevealed() ? dy < 0 : dy > 0);
+    // A native touch scroll can only be cancelled on its very first
+    // touchmove — once the browser has let a later one scroll natively,
+    // no subsequent preventDefault() undoes it. Gating this behind the
+    // tolerance check below (which exists to distinguish a tap/long-press
+    // from a real drag) meant a fast flick crossed that tolerance within
+    // its first event and stayed cancellable, while a slow drag crossed
+    // it several events later, after native scroll had already won —
+    // exactly what made this gesture feel speed-dependent. Calling
+    // preventDefault as soon as a move is plausibly a pull, before the
+    // tolerance check, fixes that regardless of how slowly it happens.
+    if (pulling) e.preventDefault();
+
     if (Math.hypot(dx, dy) <= LONG_PRESS_MOVE_TOLERANCE_PX) return; // not enough movement to decide yet
     cancelLongPress();
     if (activeCard && Math.abs(dx) > Math.abs(dy)) {
       gestureDirection = 'swipe';
-    } else if (gestureStartedAtTop && (isNewEmailRevealed() ? dy < 0 : dy > 0)) {
-      // Opening drags down while closed; closing drags up while
-      // revealed. Either way the feed's own scrollTop hasn't moved
-      // (revealed is a transform, not a scroll), so gestureStartedAtTop
-      // still holds throughout — including for the closing direction.
+    } else if (pulling) {
       gestureDirection = 'pull';
     } else {
       gestureDirection = 'scroll'; // vertical, native — nothing further for this gesture to do

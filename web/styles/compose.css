@@ -1,12 +1,15 @@
 /* Sits fixed behind the feed at all times — not itself animated, and not
    display:none (its default CSS visibility is "on") so it can be
-   uncovered smoothly as #feed moves. Pulling down while already at the
-   top of the feed drags #feed's own transform down to uncover this;
-   dragging/scrolling back up covers it again. See the pull-gesture
-   handling in gestures.ts and #feed's transform in base.css. Hidden
-   explicitly (display:none) while Settings is showing — see showView()
-   in settings.ts — since #feed itself is what normally covers it and
-   Settings swaps #feed away entirely. */
+   uncovered smoothly as #feed moves. Same background as #feed/body
+   itself (not --bg-elevated, no border) so revealing it reads as "more
+   of the same surface" the cards sit on, not a distinct panel sliding
+   into view. Pulling down while already at the top of the feed drags
+   #feed's own transform down to uncover this; dragging/scrolling back
+   up covers it again. See the pull-gesture handling in gestures.ts and
+   #feed's transform in base.css. Hidden explicitly (display:none) while
+   Settings is showing — see showView() in settings.ts — since #feed
+   itself is what normally covers it and Settings swaps #feed away
+   entirely. */
 #new-email-bg {
   position: fixed;
   top: 0;
@@ -17,8 +20,7 @@
   align-items: center;
   justify-content: center;
   padding: calc(14px + env(safe-area-inset-top, 0px)) 16px 14px;
-  background: var(--bg-elevated);
-  border-bottom: 1px solid var(--border-soft);
+  background: var(--bg);
 }
 #new-email-bg button {
   padding: 8px 20px;

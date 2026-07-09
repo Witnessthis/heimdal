@@ -41,9 +41,19 @@ main#feed {
      pull past that top (gestures.ts). There is deliberately no top
      padding here: the notch/safe-area clearance lives on the button
      strip and .feed-top-spacer instead, so it can't scroll away and
-     drop the first card under the notch. */
+     drop the first card under the notch. overflow-anchor: none because
+     the reveal strip growing/shrinking above scrollTop 0 is exactly the
+     case scroll anchoring exists to compensate for — left on, the
+     browser was quietly nudging scrollTop down as the strip grew to
+     keep the first card visually pinned, which cut the reveal off
+     partway (settling looked like it stopped in the middle of the
+     button) instead of showing the strip's full height. The reveal
+     already fully controls scroll position itself (pinned at the top
+     while hidden, driven by the pull while revealing), so there's
+     nothing here that needs the browser's own compensation. */
   touch-action: pan-y;
   overscroll-behavior-y: contain;
+  overflow-anchor: none;
   padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px));
 }
 main#feed::-webkit-scrollbar {

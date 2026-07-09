@@ -3,19 +3,23 @@ import { openCompose } from './compose';
 
 // The "New Email" button is the first element inside the feed's scroll
 // content, above the cards — not a separate panel and not anything the
-// JS animates. The feed starts scrolled down by exactly this strip's
-// height (see hideNewEmail, called once after the first batch renders
-// in inbox.ts) so it's parked just off the top; scrolling the feed up
-// to the very top reveals it, scrolling back down hides it. It's the
-// same native scroll that moves the cards — no gesture recognizer, no
-// transform, speed-independent by construction.
+// JS animates. Revealing/hiding it is the feed's own native vertical
+// scroll: the feed rests scrolled down by the button's height so it's
+// parked just off the top, scrolling up reveals it, scrolling back down
+// hides it. CSS scroll-snap (see #feed, #new-email-bg and
+// .feed-snap-anchor in the CSS) pins it fully open or shut when a scroll
+// settles near the top, so it never rests half-revealed — there's no
+// JS gesture handling here at all.
 const newEmailBg = document.getElementById('new-email-bg') as HTMLElement;
 
-// Park the reveal just off the top: scroll the feed down by the button
-// strip's own height so the cards sit at the top and the button is
-// hidden immediately above them. Also used after composing, so
-// returning from compose doesn't leave the button hanging open.
+// Reveal the button into the layout and park it just off the top of the
+// feed. It's kept out of the layout (see #feed:not(.loaded) in the CSS)
+// until this runs, so it can't be stranded on screen during the initial
+// load, when the feed is still too short to scroll it out of view.
+// Called once after the first batch renders (inbox.ts), and again before
+// composing so returning from compose doesn't leave it hanging open.
 export function hideNewEmail(): void {
+  feed.classList.add('loaded');
   feed.scrollTop = newEmailBg.offsetHeight;
 }
 
@@ -23,26 +27,3 @@ document.getElementById('new-email-btn')!.addEventListener('click', () => {
   hideNewEmail();
   openCompose({ mode: 'new' });
 });
-
-// Snap the reveal fully open or shut once scrolling settles anywhere
-// inside its narrow band, so a slow scroll never leaves it resting
-// half-shown. Debounced to fire on scroll-end rather than mid-scroll,
-// and gated to only act while scrollTop is within the strip's height —
-// so it never touches scrolling the feed proper, only the top reveal
-// zone. behavior:'smooth' is the browser's own animation, not a
-// hand-driven one.
-let snapTimer: ReturnType<typeof setTimeout> | null = null;
-feed.addEventListener(
-  'scroll',
-  () => {
-    if (snapTimer !== null) clearTimeout(snapTimer);
-    snapTimer = setTimeout(() => {
-      const revealHeight = newEmailBg.offsetHeight;
-      const scrolled = feed.scrollTop;
-      if (scrolled > 0 && scrolled < revealHeight) {
-        feed.scrollTo({ top: scrolled < revealHeight / 2 ? 0 : revealHeight, behavior: 'smooth' });
-      }
-    }, 120);
-  },
-  { passive: true },
-);

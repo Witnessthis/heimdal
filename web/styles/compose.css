@@ -11,13 +11,24 @@
    area inset so the button clears the notch when fully revealed. */
 #new-email-bg {
   display: flex;
-  align-items: center;
+  /* flex-end, not center: the strip's box grows downward from a fixed
+     top (see base.css — #feed has no top padding, so y=0 is this
+     element's own top edge), so a bottom anchor is what makes a partial
+     pull read as the button sliding down into view from behind the top
+     edge, bottom border first. Center-anchoring clipped BOTH the top and
+     bottom border symmetrically at every intermediate height, which is
+     what made a partial or under-measured reveal look like the button
+     was stuck half-hidden behind something instead of being pulled out. */
+  align-items: flex-end;
   justify-content: center;
   padding: calc(14px + env(safe-area-inset-top, 0px)) 16px 14px;
   background: var(--bg);
   height: 0;
   overflow: hidden;
-  transition: height 0.2s ease;
+  /* A short, decisive ease-out (no bounce/overshoot risk) rather than a
+     plain ease — this is what should read as a "snap" on release rather
+     than a soft fade to the open/closed height. */
+  transition: height 0.16s cubic-bezier(0.16, 1, 0.3, 1);
 }
 /* Clearance sitting between the button and the first card. Its height
    is the notch/safe-area inset for the first card in the default state

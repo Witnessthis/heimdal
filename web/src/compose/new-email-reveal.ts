@@ -15,12 +15,36 @@ const newEmailBg = document.getElementById('new-email-bg') as HTMLElement;
 
 let revealed = false;
 
-// Full height the strip expands to when revealed. Read from scrollHeight
-// so it always reflects the real content + safe-area padding, even while
-// the element is clamped to height:0 (collapsed).
-function fullHeight(): number {
-  return newEmailBg.scrollHeight;
+// Full height the strip expands to when revealed. scrollHeight is NOT
+// reliable here — WebKit misreports it for a flex container that's
+// currently clamped to height:0 with overflow:hidden (returns something
+// smaller than the actual content), which made the strip only ever open
+// a few px, clipping the button's top and bottom border and making the
+// "reveal" barely register as a snap. Measuring via a real height:auto
+// layout pass and offsetHeight sidesteps that bug. Cached since it's read
+// on every pointermove during a drag — re-measured on resize (rotation,
+// or a PWA safe-area change) since it depends on env(safe-area-inset-top).
+let cachedFullHeight = 0;
+
+function measureFullHeight(): number {
+  const prevHeight = newEmailBg.style.height;
+  const prevTransition = newEmailBg.style.transition;
+  newEmailBg.style.transition = 'none';
+  newEmailBg.style.height = 'auto';
+  const h = newEmailBg.offsetHeight;
+  newEmailBg.style.height = prevHeight;
+  newEmailBg.style.transition = prevTransition;
+  return h;
 }
+
+function fullHeight(): number {
+  if (cachedFullHeight === 0) cachedFullHeight = measureFullHeight();
+  return cachedFullHeight;
+}
+
+window.addEventListener('resize', () => {
+  cachedFullHeight = measureFullHeight();
+});
 
 export function isNewEmailRevealed(): boolean {
   return revealed;

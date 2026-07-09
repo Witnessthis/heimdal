@@ -1,9 +1,7 @@
 import { feed } from './feed/dom';
-// Side-effect only — registers the feed's long-press/swipe/pull/click
-// pointer listeners (and transitively loads compose/new-email-reveal.ts,
-// for the background New Email button). Nothing here needs a named
-// import from it, but the module must still be loaded for those
-// listeners to exist at all.
+// Side-effect only — registers the feed's long-press/swipe/tap pointer
+// listeners. Nothing here needs a named import from it, but the module
+// must still be loaded for those listeners to exist at all.
 import './feed/gestures';
 import { bootstrap, checkBatchTrigger } from './feed/inbox';
 import { closeSwipe, openSwipeCard } from './feed/swipe-state';

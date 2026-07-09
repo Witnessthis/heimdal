@@ -39,18 +39,18 @@ main#feed {
      button lands on a clean stop rather than a springy overshoot. */
   touch-action: pan-y;
   overscroll-behavior-y: contain;
-  /* Two snap points at the top — the button strip's start (fully
-     shown) and the .feed-snap-anchor's start (fully hidden, first card
-     at the top) — so a scroll that stops partway through the reveal
-     settles to one or the other instead of resting half-shown.
-     proximity, not mandatory: it only engages when a scroll comes to
-     rest near those two points, leaving the rest of the feed to scroll
-     freely with no snap targets of its own. There is deliberately no
-     top padding here — the notch/safe-area clearance lives on the
-     button strip and .feed-snap-anchor instead, so it survives being
-     scrolled (a top padding on #feed would scroll away when the button
-     is parked, dropping the first card under the notch). */
-  scroll-snap-type: y proximity;
+  /* Settling a half-finished reveal to fully-shown or fully-hidden is
+     done in JS (see new-email-reveal.ts), NOT CSS scroll-snap: a snap
+     point attracts from both sides, so the "hidden" point — which sits
+     right at the boundary between the reveal and the feed — would drag
+     the feed back to the top the moment you scrolled down past the
+     parked button. The JS snap only engages while resting inside the
+     button's height, leaving the feed proper untouched. There is also
+     deliberately no top padding here — the notch/safe-area clearance
+     lives on the button strip and .feed-top-spacer instead, so it
+     survives being scrolled (a top padding on #feed would scroll away
+     when the button is parked, dropping the first card under the
+     notch). */
   padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px));
 }
 main#feed::-webkit-scrollbar {

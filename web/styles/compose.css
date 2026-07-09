@@ -8,15 +8,13 @@
    Being inside #feed, it's also hidden automatically whenever #feed is
    (e.g. while Settings is showing), with no special-casing. Its
    padding-top carries the safe-area inset so the button clears the
-   notch when it's scrolled to the very top; scroll-snap-align makes
-   this "fully shown" one of the feed's two top snap points. */
+   notch when it's scrolled to the very top. */
 #new-email-bg {
   display: flex;
   align-items: center;
   justify-content: center;
   padding: calc(14px + env(safe-area-inset-top, 0px)) 16px 14px;
   background: var(--bg);
-  scroll-snap-align: start;
 }
 /* Kept out of the layout until the feed has cards to scroll over (see
    hideNewEmail / the .loaded class): during the initial load the feed
@@ -25,15 +23,14 @@
 #feed:not(.loaded) #new-email-bg {
   display: none;
 }
-/* Zero-width sliver of clearance sitting between the button and the
-   first card: its start edge is exactly where the button is fully
-   scrolled out of view, making it the feed's second top snap point
-   ("button hidden"). Its height is the notch/safe-area clearance for
-   the first card in that parked state — the padding that #feed can't
-   carry itself without it scrolling away (see base.css). */
-.feed-snap-anchor {
+/* Clearance sitting between the button and the first card. Its height
+   is the notch/safe-area inset for the first card in the parked state
+   (button scrolled off, this at the top) — the padding that #feed can't
+   carry itself without it scrolling away (see base.css). Parked scroll
+   position is exactly the button's height, which lands the top of this
+   spacer at the top of the viewport. */
+.feed-top-spacer {
   height: calc(16px + env(safe-area-inset-top, 0px));
-  scroll-snap-align: start;
 }
 #new-email-bg button {
   padding: 8px 20px;

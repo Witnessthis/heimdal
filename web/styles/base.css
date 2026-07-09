@@ -31,29 +31,20 @@ main#feed {
   scrollbar-width: none;
   /* Horizontal card swipes (Reply/Forward) are hand-driven transforms
      that call preventDefault(); pan-y keeps the browser owning plain
-     vertical scrolling right up until a gesture commits to horizontal
-     or to a top pull. overscroll-behavior-y: contain suppresses the
-     rubber-band bounce at the top edge, so the pull-to-reveal begins
-     from a clean stop rather than fighting a springy overshoot. The New
-     Email button is collapsed content at the top (see #new-email-bg),
-     so the first card is the natural scroll top — a flick to the top
-     rests on the mail, and the button is only reached by a deliberate
-     pull past that top (gestures.ts). There is deliberately no top
-     padding here: the notch/safe-area clearance lives on the button
-     strip and .feed-top-spacer instead, so it can't scroll away and
-     drop the first card under the notch. overflow-anchor: none because
-     the reveal strip growing/shrinking above scrollTop 0 is exactly the
-     case scroll anchoring exists to compensate for — left on, the
-     browser was quietly nudging scrollTop down as the strip grew to
-     keep the first card visually pinned, which cut the reveal off
-     partway (settling looked like it stopped in the middle of the
-     button) instead of showing the strip's full height. The reveal
-     already fully controls scroll position itself (pinned at the top
-     while hidden, driven by the pull while revealing), so there's
-     nothing here that needs the browser's own compensation. */
+     vertical scrolling — nothing here needs to fight it. The New Email
+     button (#new-email-bg) is plain content at the very top; the pull-
+     to-reveal is entirely native scroll-snap, not a hand-rolled gesture
+     — see new-email-reveal.ts and #new-email-bg/.feed-top-spacer in
+     compose.css. scroll-snap-type: y proximity, not mandatory: only
+     #new-email-bg and .feed-top-spacer carry scroll-snap-align, so
+     proximity only pulls a scroll gesture toward one of those two
+     points when it already comes to rest near one — ordinary scrolling
+     through the mail list, far from the top, is completely untouched.
+     There is deliberately no top padding here: the notch/safe-area
+     clearance lives on the button strip and .feed-top-spacer instead,
+     so it can't scroll away and drop the first card under the notch. */
   touch-action: pan-y;
-  overscroll-behavior-y: contain;
-  overflow-anchor: none;
+  scroll-snap-type: y proximity;
   padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px));
 }
 main#feed::-webkit-scrollbar {

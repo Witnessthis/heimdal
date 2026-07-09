@@ -1,3 +1,7 @@
+// Side-effect only — sets the feed's initial scroll position (New Email
+// button hidden) and wires the button's click handler. Nothing here
+// needs a named import from it, but the module must still be loaded.
+import './compose/new-email-reveal';
 import { feed } from './feed/dom';
 // Side-effect only — registers the feed's long-press/swipe/tap pointer
 // listeners. Nothing here needs a named import from it, but the module

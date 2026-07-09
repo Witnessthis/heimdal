@@ -1,41 +1,38 @@
 /* The New Email button lives at the very top of the feed's scroll
-   content, above the cards — not a floating panel. Same background as
-   the feed/body surface (not --bg-elevated, no border) so it reads as
-   part of that surface rather than a distinct strip. It's collapsed to
-   height:0 by default so the first card sits at the natural top of the
-   scroll; a downward pull while already at the top expands it (JS drives
-   the height, snapping via the transition — see new-email-reveal.ts and
-   gestures.ts), pushing the cards down rather than floating over them.
-   Being inside #feed, it's also hidden automatically whenever #feed is
-   (e.g. while Settings is showing). Its padding-top carries the safe-
-   area inset so the button clears the notch when fully revealed. */
+   content, above the cards — not a floating panel, not JS-height-
+   animated. Same background as the feed/body surface (not
+   --bg-elevated, no border) so it reads as part of that surface rather
+   than a distinct strip. It's plain, static, full-height content — the
+   reveal is entirely native scroll + CSS scroll-snap: #feed snaps
+   between this strip aligned to the top (scrollTop 0, "revealed") and
+   .feed-top-spacer aligned to the top (scrollTop == this strip's own
+   height, "hidden") — see #feed's scroll-snap-type in base.css and
+   new-email-reveal.ts, which sets the initial scrollTop to the hidden
+   position. Being inside #feed, it's also hidden automatically whenever
+   #feed is (e.g. while Settings is showing). Its padding-top carries
+   the safe-area inset so the button clears the notch when revealed. */
 #new-email-bg {
   display: flex;
-  /* flex-end, not center: the strip's box grows downward from a fixed
-     top (see base.css — #feed has no top padding, so y=0 is this
-     element's own top edge), so a bottom anchor is what makes a partial
-     pull read as the button sliding down into view from behind the top
-     edge, bottom border first. Center-anchoring clipped BOTH the top and
-     bottom border symmetrically at every intermediate height, which is
-     what made a partial or under-measured reveal look like the button
-     was stuck half-hidden behind something instead of being pulled out. */
-  align-items: flex-end;
+  align-items: center;
   justify-content: center;
   padding: calc(14px + env(safe-area-inset-top, 0px)) 16px 14px;
   background: var(--bg);
-  height: 0;
-  overflow: hidden;
-  /* A short, decisive ease-out (no bounce/overshoot risk) rather than a
-     plain ease — this is what should read as a "snap" on release rather
-     than a soft fade to the open/closed height. */
-  transition: height 0.16s cubic-bezier(0.16, 1, 0.3, 1);
+  scroll-snap-align: start;
 }
-/* Clearance sitting between the button and the first card. Its height
-   is the notch/safe-area inset for the first card in the default state
-   (button collapsed, this at the top) — the padding that #feed can't
-   carry itself without it scrolling away (see base.css). */
+/* The "hidden" scroll-snap target — its top edge aligning with the
+   viewport top is exactly the position where #new-email-bg has
+   scrolled fully out of view and the first card sits at the natural
+   top. scroll-snap-stop: always is what makes this hold under momentum:
+   without it, a hard fling toward the top can skip straight past this
+   point to scrollTop 0 (fully revealed) the same way it did with the
+   old JS-driven reveal once "hidden" stopped being a real scroll
+   boundary — this forces the browser to stop here first regardless of
+   fling speed. Also still the notch/safe-area clearance for the first
+   card in the hidden state, same as before. */
 .feed-top-spacer {
   height: calc(16px + env(safe-area-inset-top, 0px));
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
 }
 #new-email-bg button {
   padding: 8px 20px;

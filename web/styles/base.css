@@ -32,19 +32,14 @@ main#feed {
   /* Horizontal card swipes (Reply/Forward) are hand-driven transforms
      that call preventDefault(); pan-y keeps the browser owning plain
      vertical scrolling — nothing here needs to fight it. The New Email
-     button (#new-email-bg) is plain content at the very top; the pull-
-     to-reveal is entirely native scroll-snap, not a hand-rolled gesture
-     — see new-email-reveal.ts and #new-email-bg/.feed-top-spacer in
-     compose.css. scroll-snap-type: y proximity, not mandatory: only
-     #new-email-bg and .feed-top-spacer carry scroll-snap-align, so
-     proximity only pulls a scroll gesture toward one of those two
-     points when it already comes to rest near one — ordinary scrolling
-     through the mail list, far from the top, is completely untouched.
-     There is deliberately no top padding here: the notch/safe-area
-     clearance lives on the button strip and .feed-top-spacer instead,
-     so it can't scroll away and drop the first card under the notch. */
+     button (#new-email-bg) is plain content at the very top, scrolled
+     to natively; the decisive open/closed snap is a JS scroll-settle
+     check against an exact scrollTop, not CSS scroll-snap — see
+     new-email-reveal.ts for why. There is deliberately no top padding
+     here: the notch/safe-area clearance lives on the button strip and
+     .feed-top-spacer instead, so it can't scroll away and drop the
+     first card under the notch. */
   touch-action: pan-y;
-  scroll-snap-type: y proximity;
   padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px));
 }
 main#feed::-webkit-scrollbar {

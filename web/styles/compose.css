@@ -3,38 +3,27 @@
    animated. Same background as the feed/body surface (not
    --bg-elevated, no border) so it reads as part of that surface rather
    than a distinct strip. It's plain, static, full-height content — the
-   reveal is entirely native scroll + CSS scroll-snap: #feed snaps
-   between this strip aligned to the top (scrollTop 0, "revealed") and
-   .feed-top-spacer aligned to the top (scrollTop == this strip's own
-   height, "hidden") — see #feed's scroll-snap-type in base.css and
-   new-email-reveal.ts, which sets the initial scrollTop to the hidden
-   position. Being inside #feed, it's also hidden automatically whenever
-   #feed is (e.g. while Settings is showing). Its padding-top carries
-   the safe-area inset so the button clears the notch when revealed. */
+   reveal is native scroll, and the decisive open/closed snap is a plain
+   JS scroll-settle check (see new-email-reveal.ts), not CSS scroll-snap
+   — browsers' scroll-snap "proximity" closeness isn't tunable and
+   reached well past this strip into the mail list. Being inside #feed,
+   it's also hidden automatically whenever #feed is (e.g. while Settings
+   is showing). Its padding-top carries the safe-area inset so the
+   button clears the notch when revealed. */
 #new-email-bg {
   display: flex;
   align-items: center;
   justify-content: center;
   padding: calc(14px + env(safe-area-inset-top, 0px)) 16px 14px;
   background: var(--bg);
-  scroll-snap-align: start;
 }
-/* The "hidden" scroll-snap target — its top edge aligning with the
-   viewport top is exactly the position where #new-email-bg has
-   scrolled fully out of view and the first card sits at the natural
-   top. No scroll-snap-stop: always here (tried it, removed it): it
-   forces the browser to treat *any* scroll gesture that starts at/near
-   this point as one that must resolve back to it — which meant an
-   ordinary deliberate scroll of a couple of cards down from the hidden
-   resting position got yanked straight back, not just a fast flick.
-   proximity is a strictly better trade for this app: normal reading
-   scroll is never interfered with; the one thing given up is a
-   guarantee that a very hard fling starting deep in the list can never
-   sail past this point to scrollTop 0. Also still the notch/safe-area
-   clearance for the first card in the hidden state. */
+/* The "hidden" scroll target — its top edge at the viewport top is
+   exactly the position where #new-email-bg has scrolled fully out of
+   view and the first card sits at the natural top (see
+   hiddenScrollTop() in new-email-reveal.ts). Also still the notch/
+   safe-area clearance for the first card in that state. */
 .feed-top-spacer {
   height: calc(16px + env(safe-area-inset-top, 0px));
-  scroll-snap-align: start;
 }
 #new-email-bg button {
   padding: 8px 20px;

@@ -1,25 +1,26 @@
-/* Revealed by pulling down while already at the top of the feed (see
-   the pull-gesture handling in JS) — hidden above the viewport by
-   default via transform, not display:none, so JS can animate it
-   following the drag distance. openShelf()/closeShelf() set the fully
-   open/closed transform; the live drag in between is driven directly
-   off pointer movement. */
-#new-email-shelf {
+/* Sits fixed behind the feed at all times — not itself animated, and not
+   display:none (its default CSS visibility is "on") so it can be
+   uncovered smoothly as #feed moves. Pulling down while already at the
+   top of the feed drags #feed's own transform down to uncover this;
+   dragging/scrolling back up covers it again. See the pull-gesture
+   handling in gestures.ts and #feed's transform in base.css. Hidden
+   explicitly (display:none) while Settings is showing — see showView()
+   in settings.ts — since #feed itself is what normally covers it and
+   Settings swaps #feed away entirely. */
+#new-email-bg {
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
-  z-index: 55;
+  z-index: 5;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: calc(14px + env(safe-area-inset-top, 0px)) 16px 14px;
   background: var(--bg-elevated);
   border-bottom: 1px solid var(--border-soft);
-  transform: translateY(-100%);
-  transition: transform 0.2s ease;
 }
-#new-email-shelf button {
+#new-email-bg button {
   padding: 8px 20px;
   border-radius: 6px;
   border: 1px solid var(--accent);
@@ -30,7 +31,7 @@
   font-weight: 600;
   cursor: pointer;
 }
-#new-email-shelf button:hover {
+#new-email-bg button:hover {
   background: var(--accent);
   color: var(--bg);
 }
@@ -38,7 +39,7 @@
 /* Compose (new/reply/forward) — a full-screen overlay above
    everything else (z-index above header/nav/selection-bar's 50),
    entered only from the inbox (via a card's swipe actions or the
-   new-email shelf), never a bottom-nav destination — so it doesn't
+   background New Email button), never a bottom-nav destination — so it doesn't
    need any changes to showView()'s inbox/settings toggle. */
 #compose-view {
   position: fixed;

@@ -1,4 +1,4 @@
-import { closeShelf, isShelfOpen, openShelf, shelf } from '../compose/shelf';
+import { hideNewEmail, isNewEmailRevealed, newEmailBg, revealNewEmail } from '../compose/new-email-reveal';
 import { feed } from './dom';
 import { LONG_PRESS_MOVE_TOLERANCE_PX } from './gesture-constants';
 import { clearRenderedBody, ensureFullBodyLoaded, markRead } from './render-body';
@@ -9,10 +9,11 @@ import { closeSwipe, openSwipeCard, setOpenSwipeCard } from './swipe-state';
 // behaviors that all start as "a pointer went down somewhere in the
 // feed": tap (expand/collapse or select), long-press (enter selection
 // mode), horizontal swipe on a card (reveal Reply/Forward), and a
-// vertical pull while already at the top of the feed (reveal the new
-// email shelf). Pointer Events unify mouse and touch behind one event
-// model, so this works the same way on both without separate
-// mousedown/touchstart handling.
+// vertical pull while already at the top of the feed (drag #feed itself
+// down to reveal the New Email button sitting fixed behind it — see
+// compose/new-email-reveal.ts). Pointer Events unify mouse and touch
+// behind one event model, so this works the same way on both without
+// separate mousedown/touchstart handling.
 //
 // Direction is decided ONCE per gesture, the first time movement
 // crosses LONG_PRESS_MOVE_TOLERANCE_PX — horizontal-dominant commits to
@@ -27,7 +28,10 @@ import { closeSwipe, openSwipeCard, setOpenSwipeCard } from './swipe-state';
 const LONG_PRESS_MS = 500;
 const SWIPE_REVEAL_PX = 144; // two 72px action buttons — matches .card-swipe-actions CSS
 const SWIPE_OPEN_THRESHOLD_PX = 40;
-const PULL_OPEN_THRESHOLD_PX = 40;
+// How far (in the direction of travel) the feed must be dragged from its
+// current resting state — closed or revealed — before release snaps it
+// to the other one instead of springing back to where it started.
+const PULL_TOGGLE_THRESHOLD_PX = 40;
 
 let pressTimer: ReturnType<typeof setTimeout> | null = null;
 let pressStartX = 0;
@@ -41,16 +45,15 @@ let pressStartY = 0;
 let gestureActive = false;
 let activeCard: HTMLElement | null = null; // the card this gesture started on, if any
 let longPressFired = false;
-// A drag that ends by revealing something (opening the shelf, or
-// swiping a card open) is immediately followed — on iOS Safari in
-// particular — by a synthetic click at the same target the gesture
-// started on, even though pointermove called preventDefault() the
-// whole time. Without consuming it, that click falls into the generic
-// tap handling below and immediately undoes what the drag just
-// revealed: closes the shelf right back up (isShelfOpen() is now
-// true), or toggles the card's expanded state right after swiping it
-// open. Same shape as longPressFired above, just for this case.
-let dragJustRevealed = false;
+// A drag that ends by revealing/settling something (the New Email
+// button, or a swiped-open card) is immediately followed — on iOS
+// Safari in particular — by a synthetic click at the same target the
+// gesture started on, even though pointermove called preventDefault()
+// the whole time. Without consuming it, that click falls into the
+// generic tap handling below and does something the user didn't ask
+// for: toggles the expanded state of whatever card the drag happened
+// to start on. Same shape as longPressFired above, just for this case.
+let dragJustSettled = false;
 let gestureDirection: 'swipe' | 'pull' | 'scroll' | null = null;
 let gestureStartedAtTop = false;
 // The last pull distance seen during a pull gesture. Tracked separately
@@ -65,19 +68,29 @@ function cancelLongPress(): void {
   pressTimer = null;
 }
 
-// Settle an ended pull: open the shelf if it was dragged past the
-// threshold, otherwise spring it shut. Runs for both a normal release
-// (pointerup) and a browser-interrupted one (pointercancel), so a pull
-// the browser cancels mid-gesture still commits based on how far it got
-// instead of always snapping closed.
+// Settle an ended pull: snap #feed to fully revealed or fully closed,
+// whichever side of PULL_TOGGLE_THRESHOLD_PX the drag ended up on
+// relative to where it started (revealed or closed), then spring it the
+// rest of the way there via the transition set on #feed itself (see
+// base.css). Runs for both a normal release (pointerup) and a
+// browser-interrupted one (pointercancel), so a pull the browser
+// cancels mid-gesture still commits based on how far it got instead of
+// always snapping back to where it started.
 function settlePull(): void {
-  shelf.style.transition = '';
-  if (pullDy > PULL_OPEN_THRESHOLD_PX) {
-    openShelf();
-    dragJustRevealed = true;
+  feed.style.transition = '';
+  const revealHeight = newEmailBg.offsetHeight;
+  const wasRevealed = isNewEmailRevealed();
+  const base = wasRevealed ? revealHeight : 0;
+  const finalOffset = Math.min(revealHeight, Math.max(0, base + pullDy));
+  const shouldReveal = wasRevealed
+    ? finalOffset > revealHeight - PULL_TOGGLE_THRESHOLD_PX
+    : finalOffset > PULL_TOGGLE_THRESHOLD_PX;
+  if (shouldReveal) {
+    revealNewEmail();
   } else {
-    closeShelf();
+    hideNewEmail();
   }
+  dragJustSettled = true;
 }
 
 feed.addEventListener('pointerdown', (e) => {
@@ -98,11 +111,11 @@ feed.addEventListener('pointerdown', (e) => {
   gestureDirection = null;
   gestureStartedAtTop = feed.scrollTop <= 0;
   pullDy = 0;
-  // Clear any stale reveal flag from a previous gesture that ended via
+  // Clear any stale settle flag from a previous gesture that ended via
   // pointercancel (which, unlike pointerup, isn't followed by the
   // synthetic click that would normally consume it) — otherwise it could
   // swallow this new gesture's tap.
-  dragJustRevealed = false;
+  dragJustSettled = false;
   if (card) {
     pressTimer = setTimeout(() => {
       longPressFired = true;
@@ -122,7 +135,11 @@ feed.addEventListener('pointermove', (e) => {
     cancelLongPress();
     if (activeCard && Math.abs(dx) > Math.abs(dy)) {
       gestureDirection = 'swipe';
-    } else if (dy > 0 && gestureStartedAtTop) {
+    } else if (gestureStartedAtTop && (isNewEmailRevealed() ? dy < 0 : dy > 0)) {
+      // Opening drags down while closed; closing drags up while
+      // revealed. Either way the feed's own scrollTop hasn't moved
+      // (revealed is a transform, not a scroll), so gestureStartedAtTop
+      // still holds throughout — including for the closing direction.
       gestureDirection = 'pull';
     } else {
       gestureDirection = 'scroll'; // vertical, native — nothing further for this gesture to do
@@ -139,14 +156,14 @@ feed.addEventListener('pointermove', (e) => {
   } else if (gestureDirection === 'pull') {
     e.preventDefault();
     pullDy = dy;
-    // shelf.offsetHeight is its real layout height regardless of its
-    // current transform (transforms don't affect layout box size), so
-    // this stays correct without duplicating the height as a JS
-    // constant that could drift from the CSS.
-    const shelfHeight = shelf.offsetHeight;
-    const offset = Math.min(shelfHeight, Math.max(0, dy));
-    shelf.style.transition = 'none';
-    shelf.style.transform = `translateY(${offset - shelfHeight}px)`;
+    // newEmailBg.offsetHeight is its real layout height — unaffected by
+    // #feed's own transform, so this stays correct without duplicating
+    // the height as a JS constant that could drift from the CSS.
+    const revealHeight = newEmailBg.offsetHeight;
+    const base = isNewEmailRevealed() ? revealHeight : 0;
+    const offset = Math.min(revealHeight, Math.max(0, base + dy));
+    feed.style.transition = 'none';
+    feed.style.transform = `translateY(${offset}px)`;
   }
 });
 
@@ -163,7 +180,7 @@ feed.addEventListener('pointerup', (e) => {
       activeCard.classList.add('swipe-open');
       front.style.transform = `translateX(${-SWIPE_REVEAL_PX}px)`;
       setOpenSwipeCard(activeCard);
-      dragJustRevealed = true;
+      dragJustSettled = true;
     } else {
       closeSwipe(activeCard);
     }
@@ -177,10 +194,10 @@ feed.addEventListener('pointerup', (e) => {
 feed.addEventListener('pointercancel', () => {
   cancelLongPress();
   if (gestureDirection === 'swipe' && activeCard) closeSwipe(activeCard);
-  // Not closeShelf(): a pointercancel during a committed pull is iOS
-  // taking the gesture away because it decided the drag is a scroll —
-  // settle it the same as a release so a nearly-complete pull still
-  // opens instead of vanishing (see settlePull / pullDy).
+  // A pointercancel during a committed pull is iOS taking the gesture
+  // away because it decided the drag is a scroll — settle it the same
+  // as a release so a nearly-complete drag still commits instead of
+  // vanishing (see settlePull / pullDy).
   if (gestureDirection === 'pull') settlePull();
   gestureActive = false;
   activeCard = null;
@@ -188,20 +205,12 @@ feed.addEventListener('pointercancel', () => {
 });
 
 feed.addEventListener('click', (e) => {
-  // The synthetic click trailing the drag that JUST revealed something
-  // (see dragJustRevealed's declaration above) — consume it before any
-  // of the logic below gets a chance to immediately undo that reveal.
-  if (dragJustRevealed) {
-    dragJustRevealed = false;
-    return;
-  }
-
-  // A tap anywhere in the feed while the shelf is open closes it
-  // instead of acting on whatever was tapped — the shelf's own button
-  // has its own listener and never reaches this handler, since the
-  // shelf isn't a descendant of #feed.
-  if (isShelfOpen()) {
-    closeShelf();
+  // The synthetic click trailing a drag that just settled something
+  // (see dragJustSettled's declaration above) — consume it before any
+  // of the logic below gets a chance to act on whatever card the drag
+  // happened to start on.
+  if (dragJustSettled) {
+    dragJustSettled = false;
     return;
   }
 

@@ -5,7 +5,7 @@
 // openForwardCompose also need to close a card's swipe-reveal when
 // opening compose from it, and importing the whole gesture recognizer
 // just for that would create a circular dependency (the gesture
-// recognizer's pull-to-reveal also needs compose's shelf).
+// recognizer's pull-to-reveal also needs compose's new-email-reveal).
 export let openSwipeCard: HTMLElement | null = null;
 
 export function setOpenSwipeCard(card: HTMLElement | null): void {

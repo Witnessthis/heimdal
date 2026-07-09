@@ -1,3 +1,4 @@
+import { hideNewEmail, newEmailBg } from '../compose/new-email-reveal';
 import { feed, nav, navInbox, navSettings, settingsView } from '../feed/dom';
 import {
   isAutoLoadImagesEnabled,
@@ -44,8 +45,13 @@ function alignSubSettingConnectors(): void {
 
 function showView(view: 'inbox' | 'settings'): void {
   const isSettings = view === 'settings';
+  // #new-email-bg is only ever hidden by #feed sitting on top of it —
+  // Settings swaps #feed away entirely, so it must be hidden explicitly
+  // here too, and any in-progress reveal reset (see new-email-reveal.ts).
+  if (isSettings) hideNewEmail();
   settingsView.style.display = isSettings ? 'block' : 'none';
   feed.style.display = isSettings ? 'none' : '';
+  newEmailBg.style.display = isSettings ? 'none' : '';
   navInbox.classList.toggle('active', !isSettings);
   navSettings.classList.toggle('active', isSettings);
   nav.classList.remove('hide');

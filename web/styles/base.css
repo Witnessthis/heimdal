@@ -30,17 +30,28 @@ main#feed {
   overflow-y: auto;
   scrollbar-width: none;
   touch-action: pan-y;
-  /* The pull-to-reveal-shelf gesture is a downward drag while already
-     scrolled to the top. With Pointer Events, native scrolling is
-     governed by touch-action (preventDefault does NOT stop it), and the
-     moment the browser decides a drag is a scroll it fires
-     pointercancel, killing the in-flight gesture — which is exactly what
-     was slamming the shelf shut mid-pull. At scrollTop 0 a downward drag
-     has nothing to scroll *except* the overscroll/rubber-band bounce, so
-     containing that bounce removes the only thing the browser could
-     hijack the gesture for, letting the pull run to pointerup. (The
-     gesture handler also treats a pointercancel during a committed pull
-     as a normal release, as a belt-and-suspenders fallback.) */
+  /* Own background + z-index above #new-email-bg (see compose.css): at
+     rest (translateY(0)) #feed must fully hide that button, which sits
+     fixed behind it the whole time. Pulling down while already at the
+     top of the feed drags #feed itself down via transform to uncover
+     it — see gestures.ts — and dragging back up covers it again. The
+     transition here is what makes the release-time snap to fully
+     open/closed animate smoothly; the live drag between those two
+     states sets transition:none and drives the transform by hand. */
+  z-index: 10;
+  background: var(--bg);
+  transition: transform 0.2s ease;
+  /* The reveal gesture above is a downward drag while already scrolled
+     to the top. With Pointer Events, native scrolling is governed by
+     touch-action (preventDefault does NOT stop it), and the moment the
+     browser decides a drag is a scroll it fires pointercancel, killing
+     the in-flight gesture — which would otherwise discard an
+     otherwise-complete pull. At scrollTop 0 a downward drag has nothing
+     to scroll *except* the overscroll/rubber-band bounce, so containing
+     that bounce removes the only thing the browser could hijack the
+     gesture for, letting the pull run to pointerup. (The gesture
+     handler also treats a pointercancel during a committed pull as a
+     normal release, as a belt-and-suspenders fallback.) */
   overscroll-behavior-y: contain;
   padding-top: calc(16px + env(safe-area-inset-top, 0px));
   padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px));

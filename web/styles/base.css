@@ -29,14 +29,19 @@ main#feed {
   inset: 0;
   overflow-y: auto;
   scrollbar-width: none;
-  /* Matches .card-front's own touch-action — needed here too now that
-     the pull-to-reveal-shelf gesture can start from empty #feed
-     background (the top padding strip, or an empty inbox), not just
-     from on top of a card. Without it, the browser's default 'auto'
-     touch-action there can win the race against pointermove's
-     preventDefault() and let native scroll/bounce fight the shelf's
-     own drag-following transform. */
   touch-action: pan-y;
+  /* The pull-to-reveal-shelf gesture is a downward drag while already
+     scrolled to the top. With Pointer Events, native scrolling is
+     governed by touch-action (preventDefault does NOT stop it), and the
+     moment the browser decides a drag is a scroll it fires
+     pointercancel, killing the in-flight gesture — which is exactly what
+     was slamming the shelf shut mid-pull. At scrollTop 0 a downward drag
+     has nothing to scroll *except* the overscroll/rubber-band bounce, so
+     containing that bounce removes the only thing the browser could
+     hijack the gesture for, letting the pull run to pointerup. (The
+     gesture handler also treats a pointercancel during a committed pull
+     as a normal release, as a belt-and-suspenders fallback.) */
+  overscroll-behavior-y: contain;
   padding-top: calc(16px + env(safe-area-inset-top, 0px));
   padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px));
 }

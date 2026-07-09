@@ -53,10 +53,31 @@ let longPressFired = false;
 let dragJustRevealed = false;
 let gestureDirection: 'swipe' | 'pull' | 'scroll' | null = null;
 let gestureStartedAtTop = false;
+// The last pull distance seen during a pull gesture. Tracked separately
+// from reading e.clientY at release time because a pull can end via
+// pointercancel (iOS firing it when it decides the drag is a scroll)
+// rather than pointerup, and pointercancel's own coordinates aren't
+// reliable — this remembers where the finger last actually was.
+let pullDy = 0;
 
 function cancelLongPress(): void {
   if (pressTimer !== null) clearTimeout(pressTimer);
   pressTimer = null;
+}
+
+// Settle an ended pull: open the shelf if it was dragged past the
+// threshold, otherwise spring it shut. Runs for both a normal release
+// (pointerup) and a browser-interrupted one (pointercancel), so a pull
+// the browser cancels mid-gesture still commits based on how far it got
+// instead of always snapping closed.
+function settlePull(): void {
+  shelf.style.transition = '';
+  if (pullDy > PULL_OPEN_THRESHOLD_PX) {
+    openShelf();
+    dragJustRevealed = true;
+  } else {
+    closeShelf();
+  }
 }
 
 feed.addEventListener('pointerdown', (e) => {
@@ -76,6 +97,12 @@ feed.addEventListener('pointerdown', (e) => {
   pressStartY = e.clientY;
   gestureDirection = null;
   gestureStartedAtTop = feed.scrollTop <= 0;
+  pullDy = 0;
+  // Clear any stale reveal flag from a previous gesture that ended via
+  // pointercancel (which, unlike pointerup, isn't followed by the
+  // synthetic click that would normally consume it) — otherwise it could
+  // swallow this new gesture's tap.
+  dragJustRevealed = false;
   if (card) {
     pressTimer = setTimeout(() => {
       longPressFired = true;
@@ -111,6 +138,7 @@ feed.addEventListener('pointermove', (e) => {
     front.style.transform = `translateX(${offset}px)`;
   } else if (gestureDirection === 'pull') {
     e.preventDefault();
+    pullDy = dy;
     // shelf.offsetHeight is its real layout height regardless of its
     // current transform (transforms don't affect layout box size), so
     // this stays correct without duplicating the height as a JS
@@ -140,14 +168,7 @@ feed.addEventListener('pointerup', (e) => {
       closeSwipe(activeCard);
     }
   } else if (gestureDirection === 'pull') {
-    shelf.style.transition = '';
-    const dy = e.clientY - pressStartY;
-    if (dy > PULL_OPEN_THRESHOLD_PX) {
-      openShelf();
-      dragJustRevealed = true;
-    } else {
-      closeShelf();
-    }
+    settlePull();
   }
   gestureActive = false;
   activeCard = null;
@@ -156,7 +177,11 @@ feed.addEventListener('pointerup', (e) => {
 feed.addEventListener('pointercancel', () => {
   cancelLongPress();
   if (gestureDirection === 'swipe' && activeCard) closeSwipe(activeCard);
-  if (gestureDirection === 'pull') closeShelf();
+  // Not closeShelf(): a pointercancel during a committed pull is iOS
+  // taking the gesture away because it decided the drag is a scroll —
+  // settle it the same as a release so a nearly-complete pull still
+  // opens instead of vanishing (see settlePull / pullDy).
+  if (gestureDirection === 'pull') settlePull();
   gestureActive = false;
   activeCard = null;
   gestureDirection = null;

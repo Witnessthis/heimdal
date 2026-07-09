@@ -22,17 +22,19 @@
 /* The "hidden" scroll-snap target — its top edge aligning with the
    viewport top is exactly the position where #new-email-bg has
    scrolled fully out of view and the first card sits at the natural
-   top. scroll-snap-stop: always is what makes this hold under momentum:
-   without it, a hard fling toward the top can skip straight past this
-   point to scrollTop 0 (fully revealed) the same way it did with the
-   old JS-driven reveal once "hidden" stopped being a real scroll
-   boundary — this forces the browser to stop here first regardless of
-   fling speed. Also still the notch/safe-area clearance for the first
-   card in the hidden state, same as before. */
+   top. No scroll-snap-stop: always here (tried it, removed it): it
+   forces the browser to treat *any* scroll gesture that starts at/near
+   this point as one that must resolve back to it — which meant an
+   ordinary deliberate scroll of a couple of cards down from the hidden
+   resting position got yanked straight back, not just a fast flick.
+   proximity is a strictly better trade for this app: normal reading
+   scroll is never interfered with; the one thing given up is a
+   guarantee that a very hard fling starting deep in the list can never
+   sail past this point to scrollTop 0. Also still the notch/safe-area
+   clearance for the first card in the hidden state. */
 .feed-top-spacer {
   height: calc(16px + env(safe-area-inset-top, 0px));
   scroll-snap-align: start;
-  scroll-snap-stop: always;
 }
 #new-email-bg button {
   padding: 8px 20px;

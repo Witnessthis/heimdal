@@ -18,11 +18,16 @@ import { openCompose } from './compose';
 // scrolling through mail further down.
 const hiddenMarker = document.querySelector('.feed-top-spacer') as HTMLElement;
 
-// Start hidden. This runs at module load — before any mail has loaded,
-// before first paint in practice — not after the first batch arrives:
-// the strip's height is static layout, independent of message content,
-// so there's nothing to wait for here.
-feed.scrollTop = hiddenMarker.offsetTop;
+// Start hidden. Setting scrollTop synchronously at module load doesn't
+// reliably stick — the browser hasn't finished its first layout pass
+// yet at that point, so the scrollable area isn't established and the
+// assignment is silently dropped, leaving the button showing. A single
+// requestAnimationFrame is enough: it fires after the browser's first
+// layout/style pass, before the first paint, so there's no visible
+// flash of the revealed state either.
+requestAnimationFrame(() => {
+  feed.scrollTop = hiddenMarker.offsetTop;
+});
 
 document.getElementById('new-email-btn')!.addEventListener('click', () => {
   feed.scrollTop = hiddenMarker.offsetTop;

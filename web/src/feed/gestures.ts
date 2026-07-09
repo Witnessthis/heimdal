@@ -93,16 +93,25 @@ function settlePull(): void {
   dragJustSettled = true;
 }
 
-feed.addEventListener('pointerdown', (e) => {
+function handleGestureStart(e: PointerEvent): void {
   if (e.button !== 0) return; // primary mouse button / the actual touch point only
   const target = e.target as Element;
-  // The select checkbox and the reply/forward buttons behind a card
-  // handle their own clicks — never start tracking a gesture from them.
-  // Everything else in #feed is fair game, including empty space (no
-  // .card under the finger at all): that's exactly where a pull-to-
-  // reveal gesture starting from the top padding, or in an empty inbox
-  // with no cards yet, needs to still begin.
-  if (target.closest('.card-select') || target.closest('.card-swipe-actions')) return;
+  // The select checkbox, the reply/forward buttons behind a card, and
+  // the New Email button itself all handle their own clicks — never
+  // start tracking a gesture from them. Everything else is fair game,
+  // including empty space in #feed (no .card under the finger — a pull
+  // can start from the top padding or an empty inbox) and the revealed
+  // background around the New Email button (closing a reveal by
+  // dragging up naturally starts right where the finger already is,
+  // which is on #new-email-bg, not #feed — see this function being
+  // attached to both below).
+  if (
+    target.closest('.card-select') ||
+    target.closest('.card-swipe-actions') ||
+    target.closest('#new-email-btn')
+  ) {
+    return;
+  }
   const card = target.closest<HTMLElement>('.card');
   gestureActive = true;
   activeCard = card;
@@ -116,6 +125,14 @@ feed.addEventListener('pointerdown', (e) => {
   // synthetic click that would normally consume it) — otherwise it could
   // swallow this new gesture's tap.
   dragJustSettled = false;
+  // #new-email-bg is a sibling of #feed, not a descendant, so a gesture
+  // starting there wouldn't otherwise reach the pointermove/up/cancel
+  // listeners below (they're only attached to #feed). Capturing onto
+  // #feed itself redirects every subsequent pointer event for this
+  // touch there regardless of which element it started on or moves
+  // over — implicitly released on pointerup/pointercancel, no manual
+  // release needed.
+  feed.setPointerCapture(e.pointerId);
   if (card) {
     pressTimer = setTimeout(() => {
       longPressFired = true;
@@ -123,7 +140,10 @@ feed.addEventListener('pointerdown', (e) => {
       pressTimer = null;
     }, LONG_PRESS_MS);
   }
-});
+}
+
+feed.addEventListener('pointerdown', handleGestureStart);
+newEmailBg.addEventListener('pointerdown', handleGestureStart);
 
 feed.addEventListener('pointermove', (e) => {
   if (!gestureActive) return;

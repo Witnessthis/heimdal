@@ -21,6 +21,10 @@
   justify-content: center;
   padding: calc(14px + env(safe-area-inset-top, 0px)) 16px 14px;
   background: var(--bg);
+  /* Matches #feed's own touch-action — a close-drag can start here (see
+     gestures.ts), and needs the same early claim on native touch
+     handling #feed's does. */
+  touch-action: pan-y;
 }
 #new-email-bg button {
   padding: 8px 20px;

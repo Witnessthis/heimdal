@@ -82,19 +82,22 @@ feed.addEventListener(
     const h = hiddenScrollTop();
     const st = feed.scrollTop;
 
-    // A fling from deep in the list decelerates smoothly through
-    // hiddenScrollTop() with nothing to stop it short of the container's
-    // real boundary (scrollTop 0) — same reason a JS-height-collapsed
-    // "hidden" state broke under momentum earlier in this feature's
-    // history, and CSS scroll-snap-stop: always would fix this but was
-    // dropped for being unusably grabby on ordinary scrolling (see the
-    // comment above hiddenScrollTop()). Catching it by hand here is
-    // narrower than either: only when the finger's already up (pure
-    // momentum, not a deliberate drag still in progress) and this event
-    // is the exact frame crossing from at-or-past hiddenScrollTop() to
-    // short of it do we clamp back to the boundary — arresting the
-    // fling right there instead of letting it sail on to scrollTop 0.
-    if (!pointerDown && prevScrollTop >= h && st < h) {
+    // A fling decelerates smoothly through hiddenScrollTop() with
+    // nothing to stop it short of one of the container's real
+    // boundaries (scrollTop 0 revealed, or however far the mail list
+    // goes) — same reason a JS-height-collapsed "hidden" state broke
+    // under momentum earlier in this feature's history, and CSS
+    // scroll-snap-stop: always would fix this but was dropped for being
+    // unusably grabby on ordinary scrolling (see the comment above
+    // hiddenScrollTop()). Catching it by hand here is narrower than
+    // either: only when the finger's already up (pure momentum, not a
+    // deliberate drag still in progress) and this event is the exact
+    // frame crossing hiddenScrollTop() — from either side — do we clamp
+    // back to it, arresting the fling right there instead of letting it
+    // sail on past. Symmetric: a fling up from deep in the list stops
+    // here instead of reaching all the way to revealed, and a fling
+    // down from revealed stops here instead of diving into the list.
+    if (!pointerDown && ((prevScrollTop >= h && st < h) || (prevScrollTop <= h && st > h))) {
       feed.scrollTop = h;
       prevScrollTop = h;
       return;

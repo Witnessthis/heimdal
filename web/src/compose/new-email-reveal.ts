@@ -18,6 +18,7 @@ import { openCompose } from './compose';
 // heuristic, so it can never reach beyond that one boundary into
 // ordinary list scrolling.
 const hiddenMarker = document.querySelector('.feed-top-spacer') as HTMLElement;
+const newEmailBg = document.getElementById('new-email-bg') as HTMLElement;
 
 // How close to fully revealed (as a fraction of hiddenScrollTop()) a
 // settled pull needs to land to commit to opening — see the settle
@@ -28,16 +29,37 @@ function hiddenScrollTop(): number {
   return hiddenMarker.offsetTop;
 }
 
-// Start hidden. Setting scrollTop synchronously at module load doesn't
-// reliably stick — the browser hasn't finished its first layout pass
-// yet at that point, so the scrollable area isn't established and the
-// assignment is silently dropped, leaving the button showing. A single
-// requestAnimationFrame is enough: it fires after the browser's first
-// layout/style pass, before the first paint, so there's no visible
-// flash of the revealed state either.
-requestAnimationFrame(() => {
+// Start hidden — and stay invisible (not just unscrolled-to) until
+// that's actually confirmed. A single requestAnimationFrame turned out
+// not to be reliably enough of a wait on-device: the assignment can
+// still land before the browser's layout has settled (e.g. while a
+// custom font is still swapping in, changing the button's own height,
+// and so hiddenScrollTop()) and silently not stick, leaving the button
+// showing at scrollTop 0. So this is defensive on top of that, not
+// instead of it: the strip is visibility: hidden (preserves its layout
+// box, so hiddenScrollTop() keeps measuring correctly) until a
+// requestAnimationFrame loop has verified feed.scrollTop actually
+// equals hiddenScrollTop() — retrying on the next frame if not — at
+// which point it's revealed. Since it's already scrolled out of the
+// viewport by then, revealing it is invisible to the user either way.
+//
+// Capped at PIN_HIDDEN_MAX_ATTEMPTS: an empty inbox (nothing but the
+// "no messages" status text) may never have enough content to scroll
+// past hiddenScrollTop() at all, in which case this could never
+// resolve — give up and reveal wherever it lands rather than leaving
+// the compose button permanently invisible and this loop running
+// forever.
+const PIN_HIDDEN_MAX_ATTEMPTS = 60;
+newEmailBg.style.visibility = 'hidden';
+function pinHidden(attempt: number): void {
   feed.scrollTop = hiddenScrollTop();
-});
+  if (feed.scrollTop === hiddenScrollTop() || attempt >= PIN_HIDDEN_MAX_ATTEMPTS) {
+    newEmailBg.style.visibility = '';
+  } else {
+    requestAnimationFrame(() => pinHidden(attempt + 1));
+  }
+}
+requestAnimationFrame(() => pinHidden(0));
 
 document.getElementById('new-email-btn')!.addEventListener('click', () => {
   feed.scrollTop = hiddenScrollTop();

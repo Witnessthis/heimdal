@@ -30,36 +30,54 @@ function hiddenScrollTop(): number {
 }
 
 // Start hidden — and stay invisible (not just unscrolled-to) until
-// that's actually confirmed. A single requestAnimationFrame turned out
-// not to be reliably enough of a wait on-device: the assignment can
-// still land before the browser's layout has settled (e.g. while a
-// custom font is still swapping in, changing the button's own height,
-// and so hiddenScrollTop()) and silently not stick, leaving the button
-// showing at scrollTop 0. So this is defensive on top of that, not
-// instead of it: the strip is visibility: hidden (preserves its layout
-// box, so hiddenScrollTop() keeps measuring correctly) until a
-// requestAnimationFrame loop has verified feed.scrollTop actually
-// equals hiddenScrollTop() — retrying on the next frame if not — at
-// which point it's revealed. Since it's already scrolled out of the
-// viewport by then, revealing it is invisible to the user either way.
+// that's actually confirmed: visibility: hidden (preserves the strip's
+// layout box, so hiddenScrollTop() keeps measuring correctly) until
+// feed.scrollTop is verified to actually equal hiddenScrollTop(). Since
+// it's already scrolled out of the viewport by the time that's true,
+// revealing it then is invisible to the user either way.
 //
-// Capped at PIN_HIDDEN_MAX_ATTEMPTS: an empty inbox (nothing but the
-// "no messages" status text) may never have enough content to scroll
-// past hiddenScrollTop() at all, in which case this could never
-// resolve — give up and reveal wherever it lands rather than leaving
-// the compose button permanently invisible and this loop running
-// forever.
-const PIN_HIDDEN_MAX_ATTEMPTS = 60;
+// A scrollTop assignment can fail to "stick" for two different reasons,
+// handled two different ways below:
+//  - Layout genuinely isn't ready yet (first paint hasn't happened, a
+//    custom font is still swapping in and changing the button's own
+//    height). One requestAnimationFrame is enough for this — it fires
+//    after layout has settled.
+//  - There isn't enough content to be scrollable that far YET, because
+//    the inbox is still loading (this is also, not incidentally, why
+//    the button must not show while loading: there's nowhere for it to
+//    be scrolled out of view to). This isn't a "wait one more frame"
+//    problem — it can take as long as the IMAP fetch does — so instead
+//    of guessing a frame count, a MutationObserver re-attempts the pin
+//    every time #feed's content changes (loadMore() in inbox.ts inserts
+//    each batch of cards as direct children), which resolves the
+//    instant there's enough content, however long that takes.
 newEmailBg.style.visibility = 'hidden';
-function pinHidden(attempt: number): void {
+function tryPin(): boolean {
   feed.scrollTop = hiddenScrollTop();
-  if (feed.scrollTop === hiddenScrollTop() || attempt >= PIN_HIDDEN_MAX_ATTEMPTS) {
-    newEmailBg.style.visibility = '';
-  } else {
-    requestAnimationFrame(() => pinHidden(attempt + 1));
-  }
+  return feed.scrollTop === hiddenScrollTop();
 }
-requestAnimationFrame(() => pinHidden(0));
+requestAnimationFrame(() => {
+  if (tryPin()) {
+    newEmailBg.style.visibility = '';
+    return;
+  }
+  let giveUpTimer: ReturnType<typeof setTimeout>;
+  const observer = new MutationObserver(() => {
+    if (tryPin()) {
+      observer.disconnect();
+      clearTimeout(giveUpTimer);
+      newEmailBg.style.visibility = '';
+    }
+  });
+  observer.observe(feed, { childList: true });
+  // A genuinely empty inbox (or a fetch that fails outright) may never
+  // become scrollable at all — don't leave the compose button
+  // invisible forever waiting for content that isn't coming.
+  giveUpTimer = setTimeout(() => {
+    observer.disconnect();
+    newEmailBg.style.visibility = '';
+  }, 15000);
+});
 
 document.getElementById('new-email-btn')!.addEventListener('click', () => {
   feed.scrollTop = hiddenScrollTop();

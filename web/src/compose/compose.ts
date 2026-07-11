@@ -6,8 +6,8 @@ import { ensureFullBodyLoaded, markRead } from '../feed/render-body';
 import { closeSwipe } from '../feed/swipe-state';
 import { closeAddressSwipe } from './address-swipe';
 
-// One shared view for all three entry points (the shelf's New Email,
-// and a card's swipe-revealed Reply/Forward). openCompose() takes a
+// One shared view for all three entry points (the background New Email
+// button, and a card's swipe-revealed Reply/Forward). openCompose() takes a
 // plain data object rather than reading anything off a card itself, so
 // a future "load an AI-prepared draft" entry point can call it the
 // same way without this view needing to change.

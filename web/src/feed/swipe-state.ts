@@ -3,9 +3,10 @@
 // closes whatever was open). Lives in its own module (rather than inside
 // the feed gesture recognizer) because compose's openReplyCompose/
 // openForwardCompose also need to close a card's swipe-reveal when
-// opening compose from it, and importing the whole gesture recognizer
-// just for that would create a circular dependency (the gesture
-// recognizer's pull-to-reveal also needs compose's shelf).
+// opening compose from it — keeping this one small piece of shared
+// state in its own module lets compose import just it, rather than
+// pulling in the whole gesture recognizer (render-body, selection, and
+// their transitive imports) merely to reach setOpenSwipeCard.
 export let openSwipeCard: HTMLElement | null = null;
 
 export function setOpenSwipeCard(card: HTMLElement | null): void {

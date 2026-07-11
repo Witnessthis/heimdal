@@ -19,6 +19,11 @@ import { openCompose } from './compose';
 // ordinary list scrolling.
 const hiddenMarker = document.querySelector('.feed-top-spacer') as HTMLElement;
 
+// How close to fully revealed (as a fraction of hiddenScrollTop()) a
+// settled pull needs to land to commit to opening — see the settle
+// logic below.
+const OPEN_FRACTION = 0.1;
+
 function hiddenScrollTop(): number {
   return hiddenMarker.offsetTop;
 }
@@ -111,12 +116,20 @@ feed.addEventListener(
     // it to whichever end is nearer. Outside that exact range (0,
     // hiddenScrollTop() itself, or anywhere further into the list) this
     // does nothing at all.
+    //
+    // "Nearer" is deliberately not the midpoint: opening requires
+    // pulling almost all the way to fully revealed (within
+    // OPEN_FRACTION of it) — a pull that falls short, even well past
+    // halfway, springs back to hidden instead of committing. A pull
+    // gesture needs a real commit threshold near the end of its travel,
+    // not a coin-flip at the midpoint, or it opens on pulls that were
+    // never meant to.
     if (settleTimer !== null) clearTimeout(settleTimer);
     settleTimer = setTimeout(() => {
       const hh = hiddenScrollTop();
       const scrolled = feed.scrollTop;
       if (scrolled <= 0 || scrolled >= hh) return;
-      feed.scrollTo({ top: scrolled < hh / 2 ? 0 : hh, behavior: 'smooth' });
+      feed.scrollTo({ top: scrolled <= hh * OPEN_FRACTION ? 0 : hh, behavior: 'smooth' });
     }, 90);
   },
   { passive: true },

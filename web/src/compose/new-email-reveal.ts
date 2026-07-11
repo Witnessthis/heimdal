@@ -39,22 +39,63 @@ document.getElementById('new-email-btn')!.addEventListener('click', () => {
   openCompose({ mode: 'new' });
 });
 
-// Once a scroll gesture settles (debounced — fires 90ms after the last
-// scroll event, so mid-gesture and momentum frames don't trigger it)
-// with scrollTop strictly between 0 and hiddenScrollTop(), that's an
-// ambiguous partial reveal — resolve it to whichever end is nearer.
-// Outside that exact range (0, hiddenScrollTop() itself, or anywhere
-// further into the list) this does nothing at all.
+// Whether a finger is currently down on the feed. Distinguishes a
+// deliberate drag — finger still down, allowed to pull scrollTop past
+// hiddenScrollTop() on purpose, since that's how the button is opened —
+// from native momentum still coasting after the finger has already
+// lifted, which should never be allowed to carry scrollTop past that
+// point on its own (see the scroll handler below).
+let pointerDown = false;
+feed.addEventListener('pointerdown', () => {
+  pointerDown = true;
+});
+window.addEventListener('pointerup', () => {
+  pointerDown = false;
+});
+window.addEventListener('pointercancel', () => {
+  pointerDown = false;
+});
+
+let prevScrollTop = feed.scrollTop;
 let settleTimer: ReturnType<typeof setTimeout> | null = null;
 feed.addEventListener(
   'scroll',
   () => {
+    const h = hiddenScrollTop();
+    const st = feed.scrollTop;
+
+    // A fling from deep in the list decelerates smoothly through
+    // hiddenScrollTop() with nothing to stop it short of the container's
+    // real boundary (scrollTop 0) — same reason a JS-height-collapsed
+    // "hidden" state broke under momentum earlier in this feature's
+    // history, and CSS scroll-snap-stop: always would fix this but was
+    // dropped for being unusably grabby on ordinary scrolling (see the
+    // comment above hiddenScrollTop()). Catching it by hand here is
+    // narrower than either: only when the finger's already up (pure
+    // momentum, not a deliberate drag still in progress) and this event
+    // is the exact frame crossing from at-or-past hiddenScrollTop() to
+    // short of it do we clamp back to the boundary — arresting the
+    // fling right there instead of letting it sail on to scrollTop 0.
+    if (!pointerDown && prevScrollTop >= h && st < h) {
+      feed.scrollTop = h;
+      prevScrollTop = h;
+      return;
+    }
+    prevScrollTop = st;
+
+    // Once a scroll gesture settles (debounced — fires 90ms after the
+    // last scroll event, so mid-gesture and momentum frames don't
+    // trigger it) with scrollTop strictly between 0 and
+    // hiddenScrollTop(), that's an ambiguous partial reveal — resolve
+    // it to whichever end is nearer. Outside that exact range (0,
+    // hiddenScrollTop() itself, or anywhere further into the list) this
+    // does nothing at all.
     if (settleTimer !== null) clearTimeout(settleTimer);
     settleTimer = setTimeout(() => {
-      const h = hiddenScrollTop();
+      const hh = hiddenScrollTop();
       const scrolled = feed.scrollTop;
-      if (scrolled <= 0 || scrolled >= h) return;
-      feed.scrollTo({ top: scrolled < h / 2 ? 0 : h, behavior: 'smooth' });
+      if (scrolled <= 0 || scrolled >= hh) return;
+      feed.scrollTo({ top: scrolled < hh / 2 ? 0 : hh, behavior: 'smooth' });
     }, 90);
   },
   { passive: true },

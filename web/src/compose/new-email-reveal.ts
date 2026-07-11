@@ -45,14 +45,32 @@ document.getElementById('new-email-btn')!.addEventListener('click', () => {
 // from native momentum still coasting after the finger has already
 // lifted, which should never be allowed to carry scrollTop past that
 // point on its own (see the scroll handler below).
+//
+// Tracked via raw touch events, not Pointer Events: #feed allows native
+// vertical panning (touch-action: pan-y), and the instant the browser
+// recognizes a touch as a pan/scroll it fires pointercancel to hand
+// control over to native scrolling — even though the finger is still
+// down. Using pointerdown/-up/-cancel for this made the "finger down"
+// state flip false right at the start of every pull, so the momentum
+// catch below fought the drag itself instead of leaving it alone.
+// touchstart/touchend/touchcancel don't get cancelled that way; they
+// track the physical finger for the whole gesture regardless of who's
+// driving the scroll. mousedown/mouseup is a harmless fallback so this
+// still behaves sanely testing with a mouse (no touch events at all).
 let pointerDown = false;
-feed.addEventListener('pointerdown', () => {
+feed.addEventListener('touchstart', () => {
   pointerDown = true;
 });
-window.addEventListener('pointerup', () => {
+window.addEventListener('touchend', () => {
   pointerDown = false;
 });
-window.addEventListener('pointercancel', () => {
+window.addEventListener('touchcancel', () => {
+  pointerDown = false;
+});
+feed.addEventListener('mousedown', () => {
+  pointerDown = true;
+});
+window.addEventListener('mouseup', () => {
   pointerDown = false;
 });
 

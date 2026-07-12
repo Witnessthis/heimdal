@@ -6,6 +6,7 @@ if [ -n "$DOMAIN" ]; then
 $DOMAIN {
     reverse_proxy localhost:3000
     encode gzip
+    header Strict-Transport-Security "max-age=31536000"
 }
 EOF
 else

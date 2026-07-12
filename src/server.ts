@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import fastifyCookie from '@fastify/cookie';
+import fastifyHelmet from '@fastify/helmet';
 import fastifyRateLimit from '@fastify/rate-limit';
 import fastifyStatic from '@fastify/static';
 import Fastify from 'fastify';
@@ -35,6 +36,48 @@ async function main() {
   // global: false — most routes are behind auth already; only the
   // password/TOTP/setup-token guessing surfaces opt in per-route below.
   await server.register(fastifyRateLimit, { global: false });
+  await server.register(fastifyHelmet, {
+    // Caddy is the actual TLS-terminating layer and is the one place that
+    // genuinely knows whether HTTPS is active (see docker-entrypoint.sh,
+    // which only adds Strict-Transport-Security when DOMAIN is set, i.e.
+    // when Caddy is actually doing automatic HTTPS). Fastify behind it has
+    // no way to know that, so it shouldn't also assert its own HSTS header
+    // with a different max-age — one source of truth.
+    hsts: false,
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        // 'unsafe-inline' is needed for now — every page (index.html
+        // included) has a real inline <script>, mostly the synchronous
+        // pre-paint theme-init call that has to run before first render
+        // to avoid a flash of the wrong theme. Switching to per-page
+        // hashes/nonces would close this properly; left as a known
+        // follow-up rather than a bigger refactor bundled into this fix.
+        scriptSrc: ["'self'", "'unsafe-inline'"],
+        // No inline event-handler attributes (onclick=...) exist in the
+        // app's own HTML (converted the last few to addEventListener),
+        // so this stays at helmet's strict default of 'none'.
+        styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+        fontSrc: ["'self'", 'https://fonts.gstatic.com'],
+        // http(s): stays open deliberately — remote images in email
+        // bodies are blocked by prepareHtmlForRender's own filter, with
+        // a user-controlled "load images" opt-in (issue #27); a CSP
+        // img-src restriction here would silently defeat that opt-in.
+        imgSrc: ["'self'", 'data:', 'http:', 'https:'],
+        connectSrc: ["'self'"],
+        frameSrc: ["'self'"],
+        frameAncestors: ["'none'"],
+        objectSrc: ["'none'"],
+        baseUri: ["'self'"],
+        formAction: ["'self'"],
+        // Disabled — Caddy already forces HTTPS in production (and adds
+        // HSTS, see docker-entrypoint.sh); this directive would rewrite
+        // every http:// request to https://, which breaks the plain-HTTP
+        // LAN-IP dev workflow this app is routinely tested against.
+        upgradeInsecureRequests: null,
+      },
+    },
+  });
 
   // API routes registered before static so they always take priority
   await server.register(setupRoutes, { prefix: '/api', dataDir: DATA_DIR });

@@ -73,14 +73,16 @@
   <div class="card">
     <h2>Add an authenticator app?</h2>
     <p>Two-factor authentication adds a second layer of security — a time-based code from your phone in addition to your password.</p>
-    <button onclick="window.location.replace('/totp-setup.html')">Set up authenticator</button>
-    <button class="btn-ghost" onclick="window.location.replace('/')">Skip for now</button>
+    <button id="setup-btn">Set up authenticator</button>
+    <button class="btn-ghost" id="skip-btn">Skip for now</button>
   </div>
 
   <script>
     fetch('/api/me').then(r => {
       if (r.status === 401) window.location.replace('/login.html');
     });
+    document.getElementById('setup-btn').addEventListener('click', () => window.location.replace('/totp-setup.html'));
+    document.getElementById('skip-btn').addEventListener('click', () => window.location.replace('/'));
   </script>
 </body>
 </html>

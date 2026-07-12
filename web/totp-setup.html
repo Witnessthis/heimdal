@@ -208,10 +208,12 @@
       <p>Two-factor authentication is already enabled.</p>
       <p class="hint">To reconfigure it, disable and re-enable it from settings.</p>
     </div>
-    <button class="btn-ghost" onclick="window.location.replace('/')">Back to app</button>
+    <button class="btn-ghost" id="back-btn">Back to app</button>
   </div>
 
   <script>
+    document.getElementById('back-btn').addEventListener('click', () => window.location.replace('/'));
+
     // A single real <input> drives the 6 visible .code-box cells (see
     // the CSS comment above) — it sits transparently on top of them and
     // captures typing, paste, and autofill; syncBoxes() mirrors its

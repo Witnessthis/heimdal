@@ -6,6 +6,17 @@
   <title>Heimdal — Setup</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Philosopher:wght@700&display=swap" />
+
+  <link rel="manifest" href="manifest.webmanifest" />
+  <meta name="theme-color" content="#1a1a2e" />
+  <script type="module" src="./src/pwa.js"></script>
+
+  <!-- iOS PWA support -->
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Heimdal" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+
   <style>
     * { box-sizing: border-box; }
     html, body {

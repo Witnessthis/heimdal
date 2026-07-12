@@ -15,6 +15,7 @@ export const setupRoutes: FastifyPluginAsync<Options> = async (fastify, { dataDi
   fastify.post<{ Body: { token: string; password: string } }>(
     '/setup',
     {
+      config: { rateLimit: { max: 5, timeWindow: '15 minutes' } },
       schema: {
         body: {
           type: 'object',

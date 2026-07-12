@@ -1,6 +1,6 @@
-import { hash as argon2Hash, argon2id, needsRehash, verify as argon2Verify } from 'argon2';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { hash as argon2Hash, argon2id, verify as argon2Verify, needsRehash } from 'argon2';
 import { decrypt, encrypt, loadOrCreateMasterKey } from './crypto';
 
 // OWASP's current recommended baseline for Argon2id.

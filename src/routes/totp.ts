@@ -1,7 +1,7 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { authenticator } from 'otplib';
 
-authenticator.options = { window: 2 };
+authenticator.options = { window: 1 };
 
 import QRCode from 'qrcode';
 import {

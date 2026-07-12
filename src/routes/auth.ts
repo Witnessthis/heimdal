@@ -1,6 +1,6 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { authenticator } from 'otplib';
-import { loadCredentials, verifyCredentials } from '../lib/credentials';
+import { loadCredentials, resolveTotpSecret, verifyCredentials } from '../lib/credentials';
 import {
   consumePendingTotpToken,
   createPendingTotpToken,
@@ -68,7 +68,8 @@ export const authRoutes: FastifyPluginAsync<Options> = async (fastify, { dataDir
       const credentials = await loadCredentials(dataDir);
       if (!credentials?.totp) return reply.code(400).send({ error: 'TOTP not configured' });
 
-      const valid = authenticator.verify({ token: code, secret: credentials.totp.secret });
+      const secret = await resolveTotpSecret(dataDir, credentials.totp.secret);
+      const valid = authenticator.verify({ token: code, secret });
       if (!valid) return reply.code(401).send({ error: 'Invalid code' });
 
       const token = createSession();

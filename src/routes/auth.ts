@@ -27,6 +27,7 @@ export const authRoutes: FastifyPluginAsync<Options> = async (fastify, { dataDir
   fastify.post<{ Body: { password: string } }>(
     '/login',
     {
+      config: { rateLimit: { max: 5, timeWindow: '1 minute' } },
       schema: {
         body: {
           type: 'object',
@@ -54,6 +55,7 @@ export const authRoutes: FastifyPluginAsync<Options> = async (fastify, { dataDir
   fastify.post<{ Body: { pendingToken: string; code: string } }>(
     '/login/totp',
     {
+      config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
       schema: {
         body: {
           type: 'object',

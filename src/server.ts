@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import fastifyCookie from '@fastify/cookie';
+import fastifyRateLimit from '@fastify/rate-limit';
 import fastifyStatic from '@fastify/static';
 import Fastify from 'fastify';
 import { loadCredentials } from './lib/credentials';
@@ -24,6 +25,9 @@ async function main() {
   const server = Fastify({ logger: { level: process.env.LOG_LEVEL ?? 'info' } });
 
   await server.register(fastifyCookie);
+  // global: false — most routes are behind auth already; only the
+  // password/TOTP/setup-token guessing surfaces opt in per-route below.
+  await server.register(fastifyRateLimit, { global: false });
 
   // API routes registered before static so they always take priority
   await server.register(setupRoutes, { prefix: '/api', dataDir: DATA_DIR });

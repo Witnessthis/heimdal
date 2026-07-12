@@ -5,7 +5,7 @@ import fastifyHelmet from '@fastify/helmet';
 import fastifyRateLimit from '@fastify/rate-limit';
 import fastifyStatic from '@fastify/static';
 import Fastify from 'fastify';
-import { loadCredentials } from './lib/credentials';
+import { consumeTotpSeedFile, loadCredentials, setTotpSecret } from './lib/credentials';
 import { generateSetupToken } from './lib/session';
 import { mailService } from './mail/registry';
 import { authRoutes } from './routes/auth';
@@ -106,6 +106,19 @@ async function main() {
     console.log(`Setup token: ${token}`);
     console.log('Open the app and follow the setup instructions.');
     console.log(`${'='.repeat(52)}\n`);
+  } else {
+    // Escape hatch for dev: drop a base32 TOTP secret you already have
+    // enrolled elsewhere into data/totp-seed.txt and it's installed
+    // right here, skipping the QR-scan/enable flow — see
+    // consumeTotpSeedFile for why this is safe to leave lying around
+    // (it deletes the file once consumed, so it can't re-seed later).
+    const seededSecret = await consumeTotpSeedFile(DATA_DIR);
+    if (seededSecret) {
+      await setTotpSecret(DATA_DIR, seededSecret);
+      console.log(`\n${'='.repeat(52)}`);
+      console.log('TOTP secret seeded from data/totp-seed.txt.');
+      console.log(`${'='.repeat(52)}\n`);
+    }
   }
 
   await mailService.init(DATA_DIR).catch((err) => {

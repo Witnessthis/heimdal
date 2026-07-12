@@ -1,5 +1,5 @@
 import type { FastifyPluginAsync } from 'fastify';
-import { loadCredentials, saveCredentials } from '../lib/credentials';
+import { consumeTotpSeedFile, loadCredentials, saveCredentials, setTotpSecret } from '../lib/credentials';
 import { consumeSetupToken } from '../lib/session';
 
 interface Options {
@@ -39,6 +39,14 @@ export const setupRoutes: FastifyPluginAsync<Options> = async (fastify, { dataDi
       }
 
       await saveCredentials(dataDir, password);
+
+      // Same escape hatch as server.ts's startup check — also needed
+      // here, since a seed file dropped in before setup completes would
+      // otherwise sit unconsumed until the next full server restart (the
+      // startup check only fires when credentials already exist at boot).
+      const seededSecret = await consumeTotpSeedFile(dataDir);
+      if (seededSecret) await setTotpSecret(dataDir, seededSecret);
+
       return reply.send({ ok: true });
     },
   );

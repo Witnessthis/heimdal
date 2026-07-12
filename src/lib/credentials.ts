@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { hash as argon2Hash, argon2id, verify as argon2Verify, needsRehash } from 'argon2';
 import { decrypt, encrypt, loadOrCreateMasterKey } from './crypto';
@@ -114,12 +114,30 @@ export async function loadPendingTotpSecret(dataDir: string): Promise<string | n
 }
 
 export async function clearPendingTotpSecret(dataDir: string): Promise<void> {
-  try {
-    const { unlink } = await import('node:fs/promises');
-    await unlink(join(dataDir, 'totp-pending.json'));
-  } catch {
+  await unlink(join(dataDir, 'totp-pending.json')).catch(() => {
     // already gone, that's fine
-  }
+  });
+}
+
+const TOTP_SEED_FILENAME = 'totp-seed.txt';
+
+/** One-shot manual seed for dev convenience: drop a base32 secret you
+ *  already have enrolled elsewhere into data/totp-seed.txt and the next
+ *  server startup installs it directly, skipping the QR-scan/enable
+ *  flow. Reads and deletes the file in the same pass, so — unlike an
+ *  env var — leaving it there can't re-seed on a later restart; only
+ *  ever written by hand, never by the app. */
+export async function consumeTotpSeedFile(dataDir: string): Promise<string | null> {
+  const path = join(dataDir, TOTP_SEED_FILENAME);
+  const raw = await readFile(path, 'utf-8').catch(() => null);
+  if (raw === null) return null;
+  await unlink(path).catch(() => {});
+  // Authenticator apps commonly display a secret space-grouped in 4s for
+  // readability (e.g. "NF3R OJRV EQAQ YDLU") — strip all whitespace, not
+  // just the ends, or the stored "secret" decodes to different bytes
+  // than the app actually seeded from and every code mismatches.
+  const secret = raw.replace(/\s+/g, '');
+  return secret || null;
 }
 
 export async function setTotpSecret(dataDir: string, secret: string): Promise<void> {

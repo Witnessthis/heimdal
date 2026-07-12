@@ -22,7 +22,14 @@ const DATA_DIR = process.env.DATA_DIR ?? join(__dirname, '..', 'data');
 const WEB_DIR = process.env.WEB_DIR ?? join(__dirname, 'web');
 
 async function main() {
-  const server = Fastify({ logger: { level: process.env.LOG_LEVEL ?? 'info' } });
+  // Node's port is never published externally (only Caddy's 80/443 are —
+  // see Dockerfile/docker-compose.yml); every request genuinely comes
+  // through the local Caddy proxy, so trusting its X-Forwarded-For is safe
+  // and required for rate limiting to key on the real client IP.
+  const server = Fastify({
+    logger: { level: process.env.LOG_LEVEL ?? 'info' },
+    trustProxy: true,
+  });
 
   await server.register(fastifyCookie);
   // global: false — most routes are behind auth already; only the

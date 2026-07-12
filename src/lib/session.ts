@@ -4,9 +4,9 @@ let setupToken: string | null = null;
 const sessions = new Set<string>();
 
 export function generateSetupToken(): string {
-  const raw = randomBytes(4).toString('hex').toUpperCase();
+  const raw = randomBytes(8).toString('hex').toUpperCase();
   setupToken = raw;
-  return `${raw.slice(0, 4)}-${raw.slice(4, 8)}`;
+  return raw.match(/.{1,4}/g)!.join('-');
 }
 
 export function consumeSetupToken(token: string): boolean {

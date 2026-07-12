@@ -42,6 +42,11 @@
 
     /* Token boxes */
     .token-input {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .token-row {
       display: grid;
       grid-template-columns: 1fr auto 1fr;
       align-items: center;
@@ -104,18 +109,35 @@
     <div class="field">
       <span class="field-label">Setup token</span>
       <div class="token-input">
-        <div class="token-group">
-          <input class="char-input" type="text" maxlength="1" inputmode="text" autocomplete="off" spellcheck="false" />
-          <input class="char-input" type="text" maxlength="1" inputmode="text" autocomplete="off" spellcheck="false" />
-          <input class="char-input" type="text" maxlength="1" inputmode="text" autocomplete="off" spellcheck="false" />
-          <input class="char-input" type="text" maxlength="1" inputmode="text" autocomplete="off" spellcheck="false" />
+        <div class="token-row">
+          <div class="token-group">
+            <input class="char-input" type="text" maxlength="1" inputmode="text" autocomplete="off" spellcheck="false" />
+            <input class="char-input" type="text" maxlength="1" inputmode="text" autocomplete="off" spellcheck="false" />
+            <input class="char-input" type="text" maxlength="1" inputmode="text" autocomplete="off" spellcheck="false" />
+            <input class="char-input" type="text" maxlength="1" inputmode="text" autocomplete="off" spellcheck="false" />
+          </div>
+          <span class="token-sep">-</span>
+          <div class="token-group">
+            <input class="char-input" type="text" maxlength="1" inputmode="text" autocomplete="off" spellcheck="false" />
+            <input class="char-input" type="text" maxlength="1" inputmode="text" autocomplete="off" spellcheck="false" />
+            <input class="char-input" type="text" maxlength="1" inputmode="text" autocomplete="off" spellcheck="false" />
+            <input class="char-input" type="text" maxlength="1" inputmode="text" autocomplete="off" spellcheck="false" />
+          </div>
         </div>
-        <span class="token-sep">-</span>
-        <div class="token-group">
-          <input class="char-input" type="text" maxlength="1" inputmode="text" autocomplete="off" spellcheck="false" />
-          <input class="char-input" type="text" maxlength="1" inputmode="text" autocomplete="off" spellcheck="false" />
-          <input class="char-input" type="text" maxlength="1" inputmode="text" autocomplete="off" spellcheck="false" />
-          <input class="char-input" type="text" maxlength="1" inputmode="text" autocomplete="off" spellcheck="false" />
+        <div class="token-row">
+          <div class="token-group">
+            <input class="char-input" type="text" maxlength="1" inputmode="text" autocomplete="off" spellcheck="false" />
+            <input class="char-input" type="text" maxlength="1" inputmode="text" autocomplete="off" spellcheck="false" />
+            <input class="char-input" type="text" maxlength="1" inputmode="text" autocomplete="off" spellcheck="false" />
+            <input class="char-input" type="text" maxlength="1" inputmode="text" autocomplete="off" spellcheck="false" />
+          </div>
+          <span class="token-sep">-</span>
+          <div class="token-group">
+            <input class="char-input" type="text" maxlength="1" inputmode="text" autocomplete="off" spellcheck="false" />
+            <input class="char-input" type="text" maxlength="1" inputmode="text" autocomplete="off" spellcheck="false" />
+            <input class="char-input" type="text" maxlength="1" inputmode="text" autocomplete="off" spellcheck="false" />
+            <input class="char-input" type="text" maxlength="1" inputmode="text" autocomplete="off" spellcheck="false" />
+          </div>
         </div>
       </div>
       <span class="hint">Find your token in the server logs: <code>docker logs heimdal</code></span>
@@ -182,7 +204,7 @@
       const errorEl = document.getElementById('error');
       errorEl.textContent = '';
 
-      if (token.length !== 8) {
+      if (token.length !== 16) {
         errorEl.textContent = 'Please enter the complete setup token.';
         inputs.find(inp => !inp.value)?.focus();
         return;

@@ -146,6 +146,14 @@ export class ImapProvider extends BaseProvider {
       host: this.config.host,
       port: this.config.port,
       secure: this.config.secure,
+      // RFC 3501/8314: when not already on an implicit-TLS port, STARTTLS
+      // must be mandatory, not opportunistic — otherwise a MITM can strip
+      // the STARTTLS capability from the server's response and the
+      // password goes out in the clear with no error. doSTARTTLS: true
+      // makes imapflow fail the connection instead of silently
+      // downgrading (secure: true + doSTARTTLS: true is invalid, hence
+      // the negation — already-implicit-TLS connections don't need it).
+      doSTARTTLS: !this.config.secure,
       auth: { user: this.config.username, pass: this.secret.password },
       disableAutoIdle: true,
       logger: false,

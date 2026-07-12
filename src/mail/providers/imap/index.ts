@@ -298,7 +298,11 @@ export class ImapProvider extends BaseProvider {
    *  if messages are expunged between page fetches; acceptable for a
    *  single-user mailbox browsed interactively. */
   async listMessages(options: ListMessagesOptions): Promise<Page<EmailSummary>> {
-    const pageSize = options.pageSize ?? 25;
+    // Clamp: pageSize comes straight from an authenticated request's query
+    // string (routes/mail.ts does `Number(pageSize)`), so it can be NaN,
+    // negative, zero, or absurdly large without this.
+    const requested = options.pageSize;
+    const pageSize = Number.isFinite(requested) && requested! > 0 ? Math.min(requested!, 100) : 25;
     return this.withClient(async (client) => {
       const lock = await client.getMailboxLock(options.folderId);
       try {

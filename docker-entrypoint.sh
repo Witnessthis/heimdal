@@ -18,12 +18,24 @@ else
 EOF
 fi
 
-# Start the Node backend
-node /app/dist/server.js &
+# /app/data is a bind-mounted volume (see docker-compose.yml) whose
+# ownership comes from the host, not this image, so it can't be fixed up
+# at build time — do it here, every start, before dropping to the
+# non-root user below. Idempotent and cheap either way.
+mkdir -p /app/data
+chown -R heimdal:heimdal /app/data /etc/caddy
 
-# Wait for the backend to be ready before starting Caddy
-until nc -z 127.0.0.1 3000 2>/dev/null; do
-  sleep 0.1
-done
+# This container starts as root only for the setup above. Everything
+# that actually talks to the network or reads a decrypted secret runs as
+# the unprivileged heimdal user from here on — caddy can still bind
+# 80/443 despite that via the cap_net_bind_service file capability set
+# on its binary at build time (see Dockerfile).
+exec su-exec heimdal:heimdal sh -e -c '
+  node /app/dist/server.js &
 
-exec caddy run --config /etc/caddy/Caddyfile
+  until nc -z 127.0.0.1 3000 2>/dev/null; do
+    sleep 0.1
+  done
+
+  exec caddy run --config /etc/caddy/Caddyfile
+'

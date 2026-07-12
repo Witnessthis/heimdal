@@ -40,8 +40,11 @@
     .field-label { font-size: 0.875rem; color: #ccc; }
     .hint { font-size: 0.8rem; color: #888; }
 
-    /* Token boxes */
+    /* Token boxes — one real <input> drives all 16 visual .token-box
+       cells; a single field (not 16 maxlength=1 boxes) so autofill/paste
+       lands in one place instead of needing per-box distribution logic. */
     .token-input {
+      position: relative;
       display: flex;
       flex-direction: column;
       gap: 10px;
@@ -57,9 +60,11 @@
       grid-template-columns: repeat(4, 1fr);
       gap: 4px;
     }
-    .token-group input {
+    .token-box {
       height: 48px;
-      text-align: center;
+      display: flex;
+      align-items: center;
+      justify-content: center;
       font-family: monospace;
       font-size: 1.1rem;
       font-weight: 600;
@@ -67,12 +72,36 @@
       border: 1px solid #333;
       border-radius: 6px;
       color: #f1f1f1;
-      caret-color: #e94560;
-      padding: 0;
-      width: 100%;
     }
-    .token-group input:focus { outline: none; border-color: #e94560; }
+    .token-input.focused .token-box { border-color: #e94560; }
     .token-sep { color: #444; font-size: 1.5rem; font-weight: 300; }
+    .token-input input {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      /* Not opacity: 0 — iOS Safari disables the text-selection/paste UI
+         on elements it considers fully transparent that way. */
+      color: transparent;
+      caret-color: transparent;
+      border: 0;
+      outline: none;
+      margin: 0;
+      padding: 0;
+      background: transparent;
+      font-size: 16px; /* prevents iOS auto-zoom on focus */
+    }
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
 
     /* Password fields */
     input[type="password"] {
@@ -108,37 +137,39 @@
   <form id="form">
     <div class="field">
       <span class="field-label">Setup token</span>
-      <div class="token-input">
+      <div class="token-input" id="token-input">
+        <label for="token" class="sr-only">Setup token</label>
         <div class="token-row">
           <div class="token-group">
-            <input class="char-input" type="text" maxlength="1" inputmode="text" autocomplete="off" spellcheck="false" />
-            <input class="char-input" type="text" maxlength="1" inputmode="text" autocomplete="off" spellcheck="false" />
-            <input class="char-input" type="text" maxlength="1" inputmode="text" autocomplete="off" spellcheck="false" />
-            <input class="char-input" type="text" maxlength="1" inputmode="text" autocomplete="off" spellcheck="false" />
+            <div class="token-box"></div>
+            <div class="token-box"></div>
+            <div class="token-box"></div>
+            <div class="token-box"></div>
           </div>
           <span class="token-sep">-</span>
           <div class="token-group">
-            <input class="char-input" type="text" maxlength="1" inputmode="text" autocomplete="off" spellcheck="false" />
-            <input class="char-input" type="text" maxlength="1" inputmode="text" autocomplete="off" spellcheck="false" />
-            <input class="char-input" type="text" maxlength="1" inputmode="text" autocomplete="off" spellcheck="false" />
-            <input class="char-input" type="text" maxlength="1" inputmode="text" autocomplete="off" spellcheck="false" />
+            <div class="token-box"></div>
+            <div class="token-box"></div>
+            <div class="token-box"></div>
+            <div class="token-box"></div>
           </div>
         </div>
         <div class="token-row">
           <div class="token-group">
-            <input class="char-input" type="text" maxlength="1" inputmode="text" autocomplete="off" spellcheck="false" />
-            <input class="char-input" type="text" maxlength="1" inputmode="text" autocomplete="off" spellcheck="false" />
-            <input class="char-input" type="text" maxlength="1" inputmode="text" autocomplete="off" spellcheck="false" />
-            <input class="char-input" type="text" maxlength="1" inputmode="text" autocomplete="off" spellcheck="false" />
+            <div class="token-box"></div>
+            <div class="token-box"></div>
+            <div class="token-box"></div>
+            <div class="token-box"></div>
           </div>
           <span class="token-sep">-</span>
           <div class="token-group">
-            <input class="char-input" type="text" maxlength="1" inputmode="text" autocomplete="off" spellcheck="false" />
-            <input class="char-input" type="text" maxlength="1" inputmode="text" autocomplete="off" spellcheck="false" />
-            <input class="char-input" type="text" maxlength="1" inputmode="text" autocomplete="off" spellcheck="false" />
-            <input class="char-input" type="text" maxlength="1" inputmode="text" autocomplete="off" spellcheck="false" />
+            <div class="token-box"></div>
+            <div class="token-box"></div>
+            <div class="token-box"></div>
+            <div class="token-box"></div>
           </div>
         </div>
+        <input type="text" id="token" maxlength="16" inputmode="text" autocomplete="off" spellcheck="false" />
       </div>
       <span class="hint">Find your token in the server logs: <code>docker logs heimdal</code></span>
     </div>
@@ -164,36 +195,27 @@
       .then(r => r.json())
       .then(data => { if (data.configured) window.location.replace('/login.html'); });
 
-    const inputs = Array.from(document.querySelectorAll('.char-input'));
+    // A single real <input> drives the 16 visual .token-box cells (see
+    // the CSS comment above) — it sits transparently on top of them and
+    // captures typing, paste, and autofill; syncBoxes() mirrors its
+    // value into the boxes on every change.
+    const tokenInput = document.getElementById('token-input');
+    const boxes = Array.from(tokenInput.querySelectorAll('.token-box'));
+    const realInput = document.getElementById('token');
 
-    inputs.forEach((input, i) => {
-      input.addEventListener('keydown', (e) => {
-        if (e.key === 'Backspace' && !e.target.value && i > 0) {
-          inputs[i - 1].focus();
-          inputs[i - 1].value = '';
-          e.preventDefault();
-        }
-      });
-
-      input.addEventListener('input', (e) => {
-        const val = e.target.value.replace(/[^A-Fa-f0-9]/g, '').toUpperCase();
-        e.target.value = val.slice(0, 1);
-        if (val && i < inputs.length - 1) inputs[i + 1].focus();
-      });
-
-      input.addEventListener('paste', (e) => {
-        e.preventDefault();
-        const chars = e.clipboardData.getData('text').replace(/[^A-Fa-f0-9]/g, '').toUpperCase().split('');
-        chars.forEach((char, j) => {
-          if (i + j < inputs.length) inputs[i + j].value = char;
-        });
-        const next = Math.min(i + chars.length, inputs.length - 1);
-        inputs[next].focus();
-      });
+    function syncBoxes() {
+      const val = realInput.value;
+      boxes.forEach((box, i) => { box.textContent = val[i] || ''; });
+    }
+    realInput.addEventListener('focus', () => tokenInput.classList.add('focused'));
+    realInput.addEventListener('blur', () => tokenInput.classList.remove('focused'));
+    realInput.addEventListener('input', () => {
+      realInput.value = realInput.value.replace(/[^A-Fa-f0-9]/g, '').toUpperCase().slice(0, 16);
+      syncBoxes();
     });
 
     function getToken() {
-      return inputs.map(inp => inp.value).join('');
+      return realInput.value;
     }
 
     document.getElementById('form').addEventListener('submit', async (e) => {
@@ -206,7 +228,7 @@
 
       if (token.length !== 16) {
         errorEl.textContent = 'Please enter the complete setup token.';
-        inputs.find(inp => !inp.value)?.focus();
+        realInput.focus();
         return;
       }
 
@@ -226,8 +248,9 @@
       } else {
         const data = await res.json();
         errorEl.textContent = data.error || 'Setup failed.';
-        inputs.forEach(inp => inp.value = '');
-        inputs[0].focus();
+        realInput.value = '';
+        syncBoxes();
+        realInput.focus();
       }
     });
   </script>

@@ -47,16 +47,37 @@
       text-align: center;
     }
     .secret-box {
+      position: relative;
+      margin-top: 8px;
+      cursor: pointer;
       font-family: monospace;
       font-size: 1rem;
       letter-spacing: 0.12em;
       background: #0d0d1a;
       border: 1px solid #333;
       border-radius: 6px;
-      padding: 10px 14px;
+      padding: 10px 40px 10px 14px;
       color: #aaa;
       word-break: break-all;
+      transition: border-color 0.15s;
+      /* This is a div acting as a button — without these, mobile
+         browsers stick a translucent tap-highlight overlay and/or a
+         text-selection callout on it after a tap, which lingers and
+         reads as a stuck "selected" state. */
+      -webkit-tap-highlight-color: transparent;
+      -webkit-touch-callout: none;
+      user-select: none;
     }
+    .secret-box:hover { border-color: #555; }
+    .copy-icon {
+      position: absolute;
+      right: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: #888;
+      transition: color 0.15s;
+    }
+    .secret-box.copied .copy-icon { color: #2ecc71; }
 
     /* TOTP code — one real <input> drives 6 visible .code-box cells; a
        single field (not 6 maxlength=1 boxes) so autofill providers see
@@ -151,7 +172,13 @@
       <a id="deep-link" class="deep-link" href="#">Open in Authenticator App</a>
       <details>
         <summary class="hint" style="cursor:pointer">Enter manually instead</summary>
-        <p id="secret-box" class="secret-box" style="margin-top:8px"></p>
+        <div id="secret-box" class="secret-box" role="button" tabindex="0" aria-label="Copy secret to clipboard">
+          <span id="secret-text"></span>
+          <svg class="copy-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
+            <rect x="8" y="2" width="8" height="4" rx="1" ry="1" />
+          </svg>
+        </div>
       </details>
     </div>
 
@@ -257,10 +284,59 @@
       const data = await fetch('/api/totp/setup').then(r => r.json());
       document.getElementById('qr-img').src = data.qrCode;
       document.getElementById('deep-link').href = data.otpauthUri;
-      document.getElementById('secret-box').textContent = data.readableSecret;
+      document.getElementById('secret-text').textContent = data.readableSecret;
+      secretDisplay = data.readableSecret;
+      // Authenticator apps' manual-entry fields want the compact form —
+      // strip the display spacing rather than copying it verbatim.
+      secretForCopy = data.readableSecret.replace(/\s/g, '');
       document.getElementById('setup-state').style.display = 'flex';
       realInput.focus();
     }
+
+    let secretForCopy = '';
+    let secretDisplay = '';
+    let copiedTextTimer;
+    async function copySecret() {
+      const secretBox = document.getElementById('secret-box');
+      try {
+        if (navigator.clipboard && window.isSecureContext) {
+          await navigator.clipboard.writeText(secretForCopy);
+        } else {
+          // navigator.clipboard needs a secure context (HTTPS or
+          // localhost) — this app is routinely tested over plain HTTP on
+          // a LAN IP, where it's simply undefined. execCommand still
+          // works there.
+          const ta = document.createElement('textarea');
+          ta.value = secretForCopy;
+          ta.style.position = 'fixed';
+          ta.style.opacity = '0';
+          document.body.appendChild(ta);
+          ta.focus();
+          ta.select();
+          document.execCommand('copy');
+          document.body.removeChild(ta);
+        }
+      } catch {
+        return;
+      }
+      // Icon stays green for the rest of this page view — the only
+      // persistent "copied" indicator. This box isn't a real input, so
+      // it never gets a highlighted border at all. The text itself also
+      // briefly swaps to "Copied" before reverting to the secret.
+      secretBox.classList.add('copied');
+      secretBox.blur();
+      const secretText = document.getElementById('secret-text');
+      secretText.textContent = 'TOTP code copied!';
+      clearTimeout(copiedTextTimer);
+      copiedTextTimer = setTimeout(() => { secretText.textContent = secretDisplay; }, 1500);
+    }
+    document.getElementById('secret-box').addEventListener('click', copySecret);
+    document.getElementById('secret-box').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        copySecret();
+      }
+    });
 
     document.getElementById('confirm-form').addEventListener('submit', (e) => {
       e.preventDefault();

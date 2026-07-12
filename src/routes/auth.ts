@@ -6,22 +6,14 @@ import {
   createPendingTotpToken,
   createSession,
   destroySession,
+  SESSION_COOKIE,
+  sessionCookieOpts,
   validateSession,
 } from '../lib/session';
 
 interface Options {
   dataDir: string;
 }
-
-const COOKIE = 'session';
-const cookieOpts = {
-  httpOnly: true,
-  // Only require HTTPS when a domain is configured (i.e. production).
-  // Localhost is a secure context so this is safe in development.
-  secure: !!process.env.DOMAIN,
-  sameSite: 'strict' as const,
-  path: '/',
-};
 
 export const authRoutes: FastifyPluginAsync<Options> = async (fastify, { dataDir }) => {
   fastify.post<{ Body: { password: string } }>(
@@ -48,7 +40,7 @@ export const authRoutes: FastifyPluginAsync<Options> = async (fastify, { dataDir
       }
 
       const token = createSession();
-      return reply.setCookie(COOKIE, token, cookieOpts).send({ ok: true });
+      return reply.setCookie(SESSION_COOKIE, token, sessionCookieOpts).send({ ok: true });
     },
   );
 
@@ -80,21 +72,23 @@ export const authRoutes: FastifyPluginAsync<Options> = async (fastify, { dataDir
       if (!valid) return reply.code(401).send({ error: 'Invalid code' });
 
       const token = createSession();
-      return reply.setCookie(COOKIE, token, cookieOpts).send({ ok: true });
+      return reply.setCookie(SESSION_COOKIE, token, sessionCookieOpts).send({ ok: true });
     },
   );
 
   fastify.post('/logout', async (request, reply) => {
-    const token = request.cookies[COOKIE];
+    const token = request.cookies[SESSION_COOKIE];
     if (token) destroySession(token);
-    return reply.clearCookie(COOKIE, { path: '/' }).send({ ok: true });
+    return reply.clearCookie(SESSION_COOKIE, { path: '/' }).send({ ok: true });
   });
 
   fastify.get('/me', async (request, reply) => {
-    const token = request.cookies[COOKIE];
+    const token = request.cookies[SESSION_COOKIE];
     if (!token || !validateSession(token)) {
       return reply.code(401).send({ error: 'Unauthorized' });
     }
-    return reply.send({ ok: true });
+    // See require-auth.ts — keeps the browser's cookie in step with the
+    // sliding server-side expiry.
+    return reply.setCookie(SESSION_COOKIE, token, sessionCookieOpts).send({ ok: true });
   });
 };

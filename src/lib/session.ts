@@ -1,7 +1,28 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 
 let setupToken: string | null = null;
-const sessions = new Set<string>();
+
+interface Session {
+  expiresAt: number;
+}
+const sessions = new Map<string, Session>();
+
+// 30 days, sliding — refreshed on every validated request (see
+// validateSession and require-auth.ts), so an actively-used session
+// never expires mid-use, but an abandoned or stolen token dies within
+// this long of its last use instead of lasting forever.
+const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+export const SESSION_COOKIE = 'session';
+export const sessionCookieOpts = {
+  httpOnly: true,
+  // Only require HTTPS when a domain is configured (i.e. production).
+  // Localhost is a secure context so this is safe in development.
+  secure: !!process.env.DOMAIN,
+  sameSite: 'strict' as const,
+  path: '/',
+  maxAge: SESSION_TTL_MS / 1000, // @fastify/cookie takes seconds
+};
 
 export function generateSetupToken(): string {
   const raw = randomBytes(8).toString('hex').toUpperCase();
@@ -20,12 +41,19 @@ export function consumeSetupToken(token: string): boolean {
 
 export function createSession(): string {
   const token = randomBytes(32).toString('hex');
-  sessions.add(token);
+  sessions.set(token, { expiresAt: Date.now() + SESSION_TTL_MS });
   return token;
 }
 
 export function validateSession(token: string): boolean {
-  return sessions.has(token);
+  const session = sessions.get(token);
+  if (!session) return false;
+  if (Date.now() >= session.expiresAt) {
+    sessions.delete(token);
+    return false;
+  }
+  session.expiresAt = Date.now() + SESSION_TTL_MS;
+  return true;
 }
 
 export function destroySession(token: string): void {

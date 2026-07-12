@@ -59,6 +59,14 @@
       margin-top: 4px;
     }
     button:hover { background: #c73a52; }
+    .btn-ghost {
+      background: transparent;
+      border: 1px solid #333;
+      color: #aaa;
+      font-weight: 400;
+      margin-top: 0;
+    }
+    .btn-ghost:hover { background: transparent; border-color: #555; color: #f1f1f1; }
     .error { color: #e94560; font-size: 0.875rem; min-height: 20px; margin: 0; }
 
     /* TOTP code — one real <input> drives 6 visible .code-box cells; a
@@ -141,6 +149,7 @@
     </div>
     <p class="error" id="totp-error"></p>
     <button type="submit">Verify</button>
+    <button type="button" class="btn-ghost" id="totp-back-btn">Back</button>
   </form>
 
   <script>
@@ -176,6 +185,26 @@
 
     function getCode() { return realInput.value; }
 
+    // Returns to step 1 — used both by the explicit Back button and
+    // whenever the server tells us the pending TOTP session is no longer
+    // usable (expired, or already consumed), since re-submitting a code
+    // against a dead pendingToken can never succeed and previously just
+    // left the user stuck on a TOTP form with no way out.
+    function resetToPasswordStep(message) {
+      pendingToken = null;
+      realInput.value = '';
+      syncBoxes();
+      document.getElementById('totp-error').textContent = '';
+      document.getElementById('totp-form').style.display = 'none';
+      document.getElementById('password-form').style.display = 'flex';
+      document.getElementById('subtitle').textContent = 'Sign in';
+      const passwordInput = document.getElementById('password');
+      passwordInput.value = '';
+      document.getElementById('password-error').textContent = message || '';
+      passwordInput.focus();
+    }
+    document.getElementById('totp-back-btn').addEventListener('click', () => resetToPasswordStep());
+
     // Auto-submits as soon as the 6th digit lands — no need to press
     // Enter or tap Verify. Guarded against double-firing since both the
     // input handler above and the form's submit event (Enter key while a
@@ -200,6 +229,10 @@
           return;
         }
         const data = await res.json();
+        if (data.expired) {
+          resetToPasswordStep(data.error || 'Session expired. Please sign in again.');
+          return;
+        }
         errorEl.textContent = data.error || 'Invalid code.';
         realInput.value = '';
         syncBoxes();

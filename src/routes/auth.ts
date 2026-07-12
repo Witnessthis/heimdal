@@ -8,6 +8,7 @@ import {
   destroySession,
   SESSION_COOKIE,
   sessionCookieOpts,
+  validatePendingTotpToken,
   validateSession,
 } from '../lib/session';
 
@@ -61,17 +62,20 @@ export const authRoutes: FastifyPluginAsync<Options> = async (fastify, { dataDir
     },
     async (request, reply) => {
       const { pendingToken, code } = request.body;
-      if (!consumePendingTotpToken(pendingToken)) {
-        return reply.code(401).send({ error: 'Session expired. Please sign in again.' });
+      if (!validatePendingTotpToken(pendingToken)) {
+        return reply.code(401).send({ error: 'Session expired. Please sign in again.', expired: true });
       }
 
       const credentials = await loadCredentials(dataDir);
-      if (!credentials?.totp) return reply.code(400).send({ error: 'TOTP not configured' });
+      if (!credentials?.totp) {
+        return reply.code(400).send({ error: 'TOTP not configured', expired: true });
+      }
 
       const secret = await resolveTotpSecret(dataDir, credentials.totp.secret);
       const valid = authenticator.verify({ token: code, secret });
       if (!valid) return reply.code(401).send({ error: 'Invalid code' });
 
+      consumePendingTotpToken(pendingToken);
       const token = createSession();
       return reply.setCookie(SESSION_COOKIE, token, sessionCookieOpts).send({ ok: true });
     },

@@ -72,9 +72,19 @@ export function createPendingTotpToken(): string {
   return token;
 }
 
-export function consumePendingTotpToken(token: string): boolean {
+// Non-destructive: a wrong TOTP guess must not burn the pending login —
+// the user still has the rest of the 5-minute window to try again. Only
+// the caller's own successful-login path should call consumePendingTotpToken.
+export function validatePendingTotpToken(token: string): boolean {
   const entry = pendingTotpTokens.get(token);
   if (!entry) return false;
+  if (Date.now() >= entry.expiresAt) {
+    pendingTotpTokens.delete(token);
+    return false;
+  }
+  return true;
+}
+
+export function consumePendingTotpToken(token: string): void {
   pendingTotpTokens.delete(token);
-  return Date.now() < entry.expiresAt;
 }

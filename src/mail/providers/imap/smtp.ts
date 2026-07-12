@@ -47,6 +47,11 @@ export async function sendMail(config: ImapSmtpConfig, input: DraftInput): Promi
     host: config.smtpHost,
     port: config.smtpPort,
     secure: config.smtpSecure,
+    // RFC 3207/8314: on a non-implicit-TLS port, STARTTLS must be
+    // mandatory — otherwise a MITM can strip the STARTTLS capability from
+    // the EHLO response and nodemailer silently sends the password over
+    // plaintext. requireTLS makes it fail the connection instead.
+    requireTLS: !config.smtpSecure,
     auth: { user: config.username, pass: config.smtpPassword },
   });
   const info = await transporter.sendMail(toMailOptions(input, config.username));

@@ -8,25 +8,46 @@ import { cardData } from './card-data';
 import { bestPreviewText, isRichHtml } from './preview';
 
 // Rewrites a message's HTML body before it's handed to the sandboxed
-// iframe: blocks remote (http/https) images by default — a remote
-// image is also a tracking pixel, since loading it tells the sender
-// your IP and the exact moment you opened the message — unless the
-// user has opted into auto-loading them via Settings. Also forces
-// every link to open in a new tab/window rather than trying to
-// navigate the iframe's own throwaway document in place. Inline
-// images (already resolved to data: URIs by the backend from cid:
-// references) carry none of that risk and are left untouched either
-// way. Returns the prepared HTML plus how many images got blocked, so
-// the caller knows whether to show a "load images" control at all.
-export function prepareHtmlForRender(html: string): { html: string; blockedCount: number } {
+// iframe. When allowImages is false, remote images are blocked — a
+// remote image is also a tracking pixel, since loading it tells the
+// sender your IP and the exact moment you opened the message. Stripping
+// <img src> is only half the job on its own: a sender can trigger the
+// exact same remote fetch via srcset, <picture><source>, CSS
+// background-image, @import, <video poster>, or the legacy background=
+// attribute. Rather than enumerating and neutralizing every one of
+// those by hand, an injected CSP <meta> tag blocks every remote-fetch
+// vector at once via default-src 'none' — img-src is the only thing
+// ever relaxed, and only when allowImages is true. It has to be a
+// document-level policy baked in at parse time (CSP can't be loosened
+// on a live document), which is why the "load images" control in
+// renderHtmlBody below re-renders a fresh iframe with allowImages: true
+// rather than mutating the existing one's <img> elements in place —
+// that would still get silently blocked by the strict policy already
+// in effect on that document.
+//
+// Also forces every link to open in a new tab/window rather than
+// trying to navigate the iframe's own throwaway document in place.
+// Inline images (already resolved to data: URIs by the backend from
+// cid: references) carry none of the tracking risk and are left
+// untouched either way — img-src always allows data:.
+//
+// Returns the prepared HTML plus how many <img src> elements got
+// blocked, so the caller knows whether to show a "load images" control
+// at all. (Only <img src> is counted/stripped — the other vectors CSP
+// closes aren't enumerated here, so they're not reflected in the count;
+// the security property holds regardless, they just don't get their own
+// placeholder box or contribute to the "load N images" number.)
+export function prepareHtmlForRender(
+  html: string,
+  allowImages: boolean,
+): { html: string; blockedCount: number } {
   const doc = new DOMParser().parseFromString(html, 'text/html');
 
   let blockedCount = 0;
-  if (!isAutoLoadImagesEnabled()) {
+  if (!allowImages) {
     doc.querySelectorAll<HTMLImageElement>('img[src]').forEach((img) => {
       const src = img.getAttribute('src') || '';
       if (!/^https?:\/\//i.test(src)) return;
-      img.dataset.blockedSrc = src;
       img.removeAttribute('src');
       img.classList.add('heimdal-blocked-image');
       // Reserve the declared space so revealing images later doesn't
@@ -42,10 +63,6 @@ export function prepareHtmlForRender(html: string): { html: string; blockedCount
     });
   }
 
-  const base = doc.createElement('base');
-  base.target = '_blank';
-  doc.head.prepend(base);
-
   const style = doc.createElement('style');
   style.textContent = `
     body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; overflow-wrap: anywhere; }
@@ -60,6 +77,24 @@ export function prepareHtmlForRender(html: string): { html: string; blockedCount
     }
   `;
   doc.head.prepend(style);
+
+  const base = doc.createElement('base');
+  base.target = '_blank';
+  doc.head.prepend(base);
+
+  // Must end up first in <head> — a CSP meta tag only governs resources
+  // parsed after it in document order, so prepend() this last (after
+  // base/style, which fetch nothing themselves and so aren't at risk
+  // either way) to be the actual first element.
+  const meta = doc.createElement('meta');
+  meta.setAttribute('http-equiv', 'Content-Security-Policy');
+  meta.setAttribute(
+    'content',
+    allowImages
+      ? "default-src 'none'; img-src data: http: https:; style-src 'unsafe-inline'"
+      : "default-src 'none'; img-src data:; style-src 'unsafe-inline'",
+  );
+  doc.head.prepend(meta);
 
   return { html: `<!doctype html>${doc.documentElement.outerHTML}`, blockedCount };
 }
@@ -80,49 +115,51 @@ export function renderHtmlBody(card: HTMLElement, html: string): void {
   if (!bodyWrap) return;
   card.querySelector<HTMLElement>('.card-body')!.style.display = 'none';
 
-  const { html: preparedHtml, blockedCount } = prepareHtmlForRender(html);
+  // A full re-render (fresh iframe, fresh CSP) rather than an in-place
+  // DOM mutation — the strict CSP baked into the blocked iframe's
+  // document can't be loosened after the fact, so "load images" has to
+  // build a whole new document with the permissive policy from the
+  // start. See the allowImages comment on prepareHtmlForRender.
+  const renderFrame = (allowImages: boolean) => {
+    bodyWrap.querySelector('.card-html-body')?.remove();
+    bodyWrap.querySelector('.load-images-btn')?.remove();
 
-  const iframe = document.createElement('iframe');
-  iframe.className = 'card-html-body';
-  iframe.setAttribute('sandbox', 'allow-same-origin allow-popups');
-  iframe.setAttribute('referrerpolicy', 'no-referrer');
-  iframe.srcdoc = preparedHtml;
+    const { html: preparedHtml, blockedCount } = prepareHtmlForRender(html, allowImages);
 
-  const resizeToContent = () => {
-    const doc = iframe.contentDocument;
-    if (doc?.body) iframe.style.height = `${doc.body.scrollHeight}px`;
-  };
-  iframe.addEventListener('load', () => {
-    resizeToContent();
-    // Images finishing (a normal load, or later via "load images"
-    // below) change body's rendered height after the load event
-    // already fired — keep the iframe's height in sync as that
-    // happens instead of leaving stale empty space or a cut-off card.
-    const doc = iframe.contentDocument;
-    if (doc?.body && 'ResizeObserver' in window) {
-      new ResizeObserver(resizeToContent).observe(doc.body);
-    }
-  });
+    const iframe = document.createElement('iframe');
+    iframe.className = 'card-html-body';
+    iframe.setAttribute('sandbox', 'allow-same-origin allow-popups');
+    iframe.setAttribute('referrerpolicy', 'no-referrer');
+    iframe.srcdoc = preparedHtml;
 
-  bodyWrap.appendChild(iframe);
-
-  if (blockedCount > 0) {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'load-images-btn';
-    btn.textContent = `Load ${blockedCount} image${blockedCount > 1 ? 's' : ''}`;
-    btn.addEventListener('click', () => {
+    const resizeToContent = () => {
       const doc = iframe.contentDocument;
-      if (!doc) return;
-      doc.querySelectorAll<HTMLImageElement>('.heimdal-blocked-image').forEach((img) => {
-        img.src = img.dataset.blockedSrc!;
-        img.classList.remove('heimdal-blocked-image');
-        delete img.dataset.blockedSrc;
-      });
-      btn.remove();
+      if (doc?.body) iframe.style.height = `${doc.body.scrollHeight}px`;
+    };
+    iframe.addEventListener('load', () => {
+      resizeToContent();
+      // Images finishing change body's rendered height after the load
+      // event already fired — keep the iframe's height in sync as that
+      // happens instead of leaving stale empty space or a cut-off card.
+      const doc = iframe.contentDocument;
+      if (doc?.body && 'ResizeObserver' in window) {
+        new ResizeObserver(resizeToContent).observe(doc.body);
+      }
     });
-    bodyWrap.appendChild(btn);
-  }
+
+    bodyWrap.appendChild(iframe);
+
+    if (blockedCount > 0) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'load-images-btn';
+      btn.textContent = `Load ${blockedCount} image${blockedCount > 1 ? 's' : ''}`;
+      btn.addEventListener('click', () => renderFrame(true));
+      bodyWrap.appendChild(btn);
+    }
+  };
+
+  renderFrame(isAutoLoadImagesEnabled());
 }
 
 // Fetches one message's full content (body, attachments) on demand —

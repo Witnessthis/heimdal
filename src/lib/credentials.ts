@@ -1,35 +1,75 @@
-import { randomBytes, scrypt, timingSafeEqual } from 'node:crypto';
+import { hash as argon2Hash, argon2id, needsRehash, verify as argon2Verify } from 'argon2';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { decrypt, encrypt, loadOrCreateMasterKey } from './crypto';
 
-// Node's crypto.scrypt default (2^14) — implicit N for hashes saved
-// before the cost was made explicit and self-describing below.
-const LEGACY_SCRYPT_N = 16384;
-// OWASP's current minimum recommendation (2^17).
-const SCRYPT_N = 131072;
-// scrypt memory usage is ~128*N*r bytes; default r=8 puts SCRYPT_N at
-// ~128MiB, over Node's default 32MiB maxmem cap — must raise it explicitly
-// or scrypt throws ERR_CRYPTO_INVALID_SCRYPT_PARAMS.
-const SCRYPT_MAXMEM = 256 * 1024 * 1024;
+// OWASP's current recommended baseline for Argon2id.
+const ARGON2_OPTIONS = { type: argon2id, memoryCost: 19456, timeCost: 2, parallelism: 1 };
 
-// Hand-rolled instead of promisify(scrypt) — the options-object overload
-// (needed for N/maxmem) isn't one of promisify's typed overloads for scrypt.
-function scryptHash(password: string, salt: string, N: number): Promise<Buffer> {
-  return new Promise((resolve, reject) => {
-    scrypt(password, salt, 64, { N, maxmem: SCRYPT_MAXMEM }, (err, derivedKey) => {
-      if (err) reject(err);
-      else resolve(derivedKey);
-    });
-  });
+/** Splits "<scheme-id>:<payload>" on the first ':'. Scheme ids never
+ *  contain ':' themselves; payloads may (argon2's own encoded hash uses
+ *  '$' as its separator, and encrypt()'s output uses '.'), so splitting
+ *  on the first occurrence only is unambiguous either way. */
+function splitSchemeTag(stored: string): [id: string, payload: string] {
+  const i = stored.indexOf(':');
+  return [stored.slice(0, i), stored.slice(i + 1)];
 }
 
+// --- Password hashing: a tagged-scheme registry ------------------------
+//
+// passwordHash is stored as "<scheme-id>:<scheme-specific payload>", with
+// the scheme id explicit rather than inferred from the payload's shape.
+// A verify always knows exactly how to check whatever's stored, and on
+// success always knows exactly how to re-hash to the current scheme in
+// one direct step — switching schemes N times over the app's life never
+// requires walking through the ones in between, since each one is
+// independently self-contained and verifiable on its own.
+interface PasswordScheme {
+  hash(password: string): Promise<string>;
+  verify(password: string, payload: string): Promise<boolean>;
+  /** True if a payload that already verified correctly should still be
+   *  re-hashed — e.g. this scheme's own cost parameters were tuned up
+   *  since the payload was created. Lets cost tuning happen without a
+   *  new scheme id: argon2's encoded hash embeds its own parameters, so
+   *  needsRehash() catches parameter drift within argon2id-v1 itself. */
+  needsUpgrade(payload: string): boolean;
+}
+
+const PASSWORD_SCHEMES: Record<string, PasswordScheme> = {
+  'argon2id-v1': {
+    hash: (password) => argon2Hash(password, ARGON2_OPTIONS),
+    verify: (password, payload) => argon2Verify(payload, password),
+    needsUpgrade: (payload) => needsRehash(payload, ARGON2_OPTIONS),
+  },
+};
+const CURRENT_PASSWORD_SCHEME = 'argon2id-v1';
+
+async function hashPassword(password: string): Promise<string> {
+  const payload = await PASSWORD_SCHEMES[CURRENT_PASSWORD_SCHEME].hash(password);
+  return `${CURRENT_PASSWORD_SCHEME}:${payload}`;
+}
+
+// --- TOTP secret encryption: the same tagged-scheme pattern ------------
+//
+// Mirrors the password scheme registry above, but two-way (decrypt, not
+// verify) since the plaintext secret is needed again for TOTP checks.
+interface TotpScheme {
+  encrypt(dataDir: string, secret: string): Promise<string>;
+  decrypt(dataDir: string, payload: string): Promise<string>;
+}
+
+const TOTP_SCHEMES: Record<string, TotpScheme> = {
+  'aesgcm-v1': {
+    encrypt: async (dataDir, secret) => encrypt(await loadOrCreateMasterKey(dataDir), secret),
+    decrypt: async (dataDir, payload) => decrypt(await loadOrCreateMasterKey(dataDir), payload),
+  },
+};
+const CURRENT_TOTP_SCHEME = 'aesgcm-v1';
+
 interface Credentials {
+  // "<scheme-id>:<payload>" — see the PasswordScheme registry above.
   passwordHash: string;
-  // Encrypted at rest (crypto.ts's iv.tag.ciphertext format) — or, for a
-  // secret saved before that was added, still legacy plaintext base32
-  // until resolveTotpSecret() migrates it on next use. loadCredentials
-  // returns this exactly as stored; only resolveTotpSecret decrypts it.
+  // "<scheme-id>:<payload>" — see the TotpScheme registry above.
   totp?: { secret: string };
 }
 
@@ -45,15 +85,10 @@ export async function loadCredentials(dataDir: string): Promise<Credentials | nu
 export async function saveCredentials(dataDir: string, password: string): Promise<void> {
   await mkdir(dataDir, { recursive: true });
   // Preserve any existing totp field — this is also called by
-  // verifyCredentials' opportunistic rehash-on-login, which must not
+  // verifyCredentials' opportunistic upgrade-on-login, which must not
   // silently drop an already-configured TOTP secret.
   const existing = await loadCredentials(dataDir);
-  const salt = randomBytes(16).toString('hex');
-  const hash = await scryptHash(password, salt, SCRYPT_N);
-  const credentials: Credentials = {
-    ...existing,
-    passwordHash: `${SCRYPT_N}:${salt}:${hash.toString('hex')}`,
-  };
+  const credentials: Credentials = { ...existing, passwordHash: await hashPassword(password) };
   await writeFile(join(dataDir, 'credentials.json'), JSON.stringify(credentials, null, 2), {
     mode: 0o600,
   });
@@ -90,50 +125,43 @@ export async function clearPendingTotpSecret(dataDir: string): Promise<void> {
 export async function setTotpSecret(dataDir: string, secret: string): Promise<void> {
   const credentials = await loadCredentials(dataDir);
   if (!credentials) throw new Error('Not configured');
-  const key = await loadOrCreateMasterKey(dataDir);
-  credentials.totp = { secret: encrypt(key, secret) };
+  const payload = await TOTP_SCHEMES[CURRENT_TOTP_SCHEME].encrypt(dataDir, secret);
+  credentials.totp = { secret: `${CURRENT_TOTP_SCHEME}:${payload}` };
   await writeFile(join(dataDir, 'credentials.json'), JSON.stringify(credentials, null, 2), {
     mode: 0o600,
   });
 }
 
-// otplib's base32 secrets are uppercase A-Z2-7 only; the encrypted format
-// (crypto.ts's encrypt()) is three base64 segments joined by '.', so
-// exactly two dots reliably distinguishes it from a legacy plaintext one.
-function isEncryptedTotpSecret(value: string): boolean {
-  return value.split('.').length === 3;
-}
-
 /** Resolves credentials.totp.secret (as returned by loadCredentials,
- *  unchanged) to its usable plaintext form. A secret already encrypted
- *  at rest is decrypted; a legacy plaintext secret (saved before this
- *  was encrypted) is migrated — re-saved encrypted via setTotpSecret —
- *  transparently, the first time it's actually used again. */
-export async function resolveTotpSecret(dataDir: string, storedSecret: string): Promise<string> {
-  if (isEncryptedTotpSecret(storedSecret)) {
-    const key = await loadOrCreateMasterKey(dataDir);
-    return decrypt(key, storedSecret);
-  }
-  await setTotpSecret(dataDir, storedSecret);
-  return storedSecret;
+ *  unchanged) to its usable plaintext form, upgrading it to the current
+ *  TOTP scheme in one direct step if it wasn't already stored under it. */
+export async function resolveTotpSecret(dataDir: string, stored: string): Promise<string> {
+  const [schemeId, payload] = splitSchemeTag(stored);
+  const scheme = TOTP_SCHEMES[schemeId];
+  if (!scheme) throw new Error(`Unknown TOTP secret scheme: ${schemeId}`);
+  const secret = await scheme.decrypt(dataDir, payload);
+  if (schemeId !== CURRENT_TOTP_SCHEME) await setTotpSecret(dataDir, secret);
+  return secret;
 }
 
 export async function verifyCredentials(dataDir: string, password: string): Promise<boolean> {
   const credentials = await loadCredentials(dataDir);
   if (!credentials) return false;
-  const parts = credentials.passwordHash.split(':');
-  const [N, salt, storedHash] =
-    parts.length === 3 ? [Number(parts[0]), parts[1], parts[2]] : [LEGACY_SCRYPT_N, parts[0], parts[1]];
-  const storedBuffer = Buffer.from(storedHash, 'hex');
-  const derivedBuffer = await scryptHash(password, salt, N);
-  const valid = timingSafeEqual(storedBuffer, derivedBuffer);
+  const [schemeId, payload] = splitSchemeTag(credentials.passwordHash);
+  const scheme = PASSWORD_SCHEMES[schemeId];
+  if (!scheme) return false;
+  const valid = await scheme.verify(password, payload);
 
-  // Opportunistic upgrade: a hash saved at an old (or legacy, unlabeled)
-  // cost gets re-hashed at the current cost right here, since this is the
-  // one place the plaintext password is ever available again. Self-heals
-  // every real user's hash to the current cost within one login, with no
-  // separate migration step or forced reset.
-  if (valid && N < SCRYPT_N) await saveCredentials(dataDir, password);
+  // Opportunistic upgrade: re-hash under the current scheme (a different
+  // scheme id entirely, or the same one with tuned-up parameters) right
+  // here, since this is the one place the plaintext password is ever
+  // available again. Self-heals every real user's hash within one login,
+  // with no separate migration step or forced reset — works the same way
+  // regardless of how many scheme changes happened since this hash was
+  // created, or which one it started from.
+  if (valid && (schemeId !== CURRENT_PASSWORD_SCHEME || scheme.needsUpgrade(payload))) {
+    await saveCredentials(dataDir, password);
+  }
 
   return valid;
 }

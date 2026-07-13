@@ -119,6 +119,21 @@ export default defineConfig({
           hookTimeout: 120_000,
         },
       },
+      {
+        // Smoke: builds and boots the actual Docker image we ship and hits
+        // it over HTTP — the only layer that tests the real artifact
+        // (compiled backend + built frontend + Caddy + entrypoint), not
+        // source. Slowest of all (a full image build), opt-in via
+        // `npm run test:smoke`; the long hookTimeout covers that build.
+        root: __dirname,
+        test: {
+          name: 'smoke',
+          environment: 'node',
+          include: ['src/**/*.smoke.test.ts'],
+          testTimeout: 60_000,
+          hookTimeout: 600_000,
+        },
+      },
     ],
     passWithNoTests: true,
   },

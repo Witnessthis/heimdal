@@ -12,6 +12,8 @@
     "test": "vitest run --project web --project server",
     "test:watch": "vitest --project web --project server",
     "test:integration": "vitest run --project integration",
+    "test:smoke": "vitest run --project smoke",
+    "test:all": "vitest run",
     "lint": "biome check .",
     "format": "biome check --write ."
   },

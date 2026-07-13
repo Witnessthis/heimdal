@@ -175,11 +175,37 @@ script prints how to remove those too if you want a fully clean machine.
 ```sh
 npm run build      # tsc (backend -> dist/) + vite build (frontend -> dist/web/)
 npm start           # runs the production build (node dist/server.js)
-npm test            # Vitest
+npm test            # Vitest — fast unit + integration, no Docker (see below)
 npm run typecheck   # tsc --noEmit, backend and frontend
 npm run lint        # Biome
 npm run format      # Biome, writes fixes
 ```
+
+#### Test layers
+
+Tests are split into Vitest projects by cost and fidelity. `npm test` runs
+the two fast, Docker-free layers; the container-backed layers are opt-in:
+
+```sh
+npm test                # web (jsdom) + server (node) — fast, no Docker
+npm run test:integration  # ImapProvider vs a real GreenMail server (Testcontainers)
+npm run test:smoke        # builds & boots the shipped Docker image, hits it over HTTP
+npm run test:all          # all of the above
+```
+
+- **web** — frontend logic in jsdom (sanitizer, preview/format helpers,
+  address parsing).
+- **server** — backend logic in real Node (crypto/AES-GCM, argon2 password
+  hashing, sessions, and the Fastify route stack via `.inject()`).
+- **integration** (Docker) — the real IMAP/SMTP path: send a message and
+  read it back through `ImapProvider` against a live GreenMail container.
+- **smoke** (Docker) — the only layer that tests the *artifact we ship*:
+  builds the Dockerfile, boots the image (backend + built frontend + Caddy),
+  and asserts static serving, security headers, and auth over HTTP.
+
+Backend test files (`*.test.ts` under `src/`) are excluded from the
+production build; Docker-backed files use the `*.integration.test.ts` /
+`*.smoke.test.ts` suffixes so `npm test` never needs a daemon.
 
 ### Docker (distro-agnostic)
 

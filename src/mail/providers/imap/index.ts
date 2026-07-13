@@ -16,11 +16,11 @@ const PROVIDER_PREFIX = 'imap';
  *  via the request-driven methods below, they just don't push events. */
 const IDLE_FOLDER = 'INBOX';
 
-function encodeMessageId(folderPath: string, uid: number): string {
+export function encodeMessageId(folderPath: string, uid: number): string {
   return `${PROVIDER_PREFIX}:${encodeURIComponent(folderPath)}:${uid}`;
 }
 
-function decodeMessageId(messageId: string): { folderPath: string; uid: number } {
+export function decodeMessageId(messageId: string): { folderPath: string; uid: number } {
   const parts = messageId.split(':');
   if (parts.length !== 3 || parts[0] !== PROVIDER_PREFIX) {
     throw new InvalidRequestError(`Invalid message id: ${messageId}`);
@@ -48,7 +48,7 @@ function stripAngleBrackets(id: string): string {
  *  header wrapped across multiple lines, each continuation starting with
  *  whitespace) are joined correctly instead of truncating at the first
  *  fold. */
-function parseReferencesHeader(headers: Buffer | undefined): string[] {
+export function parseReferencesHeader(headers: Buffer | undefined): string[] {
   if (!headers) return [];
   const lines = headers.toString('utf8').split(/\r\n|\r|\n/);
   let collecting = false;
@@ -73,7 +73,10 @@ function parseReferencesHeader(headers: Buffer | undefined): string[] {
  *  chain when available (covers 3+-message threads correctly), falling
  *  back to In-Reply-To (immediate parent only) and finally the message's
  *  own id for thread starters. */
-function computeThreadId(envelope: MessageEnvelopeObject | undefined, headers: Buffer | undefined): string {
+export function computeThreadId(
+  envelope: MessageEnvelopeObject | undefined,
+  headers: Buffer | undefined,
+): string {
   const references = parseReferencesHeader(headers);
   if (references.length > 0) return references[0];
   const raw = envelope?.inReplyTo || envelope?.messageId || '';
@@ -87,7 +90,7 @@ function computeThreadId(envelope: MessageEnvelopeObject | undefined, headers: B
  *  are untouched; unresolvable cids are left as-is (the img just won't
  *  render, same as it wouldn't in any other mail client without the
  *  original context). */
-function resolveInlineImages(html: string, inlineImages: MailparserAttachment[]): string {
+export function resolveInlineImages(html: string, inlineImages: MailparserAttachment[]): string {
   if (!inlineImages.length) return html;
   return html.replace(/\bsrc=(["'])cid:([^"']+)\1/gi, (match, quote, rawCid) => {
     const cid = decodeURIComponent(rawCid);
@@ -97,7 +100,7 @@ function resolveInlineImages(html: string, inlineImages: MailparserAttachment[])
   });
 }
 
-function folderKindFromSpecialUse(specialUse: string | undefined, path: string): Folder['kind'] {
+export function folderKindFromSpecialUse(specialUse: string | undefined, path: string): Folder['kind'] {
   switch (specialUse) {
     case '\\Inbox':
       return 'inbox';

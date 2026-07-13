@@ -102,7 +102,9 @@ export default defineConfig({
           name: 'server',
           environment: 'node',
           include: ['src/**/*.test.ts'],
-          exclude: ['**/*.integration.test.ts', '**/node_modules/**'],
+          // The Docker-backed suites are their own opt-in projects — keep
+          // them out of the fast, daemon-free `npm test`.
+          exclude: ['**/*.integration.test.ts', '**/*.smoke.test.ts', '**/node_modules/**'],
         },
       },
       {

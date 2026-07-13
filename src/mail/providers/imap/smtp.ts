@@ -41,19 +41,26 @@ export async function renderRawMessage(input: DraftInput, from: string): Promise
   return info.message as Buffer;
 }
 
-/** The only function in the IMAP provider that puts a message on the wire. */
-export async function sendMail(config: ImapSmtpConfig, input: DraftInput): Promise<{ messageId: string }> {
-  const transporter = nodemailer.createTransport({
+/** Nodemailer transport options, isolated so the STARTTLS-enforcement
+ *  invariant is unit-testable without a live server (see
+ *  tls-enforcement.test.ts). The security-critical line is `requireTLS`:
+ *  on a non-implicit-TLS port (smtpSecure=false), TLS must be MANDATORY —
+ *  otherwise a MITM can strip the STARTTLS capability from the EHLO
+ *  response and nodemailer silently sends the password over plaintext.
+ *  requireTLS makes it fail the connection instead of downgrading. */
+export function smtpTransportOptions(config: ImapSmtpConfig) {
+  return {
     host: config.smtpHost,
     port: config.smtpPort,
     secure: config.smtpSecure,
-    // RFC 3207/8314: on a non-implicit-TLS port, STARTTLS must be
-    // mandatory — otherwise a MITM can strip the STARTTLS capability from
-    // the EHLO response and nodemailer silently sends the password over
-    // plaintext. requireTLS makes it fail the connection instead.
     requireTLS: !config.smtpSecure,
     auth: { user: config.username, pass: config.smtpPassword },
-  });
+  };
+}
+
+/** The only function in the IMAP provider that puts a message on the wire. */
+export async function sendMail(config: ImapSmtpConfig, input: DraftInput): Promise<{ messageId: string }> {
+  const transporter = nodemailer.createTransport(smtpTransportOptions(config));
   const info = await transporter.sendMail(toMailOptions(input, config.username));
   return { messageId: info.messageId };
 }

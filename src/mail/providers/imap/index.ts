@@ -122,6 +122,28 @@ function folderKindFromSpecialUse(specialUse: string | undefined, path: string):
   return 'custom';
 }
 
+/** ImapFlow connection options, isolated so the STARTTLS-enforcement
+ *  invariant is unit-testable without a live server (see
+ *  tls-enforcement.test.ts). The security-critical line is `doSTARTTLS`:
+ *  when not already on an implicit-TLS port (secure=false), STARTTLS must
+ *  be mandatory, not opportunistic — otherwise a MITM can strip the
+ *  STARTTLS capability from the server's response and the password goes
+ *  out in the clear with no error. doSTARTTLS: true makes imapflow fail
+ *  the connection instead of silently downgrading (secure: true +
+ *  doSTARTTLS: true is invalid, hence the negation — already-implicit-TLS
+ *  connections don't need it). */
+export function imapClientOptions(config: ImapProviderConfig, secret: ImapSecret) {
+  return {
+    host: config.host,
+    port: config.port,
+    secure: config.secure,
+    doSTARTTLS: !config.secure,
+    auth: { user: config.username, pass: secret.password },
+    disableAutoIdle: true,
+    logger: false as const,
+  };
+}
+
 export class ImapProvider extends BaseProvider {
   readonly kind: ProviderKind = 'imap';
 
@@ -142,22 +164,7 @@ export class ImapProvider extends BaseProvider {
   }
 
   private newClient(): ImapFlow {
-    const client = new ImapFlow({
-      host: this.config.host,
-      port: this.config.port,
-      secure: this.config.secure,
-      // RFC 3501/8314: when not already on an implicit-TLS port, STARTTLS
-      // must be mandatory, not opportunistic — otherwise a MITM can strip
-      // the STARTTLS capability from the server's response and the
-      // password goes out in the clear with no error. doSTARTTLS: true
-      // makes imapflow fail the connection instead of silently
-      // downgrading (secure: true + doSTARTTLS: true is invalid, hence
-      // the negation — already-implicit-TLS connections don't need it).
-      doSTARTTLS: !this.config.secure,
-      auth: { user: this.config.username, pass: this.secret.password },
-      disableAutoIdle: true,
-      logger: false,
-    });
+    const client = new ImapFlow(imapClientOptions(this.config, this.secret));
     // ImapFlow emits 'error' on the underlying socket for things like a
     // timeout (closeAfter() has already torn the connection down by the
     // time it does) — Node throws and crashes the *entire process* if an

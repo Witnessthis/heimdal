@@ -94,12 +94,29 @@ export default defineConfig({
         // Backend: real Node code (node:crypto, node:fs, argon2's native
         // binding). Runs in the node environment against the real
         // primitives it uses in production — not a jsdom shim — which is
-        // the whole point of testing the crypto/auth core here.
+        // the whole point of testing the crypto/auth core here. Fast and
+        // Docker-free; the heavier container-backed suite is a separate
+        // project (below) so `npm test` never needs Docker.
         root: __dirname,
         test: {
           name: 'server',
           environment: 'node',
           include: ['src/**/*.test.ts'],
+          exclude: ['**/*.integration.test.ts', '**/node_modules/**'],
+        },
+      },
+      {
+        // Integration: spins up real dependencies (GreenMail via
+        // Testcontainers) and needs a Docker daemon, so it's opt-in only —
+        // `npm test` runs web+server; `npm run test:integration` runs this.
+        // Long timeouts cover JVM container boot.
+        root: __dirname,
+        test: {
+          name: 'integration',
+          environment: 'node',
+          include: ['src/**/*.integration.test.ts'],
+          testTimeout: 60_000,
+          hookTimeout: 120_000,
         },
       },
     ],

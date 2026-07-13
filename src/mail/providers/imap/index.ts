@@ -122,6 +122,23 @@ function folderKindFromSpecialUse(specialUse: string | undefined, path: string):
   return 'custom';
 }
 
+export const DEFAULT_PAGE_SIZE = 25;
+export const MAX_PAGE_SIZE = 100;
+
+/** listMessages' pageSize comes straight from an authenticated request's
+ *  query string (routes/mail.ts does `Number(pageSize)`), so it can arrive
+ *  as undefined, NaN, 0, negative, or absurdly large. Clamp it: anything
+ *  invalid falls back to the default, and the hard cap bounds how large a
+ *  single IMAP fetch an authenticated client can force — a big sequence
+ *  range blows a batch's fetch time from ~1s to 10-25s, i.e. an
+ *  authenticated self-DoS without this. Pure + exported for testing. */
+export function clampPageSize(requested: number | undefined): number {
+  if (requested === undefined || !Number.isFinite(requested) || requested <= 0) {
+    return DEFAULT_PAGE_SIZE;
+  }
+  return Math.min(requested, MAX_PAGE_SIZE);
+}
+
 /** ImapFlow connection options, isolated so the STARTTLS-enforcement
  *  invariant is unit-testable without a live server (see
  *  tls-enforcement.test.ts). The security-critical line is `doSTARTTLS`:
@@ -305,11 +322,7 @@ export class ImapProvider extends BaseProvider {
    *  if messages are expunged between page fetches; acceptable for a
    *  single-user mailbox browsed interactively. */
   async listMessages(options: ListMessagesOptions): Promise<Page<EmailSummary>> {
-    // Clamp: pageSize comes straight from an authenticated request's query
-    // string (routes/mail.ts does `Number(pageSize)`), so it can be NaN,
-    // negative, zero, or absurdly large without this.
-    const requested = options.pageSize;
-    const pageSize = Number.isFinite(requested) && requested! > 0 ? Math.min(requested!, 100) : 25;
+    const pageSize = clampPageSize(options.pageSize);
     return this.withClient(async (client) => {
       const lock = await client.getMailboxLock(options.folderId);
       try {

@@ -1,5 +1,6 @@
 import { feed } from '../feed/dom';
 import { openCompose } from './compose';
+import { shouldSnapToBoundary } from './reveal-snap';
 
 // The New Email button is plain, static, in-flow content at the very
 // top of the feed — no JS-driven height/transform animation. #feed
@@ -143,16 +144,9 @@ feed.addEventListener(
     // here instead of reaching all the way to revealed, and a fling
     // down from revealed stops here instead of diving into the list.
     //
-    // prevScrollTop's side must be checked with STRICT inequality, not
-    // >=/<=. Resting exactly at h (prevScrollTop === h — e.g. right after
-    // the settle logic below snaps shut) satisfies both >= h and <= h at
-    // once, so an inclusive check treats the very next scroll event, in
-    // either direction, as "crossing" and slams it straight back to h —
-    // scrolling away from a fresh snap becomes impossible. Strict on the
-    // "from" side only still catches genuine flings (which start clearly
-    // on one side) while letting a scroll that begins sitting at h depart
-    // freely, exactly once, in whichever direction it's actually going.
-    if (!pointerDown && ((prevScrollTop > h && st <= h) || (prevScrollTop < h && st >= h))) {
+    // The strict-inequality subtlety that makes scrolling away from a fresh
+    // snap possible lives in shouldSnapToBoundary (with its own tests).
+    if (shouldSnapToBoundary(pointerDown, prevScrollTop, st, h)) {
       feed.scrollTop = h;
       prevScrollTop = h;
       return;

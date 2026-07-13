@@ -4,7 +4,7 @@ import fastifyCookie from '@fastify/cookie';
 import fastifyHelmet from '@fastify/helmet';
 import fastifyRateLimit from '@fastify/rate-limit';
 import fastifyStatic from '@fastify/static';
-import Fastify from 'fastify';
+import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastify';
 import { consumeTotpSeedFile, loadCredentials, setTotpSecret } from './lib/credentials';
 import { generateSetupToken } from './lib/session';
 import { mailService } from './mail/registry';
@@ -22,13 +22,29 @@ const DATA_DIR = process.env.DATA_DIR ?? join(__dirname, '..', 'data');
 // on :5173 instead), so static serving is skipped — see below.
 const WEB_DIR = process.env.WEB_DIR ?? join(__dirname, 'web');
 
-async function main() {
+export interface BuildServerOptions {
+  dataDir: string;
+  // Defaults to WEB_DIR; static serving is skipped when it doesn't exist.
+  webDir?: string;
+  // Defaults to the env-driven logger; pass `false` to silence (tests).
+  logger?: FastifyServerOptions['logger'];
+}
+
+// Builds and fully wires the HTTP app — plugins, routes, static — but does
+// NOT listen, seed, or touch the mail provider. That separation is what
+// lets integration tests exercise the real route stack via .inject()
+// against a throwaway dataDir, with no socket and no IMAP connection. The
+// runtime startup side-effects live in main() below.
+export async function buildServer(opts: BuildServerOptions): Promise<FastifyInstance> {
+  const dataDir = opts.dataDir;
+  const webDir = opts.webDir ?? WEB_DIR;
+
   // Node's port is never published externally (only Caddy's 80/443 are —
   // see Dockerfile/docker-compose.yml); every request genuinely comes
   // through the local Caddy proxy, so trusting its X-Forwarded-For is safe
   // and required for rate limiting to key on the real client IP.
   const server = Fastify({
-    logger: { level: process.env.LOG_LEVEL ?? 'info' },
+    logger: opts.logger ?? { level: process.env.LOG_LEVEL ?? 'info' },
     trustProxy: true,
   });
 
@@ -80,23 +96,29 @@ async function main() {
   });
 
   // API routes registered before static so they always take priority
-  await server.register(setupRoutes, { prefix: '/api', dataDir: DATA_DIR });
-  await server.register(authRoutes, { prefix: '/api', dataDir: DATA_DIR });
-  await server.register(totpRoutes, { prefix: '/api/totp', dataDir: DATA_DIR });
-  await server.register(providerSetupRoutes, { prefix: '/api/provider', dataDir: DATA_DIR });
-  await server.register(mailRoutes, { prefix: '/api/mail', dataDir: DATA_DIR });
+  await server.register(setupRoutes, { prefix: '/api', dataDir });
+  await server.register(authRoutes, { prefix: '/api', dataDir });
+  await server.register(totpRoutes, { prefix: '/api/totp', dataDir });
+  await server.register(providerSetupRoutes, { prefix: '/api/provider', dataDir });
+  await server.register(mailRoutes, { prefix: '/api/mail', dataDir });
 
   // @fastify/static throws on a missing root, so guard: in dev the built
   // frontend doesn't exist and the Vite dev server (with its /api proxy
   // back to this process) serves the pages instead.
-  if (existsSync(WEB_DIR)) {
-    await server.register(fastifyStatic, { root: WEB_DIR });
+  if (existsSync(webDir)) {
+    await server.register(fastifyStatic, { root: webDir });
   } else {
     server.log.warn(
-      { webDir: WEB_DIR },
+      { webDir },
       'web dir not found; serving API only (use the Vite dev server for the frontend)',
     );
   }
+
+  return server;
+}
+
+async function main() {
+  const server = await buildServer({ dataDir: DATA_DIR, webDir: WEB_DIR });
 
   const credentials = await loadCredentials(DATA_DIR);
   if (!credentials) {
@@ -128,7 +150,14 @@ async function main() {
   await server.listen({ port: PORT, host: '::' });
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+// Only boot when this file is the entry point (node dist/server.js, or
+// `tsx watch src/server.ts` in dev) — NOT when imported, e.g. by the
+// integration tests that pull in buildServer. Without this guard, merely
+// importing the module would start a real server: bind port 3000, hit
+// IMAP, and log startup noise mid-test.
+if (require.main === module) {
+  main().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+}

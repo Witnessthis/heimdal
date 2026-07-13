@@ -8,5 +8,11 @@
     "strict": true,
     "esModuleInterop": true
   },
-  "include": ["src"]
+  "include": ["src"],
+  // Test files are transpiled and run by Vitest, never shipped — keep them
+  // out of the production build so dist/ carries no *.test.js and the build
+  // never pulls in vitest. They're typechecked separately via
+  // tsconfig.test.json (which needs bundler module resolution for vitest's
+  // types, incompatible with this config's CommonJS output).
+  "exclude": ["**/*.test.ts"]
 }

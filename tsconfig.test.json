@@ -1,0 +1,21 @@
+{
+  // Typecheck-only config for the backend test files. The production build
+  // (tsconfig.json) emits CommonJS with classic Node resolution and can't
+  // resolve vitest's exports-mapped types; bundler resolution can. noEmit,
+  // so this never produces output — it's purely `npm run typecheck` cover
+  // for src/**/*.test.ts, mirroring what web/tsconfig.json does up front.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    // DOM included to match the production build's default libs — some
+    // backend deps (e.g. @types/qrcode) reference DOM types in their
+    // declarations even though the runtime code never touches the DOM.
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "types": ["node"]
+  },
+  "include": ["src"]
+}

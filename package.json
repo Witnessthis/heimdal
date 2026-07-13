@@ -8,7 +8,7 @@
     "dev:web": "vite",
     "build": "tsc && vite build",
     "start": "node dist/server.js",
-    "typecheck": "tsc --noEmit && tsc -p web/tsconfig.json",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json && tsc -p web/tsconfig.json",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "biome check .",

@@ -71,13 +71,38 @@ export default defineConfig({
     allowedHosts: process.env.HEIMDAL_DEV_DOMAIN ? [process.env.HEIMDAL_DEV_DOMAIN] : undefined,
   },
   test: {
-    environment: 'jsdom',
-    include: ['src/**/*.test.ts'],
-    // See test-setup.ts: works around a real Node/jsdom localStorage
-    // collision hit while writing the first localStorage-touching tests.
-    setupFiles: ['./src/test-setup.ts'],
-    // No test files exist yet — they arrive as modules get extracted out
-    // of index.html; a bare `npm test` shouldn't fail until then.
+    // Two independent test projects under one `npm test` (Vitest 4). The
+    // frontend and backend need different roots and environments, so they
+    // can't share one flat config — jsdom is right for DOM code and wrong
+    // for Node code (and vice versa). See the note on each project below.
+    projects: [
+      {
+        // Frontend: browser-shaped code (DOMParser, localStorage, DOM
+        // nodes) — needs a simulated DOM. Root stays web/, exactly as the
+        // single-project config did, so the existing suite is unchanged.
+        root: resolve(__dirname, 'web'),
+        test: {
+          name: 'web',
+          environment: 'jsdom',
+          include: ['src/**/*.test.ts'],
+          // See test-setup.ts: works around a real Node/jsdom localStorage
+          // collision hit while writing the first localStorage-touching tests.
+          setupFiles: ['./src/test-setup.ts'],
+        },
+      },
+      {
+        // Backend: real Node code (node:crypto, node:fs, argon2's native
+        // binding). Runs in the node environment against the real
+        // primitives it uses in production — not a jsdom shim — which is
+        // the whole point of testing the crypto/auth core here.
+        root: __dirname,
+        test: {
+          name: 'server',
+          environment: 'node',
+          include: ['src/**/*.test.ts'],
+        },
+      },
+    ],
     passWithNoTests: true,
   },
 });

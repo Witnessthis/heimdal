@@ -37,8 +37,16 @@ function hiddenScrollTop(): number {
 // it's already scrolled out of the viewport by the time that's true,
 // revealing it then is invisible to the user either way.
 //
-// A scrollTop assignment can fail to "stick" for two different reasons,
-// handled two different ways below:
+// A scrollTop assignment can fail to "stick" for three different
+// reasons, handled three different ways below:
+//  - #feed isn't the visible view yet. AI Feed is the default landing
+//    tab (see showView() in settings.ts), so #feed can be display:none
+//    at load — a hidden element's scrollTop always reads back 0, and so
+//    does hiddenScrollTop() (offsetTop is 0 for anything inside a
+//    display:none subtree), so an unguarded tryPin() would read that as
+//    a false-positive "pinned" the instant it's called. tryPin() bails
+//    out first if #feed has no layout box at all; ensureNewEmailBgPinned
+//    is re-invoked once the reader actually switches to Inbox.
 //  - Layout genuinely isn't ready yet (first paint hasn't happened, a
 //    custom font is still swapping in and changing the button's own
 //    height). One requestAnimationFrame is enough for this — it fires
@@ -53,32 +61,60 @@ function hiddenScrollTop(): number {
 //    each batch of cards as direct children), which resolves the
 //    instant there's enough content, however long that takes.
 newEmailBg.style.visibility = 'hidden';
+let pinned = false;
+let pinAttemptInFlight = false;
+
 function tryPin(): boolean {
+  // offsetParent is null exactly when #feed (a position:absolute
+  // element with a positioned ancestor) is display:none — see above.
+  if (feed.offsetParent === null) return false;
   feed.scrollTop = hiddenScrollTop();
   return feed.scrollTop === hiddenScrollTop();
 }
-requestAnimationFrame(() => {
-  if (tryPin()) {
-    newEmailBg.style.visibility = '';
-    return;
-  }
-  let giveUpTimer: ReturnType<typeof setTimeout>;
-  const observer = new MutationObserver(() => {
+
+// Safe to call any number of times, from any view: a no-op once already
+// pinned (or while a previous attempt is still in flight), and a no-op
+// while #feed isn't the visible view — callers don't need to know which
+// case applies. Called once at module load, and again from showView()
+// every time the reader switches to Inbox, since that may be the first
+// time #feed has ever actually had a layout box to pin against.
+export function ensureNewEmailBgPinned(): void {
+  if (pinned || pinAttemptInFlight) return;
+  if (feed.offsetParent === null) return; // not the visible view (yet)
+  pinAttemptInFlight = true;
+  requestAnimationFrame(() => {
     if (tryPin()) {
-      observer.disconnect();
-      clearTimeout(giveUpTimer);
+      pinned = true;
+      pinAttemptInFlight = false;
       newEmailBg.style.visibility = '';
+      return;
     }
+    let giveUpTimer: ReturnType<typeof setTimeout>;
+    const observer = new MutationObserver(() => {
+      if (tryPin()) {
+        observer.disconnect();
+        clearTimeout(giveUpTimer);
+        pinned = true;
+        pinAttemptInFlight = false;
+        newEmailBg.style.visibility = '';
+      }
+    });
+    observer.observe(feed, { childList: true });
+    // A genuinely empty inbox (or a fetch that fails outright) may never
+    // become scrollable at all — don't leave the compose button
+    // invisible forever waiting for content that isn't coming. Counts
+    // as "pinned" (no further retries): it already gave up and revealed
+    // the button, so a later retry could only make things worse by
+    // hiding it again.
+    giveUpTimer = setTimeout(() => {
+      observer.disconnect();
+      pinned = true;
+      pinAttemptInFlight = false;
+      newEmailBg.style.visibility = '';
+    }, 15000);
   });
-  observer.observe(feed, { childList: true });
-  // A genuinely empty inbox (or a fetch that fails outright) may never
-  // become scrollable at all — don't leave the compose button
-  // invisible forever waiting for content that isn't coming.
-  giveUpTimer = setTimeout(() => {
-    observer.disconnect();
-    newEmailBg.style.visibility = '';
-  }, 15000);
-});
+}
+ensureNewEmailBgPinned();
 
 document.getElementById('new-email-btn')!.addEventListener('click', () => {
   feed.scrollTop = hiddenScrollTop();

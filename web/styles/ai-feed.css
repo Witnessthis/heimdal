@@ -1,0 +1,29 @@
+/* AI Feed — placeholder panel for now (no curation logic yet; see
+   showView() in settings.ts for the view-switching wiring). Same
+   full-screen-panel treatment as the other two views (#feed,
+   #settings-view), sharing the fixed bottom-nav clearance. */
+main#ai-feed-view {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: calc(16px + env(safe-area-inset-top, 0px)) 20px calc(72px + env(safe-area-inset-bottom, 0px));
+}
+.ai-feed-placeholder {
+  text-align: center;
+  max-width: 320px;
+}
+.ai-feed-placeholder-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--fg);
+  margin: 0 0 8px;
+}
+.ai-feed-placeholder-desc {
+  font-size: 0.9rem;
+  color: var(--fg-dim);
+  margin: 0;
+  line-height: 1.5;
+}

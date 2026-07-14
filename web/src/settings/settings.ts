@@ -1,4 +1,5 @@
-import { feed, nav, navInbox, navSettings, settingsView } from '../feed/dom';
+import { ensureNewEmailBgPinned } from '../compose/new-email-reveal';
+import { aiFeedView, feed, nav, navAiFeed, navInbox, navSettings, settingsView } from '../feed/dom';
 import {
   isAutoLoadImagesEnabled,
   isRichHtmlEnabled,
@@ -6,12 +7,14 @@ import {
   setRichHtmlEnabled,
 } from './reading-prefs';
 
-// --- Settings view -------------------------------------------------
-// Merged in as a second panel rather than a separate page: switching
-// to it is just a display toggle, so the feed's state, scroll
-// position, and the EventSource connection (inbox.ts) all keep running
-// untouched the whole time — nothing gets re-fetched just because you
-// looked at settings and came back.
+// --- View switching --------------------------------------------------
+// Three panels (AI Feed, Inbox, Settings) share the bottom nav, merged
+// in rather than being separate pages: switching between them is just a
+// display toggle, so the feed's state, scroll position, and the
+// EventSource connection (inbox.ts) all keep running untouched the
+// whole time — nothing gets re-fetched just because you looked at
+// another view and came back. AI Feed is the default/landing view (see
+// index.html); Inbox is demoted but still one tap away.
 
 let lastScrollY = 0;
 
@@ -42,15 +45,24 @@ function alignSubSettingConnectors(): void {
   });
 }
 
-function showView(view: 'inbox' | 'settings'): void {
-  const isSettings = view === 'settings';
-  settingsView.style.display = isSettings ? 'block' : 'none';
-  feed.style.display = isSettings ? 'none' : '';
-  navInbox.classList.toggle('active', !isSettings);
-  navSettings.classList.toggle('active', isSettings);
+function showView(view: 'ai-feed' | 'inbox' | 'settings'): void {
+  aiFeedView.style.display = view === 'ai-feed' ? '' : 'none';
+  feed.style.display = view === 'inbox' ? '' : 'none';
+  settingsView.style.display = view === 'settings' ? 'block' : 'none';
+  navAiFeed.classList.toggle('active', view === 'ai-feed');
+  navInbox.classList.toggle('active', view === 'inbox');
+  navSettings.classList.toggle('active', view === 'settings');
   nav.classList.remove('hide');
-  lastScrollY = isSettings ? settingsView.scrollTop : feed.scrollTop;
-  if (isSettings) {
+  lastScrollY =
+    view === 'settings' ? settingsView.scrollTop : view === 'ai-feed' ? aiFeedView.scrollTop : feed.scrollTop;
+  if (view === 'inbox') {
+    // #feed may be getting a real layout box for the very first time
+    // here (AI Feed is the default landing view) — see
+    // ensureNewEmailBgPinned in new-email-reveal.ts for why this can't
+    // just run once at module load.
+    ensureNewEmailBgPinned();
+  }
+  if (view === 'settings') {
     loadTotpStatus();
     alignSubSettingConnectors();
   }
@@ -59,6 +71,7 @@ window.addEventListener('resize', () => {
   if (settingsView.style.display !== 'none') alignSubSettingConnectors();
 });
 
+navAiFeed.addEventListener('click', () => showView('ai-feed'));
 navInbox.addEventListener('click', () => showView('inbox'));
 navSettings.addEventListener('click', () => showView('settings'));
 

@@ -5,7 +5,17 @@
   left: 0;
   right: 0;
   background: var(--bg-elevated);
-  border-top: 1px solid var(--border-soft);
+  /* --border-soft (a 12%-strength fg tint) reads fine as a divider
+     between rows of the same surface, but the nav sits on the same
+     --bg-elevated fill as the cards behind it, so that faint a line
+     isn't enough to read as a real edge — stronger tint here, plus a
+     soft upward shadow for a bit of physical lift, the way a floating
+     bottom bar conventionally separates itself from content behind it.
+     The shadow is a fixed dark tone (not theme-relative): elevation
+     shadows read as "dark/recessed" in both light and dark themes —
+     mixing toward --fg here (light in dark themes) would invert that. */
+  border-top: 1px solid color-mix(in srgb, var(--fg) 28%, var(--bg-elevated));
+  box-shadow: 0 -6px 14px -8px rgba(0, 0, 0, 0.45);
   display: flex;
   padding-bottom: env(safe-area-inset-bottom, 0px);
   transition: transform 0.25s ease;

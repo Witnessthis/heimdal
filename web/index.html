@@ -15,8 +15,16 @@
   <script type="module" src="./src/pwa.js"></script>
 
   <!-- iOS PWA support -->
+  <!-- No apple-mobile-web-app-status-bar-style tag on purpose: setting it
+       to "black-translucent" (content flows under the status bar/dynamic
+       island) also makes iOS reserve extra unreachable space at the
+       BOTTOM of the screen on this app's Safari-installed home screen
+       icon, below the home-indicator's own safe area — confirmed by
+       on-device testing, not documented anywhere. Omitting the tag
+       avoids that; the top no longer extends under the dynamic island,
+       but the reserved strip there renders as the app's own background
+       color, so there's no visible gap in practice. -->
   <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Heimdal" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
 

@@ -5,6 +5,7 @@ import fastifyHelmet from '@fastify/helmet';
 import fastifyRateLimit from '@fastify/rate-limit';
 import fastifyStatic from '@fastify/static';
 import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastify';
+import { startAutoClassification } from './ai/auto-classify';
 import { consumeTotpSeedFile, loadCredentials, setTotpSecret } from './lib/credentials';
 import { generateSetupToken } from './lib/session';
 import { mailService } from './mail/registry';
@@ -148,6 +149,12 @@ async function main() {
   await mailService.init(DATA_DIR).catch((err) => {
     server.log.error(err, 'Failed to initialize mail provider on startup');
   });
+
+  // Registered on the mailService singleton itself (see its own doc
+  // comment), so this stays wired through any later provider-setup/
+  // reconfigure — no need to re-call this after mailService.init() runs
+  // again from the provider-setup route.
+  startAutoClassification(DATA_DIR);
 
   await server.listen({ port: PORT, host: '::' });
 }

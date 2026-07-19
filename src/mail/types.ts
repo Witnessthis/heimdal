@@ -1,3 +1,5 @@
+import type { UnsubscribeAction } from './list-unsubscribe';
+
 export interface EmailAddress {
   name?: string;
   address: string;
@@ -50,6 +52,13 @@ export interface EmailMessage extends EmailSummary {
   attachments: Attachment[];
   inReplyTo?: string;
   references: string[];
+  /** Parsed from the List-Unsubscribe/List-Unsubscribe-Post headers, when
+   *  present — see list-unsubscribe.ts. Only available on the full
+   *  fetch (a header, like body/attachments, that the list view's bounded
+   *  preview fetch doesn't pull down), and always present rather than
+   *  optional: "no header" is itself a meaningful, common outcome
+   *  ({ type: 'none' }), not an absence to special-case at every call site. */
+  unsubscribe: UnsubscribeAction;
 }
 
 export interface Thread {

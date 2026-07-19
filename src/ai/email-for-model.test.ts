@@ -19,6 +19,7 @@ const baseMessage: EmailMessage = {
   body: { text: 'Are you free for lunch tomorrow?' },
   attachments: [],
   references: [],
+  unsubscribe: { type: 'none' },
 };
 
 describe('field mapping', () => {

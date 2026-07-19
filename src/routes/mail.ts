@@ -1,5 +1,6 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { requireAuth } from '../lib/require-auth';
+import { performOneClickUnsubscribe } from '../mail/perform-unsubscribe';
 import { InvalidRequestError } from '../mail/provider';
 import { mailService } from '../mail/registry';
 import type { EmailAddress } from '../mail/types';
@@ -158,6 +159,22 @@ export const mailRoutes: FastifyPluginAsync<Options> = async (fastify) => {
   fastify.post<{ Params: { id: string } }>('/messages/:id/trash', async (request, reply) => {
     await mailService.getProvider().trash(request.params.id);
     return reply.send({ ok: true });
+  });
+
+  // Only meaningful for a message whose List-Unsubscribe/-Post headers
+  // resolved to { type: 'oneClick' } (see src/mail/list-unsubscribe.ts) —
+  // a plain "link" or "mailto" action needs no backend involvement at all
+  // (a real navigation, or reusing quick-send, both happen client-side).
+  // The actual outbound request happens in performOneClickUnsubscribe,
+  // never in the browser — this app's CSP locks connectSrc to 'self', and
+  // the target URL is attacker-controlled email content regardless.
+  fastify.post<{ Params: { id: string } }>('/messages/:id/unsubscribe', async (request, reply) => {
+    const message = await mailService.getProvider().getMessage(request.params.id);
+    if (message.unsubscribe.type !== 'oneClick') {
+      return reply.code(400).send({ error: 'This message has no one-click unsubscribe available' });
+    }
+    const ok = await performOneClickUnsubscribe(message.unsubscribe.url);
+    return reply.send({ ok });
   });
 
   // The only route that puts a message on the wire — always a direct,

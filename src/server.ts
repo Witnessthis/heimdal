@@ -11,6 +11,7 @@ import { mailService } from './mail/registry';
 import { authRoutes } from './routes/auth';
 import { mailRoutes } from './routes/mail';
 import { providerSetupRoutes } from './routes/provider-setup';
+import { settingsRoutes } from './routes/settings';
 import { setupRoutes } from './routes/setup';
 import { totpRoutes } from './routes/totp';
 
@@ -101,6 +102,7 @@ export async function buildServer(opts: BuildServerOptions): Promise<FastifyInst
   await server.register(totpRoutes, { prefix: '/api/totp', dataDir });
   await server.register(providerSetupRoutes, { prefix: '/api/provider', dataDir });
   await server.register(mailRoutes, { prefix: '/api/mail', dataDir });
+  await server.register(settingsRoutes, { prefix: '/api/settings', dataDir });
 
   // @fastify/static throws on a missing root, so guard: in dev the built
   // frontend doesn't exist and the Vite dev server (with its /api proxy

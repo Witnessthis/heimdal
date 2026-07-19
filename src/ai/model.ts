@@ -27,5 +27,12 @@ export function getModel(): LanguageModel {
   const modelId = process.env.AI_MODEL ?? DEFAULT_MODEL;
 
   const provider = createOpenAI({ baseURL, apiKey: 'ollama' });
-  return provider(modelId);
+  // Explicitly .chat(), not calling the provider directly — the latter
+  // defaults to OpenAI's newer Responses API (/v1/responses), which
+  // Ollama's OpenAI-compat layer doesn't handle reliably for anything
+  // beyond a trivial schema (confirmed by testing: a nested/discriminated
+  // schema through that path fails server-side with "failed to parse
+  // grammar"). /v1/chat/completions is the endpoint actually verified
+  // against Ollama's own docs and real testing earlier in this project.
+  return provider.chat(modelId);
 }

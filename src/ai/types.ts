@@ -2,9 +2,10 @@ import type { EmailAddress } from '../mail/types';
 
 /** Structured representation of an email handed to the model — extracted
  *  metadata, not raw provider objects, so the model never needs to know
- *  which provider the message came from. `body` is populated only when a
- *  draft-reply decision is being requested; classify/prioritize calls never
- *  send the body. */
+ *  which provider the message came from. `body` is always populated for
+ *  the triage call (src/ai/triage.ts) — a draft reply is one of several
+ *  things that call can decide to produce in the same pass, so the body
+ *  has to be there upfront rather than deferred to a second call. */
 export interface EmailForModel {
   id: string;
   threadId: string;

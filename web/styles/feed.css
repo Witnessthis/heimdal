@@ -333,3 +333,93 @@
   border-color: var(--accent);
   color: var(--accent);
 }
+
+/* Unsubscribe — see src/mail/list-unsubscribe.ts. Only rendered for a
+   working RFC 2369 mailto unsubscribe (see web/src/feed/unsubscribe.ts);
+   link/oneClick aren't wired into the card yet. Shares .load-images-btn's
+   box exactly (same "quiet secondary action tucked under the body" role)
+   but gets its own class since the two are unrelated actions. */
+.unsubscribe-btn {
+  display: block;
+  margin: 10px 0 0;
+  padding: 7px 14px;
+  border-radius: 6px;
+  border: 1px solid var(--border-soft);
+  background: transparent;
+  color: var(--fg-dim);
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+.unsubscribe-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* A single shared confirm overlay — sending an unsubscribe email is a
+   real, hard-to-take-back action (see chat history: unlike a one-click
+   HTTP unsubscribe, this actually dispatches mail from the user's own
+   account), so it gets an explicit confirm step rather than firing
+   straight from the card. */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: color-mix(in srgb, black 55%, transparent);
+}
+.modal-panel {
+  width: 100%;
+  max-width: 360px;
+  padding: 20px;
+  border-radius: 10px;
+  border: 1px solid var(--border-soft);
+  background: var(--bg-elevated);
+  color: var(--fg);
+}
+.modal-title {
+  margin: 0 0 8px;
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+.modal-desc {
+  margin: 0;
+  font-size: 0.88rem;
+  color: var(--fg-dim);
+}
+.modal-desc span {
+  color: var(--fg);
+  font-weight: 600;
+}
+.modal-error {
+  margin: 8px 0 0;
+  font-size: 0.82rem;
+  color: var(--danger);
+  min-height: 1em;
+}
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 16px;
+}
+.btn-action-primary {
+  padding: 7px 14px;
+  border-radius: 6px;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: var(--bg);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.btn-action-primary:hover {
+  opacity: 0.9;
+}
+.btn-action-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

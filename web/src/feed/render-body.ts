@@ -6,6 +6,7 @@ import {
 } from '../settings/reading-prefs';
 import { cardData } from './card-data';
 import { bestPreviewText, isRichHtml } from './preview';
+import { renderUnsubscribeAction } from './unsubscribe';
 
 // Rewrites a message's HTML body before it's handed to the sandboxed
 // iframe. When allowImages is false, remote images are blocked — a
@@ -213,6 +214,7 @@ export function clearRenderedBody(card: HTMLElement): void {
   const bodyWrap = card.querySelector<HTMLElement>('.card-body-wrap');
   bodyWrap?.querySelector('.card-html-body')?.remove();
   bodyWrap?.querySelector('.load-images-btn')?.remove();
+  bodyWrap?.querySelector('.unsubscribe-btn')?.remove();
   card.querySelector<HTMLElement>('.card-body')!.style.display = '';
 }
 
@@ -225,6 +227,7 @@ function renderResolvedBody(card: HTMLElement, data: EmailSummary | EmailMessage
     const bodyEl = card.querySelector<HTMLElement>('.card-body')!;
     bodyEl.textContent = bestPreviewText(data) || '(empty message)';
   }
+  renderUnsubscribeAction(card, data);
 }
 
 export async function ensureFullBodyLoaded(card: HTMLElement): Promise<void> {

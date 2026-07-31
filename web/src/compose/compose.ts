@@ -197,6 +197,11 @@ export function openCompose({
 export function closeCompose(): void {
   composeView.style.display = 'none';
   nav.style.display = '';
+  // If the nav had auto-hidden (see settings.ts's handleScroll) before
+  // compose opened, display alone doesn't undo that — it would come back
+  // translated off-screen by .hide's transform, looking just as hidden
+  // as before, until the next scroll event happened to clear it.
+  nav.classList.remove('hide');
   // Unconditional, regardless of how compose is closing (Done, Discard,
   // a successful send) — so a later plain "new email" compose never
   // accidentally carries a stale staging callback.

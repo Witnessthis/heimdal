@@ -1,5 +1,5 @@
 import { loadAiFeed } from '../ai-feed/list';
-import { ensureNewEmailBgPinned } from '../compose/new-email-reveal';
+import { ensureNewEmailBgPinned, hiddenScrollTop } from '../compose/new-email-reveal';
 import { aiFeedView, feed, nav, navAiFeed, navInbox, navSettings, settingsView } from '../feed/dom';
 import { loadLanguageSettings } from './languages';
 import {
@@ -214,8 +214,14 @@ document.getElementById('logout-btn')!.addEventListener('click', async () => {
 // only in the feed. Settings is a short, static list rather than a
 // long scroll a reader is trying to get out of the way of, so the nav
 // (the only way back to the inbox) just stays put there instead.
+//
+// The threshold is hiddenScrollTop(), not a guessed pixel constant: the
+// New Email reveal strip keeps #feed pinned there at rest (see
+// new-email-reveal.ts), so that's the real "top" of the inbox as far as
+// the user is concerned — scrolling to exactly that resting position
+// must never read as "scrolled down" and hide the nav.
 export function handleScroll(scrollTop: number): void {
-  if (scrollTop > lastScrollY && scrollTop > 50) {
+  if (scrollTop > lastScrollY && scrollTop > hiddenScrollTop()) {
     nav.classList.add('hide');
   } else {
     nav.classList.remove('hide');

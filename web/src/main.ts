@@ -26,6 +26,14 @@ feed.addEventListener(
     scrollWorkScheduled = true;
     requestAnimationFrame(() => {
       scrollWorkScheduled = false;
+      // A scroll event from #feed can still be queued for next frame at
+      // the exact moment a tab switch happens (momentum scrolling keeps
+      // firing after the finger lifts) — by the time this runs, showView()
+      // may have already repointed handleScroll's lastScrollY baseline at
+      // a different view entirely. offsetParent is null exactly when
+      // #feed is display:none (same check new-email-reveal.ts's tryPin()
+      // uses), so bail rather than act on a now-stale comparison.
+      if (feed.offsetParent === null) return;
       handleScroll(feed.scrollTop);
       checkBatchTrigger();
     });

@@ -12,5 +12,10 @@
       "@server/*": ["../src/*"]
     }
   },
-  "include": ["src", "styles"]
+  "include": ["src", "styles"],
+  // The service worker runs in WebWorker scope, not a browser window —
+  // its globals (self as ServiceWorkerGlobalScope, no `window`/`document`)
+  // conflict with this program's DOM lib. Typechecked separately by
+  // tsconfig.sw.json instead (see package.json's typecheck script).
+  "exclude": ["src/service-worker.ts"]
 }

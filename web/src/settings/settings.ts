@@ -2,6 +2,7 @@ import { loadAiFeed } from '../ai-feed/list';
 import { ensureNewEmailBgPinned, hiddenScrollTop } from '../compose/new-email-reveal';
 import { aiFeedView, feed, nav, navAiFeed, navInbox, navSettings, settingsView } from '../feed/dom';
 import { loadLanguageSettings } from './languages';
+import { refreshNotificationRow } from './notifications';
 import {
   isAutoLoadImagesEnabled,
   isRichHtmlEnabled,
@@ -68,6 +69,7 @@ function showView(view: 'ai-feed' | 'inbox' | 'settings'): void {
   if (view === 'settings') {
     loadTotpStatus();
     loadLanguageSettings();
+    void refreshNotificationRow();
     alignSubSettingConnectors();
   }
 }

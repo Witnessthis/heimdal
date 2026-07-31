@@ -1,5 +1,6 @@
 import { upsertFeedItem } from '../lib/ai-feed';
 import { getSpokenLanguages } from '../lib/language-settings';
+import { sendFeedNotification } from '../lib/send-push';
 import { getSenderPreference, markSenderPending } from '../lib/sender-preferences';
 import type { MailEvent } from '../mail/provider';
 import { mailService } from '../mail/registry';
@@ -57,4 +58,17 @@ async function handleNewMessage(
   // upsertFeedItem is itself a no-op for a "filtered" result, so there's
   // no need to branch on visibility here too.
   await upsertFeedItem(dataDir, triage);
+
+  // Only "feed" — matches what's already showing up as a card right
+  // now. A "snooze" item isn't visible yet (see getFeedItems in
+  // lib/ai-feed.ts), so notifying for it here would be telling the user
+  // about something they can't actually see or act on; there's no
+  // resurface-time notification mechanism, that's a separate feature.
+  if (triage.visibility.type === 'feed') {
+    await sendFeedNotification(dataDir, {
+      title: message.subject || '(no subject)',
+      body: message.snippet,
+      emailId: triage.emailId,
+    });
+  }
 }

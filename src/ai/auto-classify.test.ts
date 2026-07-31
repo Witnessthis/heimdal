@@ -14,6 +14,7 @@ vi.mock('../lib/sender-preferences', () => ({
 }));
 vi.mock('../lib/ai-feed', () => ({ upsertFeedItem: vi.fn() }));
 vi.mock('../lib/language-settings', () => ({ getSpokenLanguages: vi.fn() }));
+vi.mock('../lib/send-push', () => ({ sendFeedNotification: vi.fn() }));
 
 const { mailService } = await import('../mail/registry');
 const { classifyEmail } = await import('./triage');
@@ -21,6 +22,7 @@ const { buildEmailForModel } = await import('./email-for-model');
 const { getSenderPreference, markSenderPending } = await import('../lib/sender-preferences');
 const { upsertFeedItem } = await import('../lib/ai-feed');
 const { getSpokenLanguages } = await import('../lib/language-settings');
+const { sendFeedNotification } = await import('../lib/send-push');
 const { startAutoClassification } = await import('./auto-classify');
 
 const DATA_DIR = '/data';
@@ -171,6 +173,40 @@ describe('startAutoClassification', () => {
     await vi.waitFor(() => expect(upsertFeedItem).toHaveBeenCalled());
 
     expect(markSenderPending).not.toHaveBeenCalled();
+  });
+
+  it('sends a push notification when the model classifies visibility as feed', async () => {
+    const listener = captureListener();
+
+    listener({ type: 'newMessage', folderId: 'imap:INBOX', messageId: message.id });
+    await vi.waitFor(() =>
+      expect(sendFeedNotification).toHaveBeenCalledWith(DATA_DIR, {
+        title: message.subject,
+        body: message.snippet,
+        emailId: message.id,
+      }),
+    );
+  });
+
+  it.each([
+    'snooze',
+    'filtered',
+  ] as const)('does not send a push notification when visibility is %s', async (visibilityType) => {
+    vi.mocked(classifyEmail).mockResolvedValue(
+      triage({
+        visibility:
+          visibilityType === 'snooze'
+            ? { type: 'snooze', until: '2026-08-01T00:00:00Z' }
+            : { type: 'filtered' },
+      }),
+    );
+    const listener = captureListener();
+
+    listener({ type: 'newMessage', folderId: 'imap:INBOX', messageId: message.id });
+    await vi.waitFor(() => expect(classifyEmail).toHaveBeenCalled());
+    await flush();
+
+    expect(sendFeedNotification).not.toHaveBeenCalled();
   });
 
   it('logs and swallows a failure instead of throwing out of the listener', async () => {

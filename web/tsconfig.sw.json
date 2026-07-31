@@ -1,0 +1,17 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2022", "WebWorker"],
+    // vite/client's ambient types (inherited from tsconfig.json) assume
+    // a browser window — e.g. reference SharedWorker/Window globals not
+    // available under WebWorker lib. The service worker doesn't use
+    // import.meta.env or Vite's client HMR runtime anyway.
+    "types": []
+  },
+  "include": ["src/service-worker.ts"],
+  // tsconfig.json's own "exclude" (which excludes exactly this file, so
+  // its DOM-lib program leaves service worker scope alone) would
+  // otherwise be inherited here too and exclude the one file this
+  // config exists to include.
+  "exclude": []
+}

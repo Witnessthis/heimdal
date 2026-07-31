@@ -1,5 +1,6 @@
 import type { EmailMessage, EmailSummary } from '@server/mail/types';
 import type { AiFeedListItem, ConfirmBody } from '@server/routes/ai-feed-types';
+import { setBadgeCount } from '../badge';
 import { openComposeToStageDraft } from '../compose/compose';
 import { cardData } from '../feed/card-data';
 import { formatRelativeTime } from '../feed/preview';
@@ -48,8 +49,13 @@ function removeCard(card: HTMLElement, emailId: string): void {
   dropStaged(emailId);
   loadedBodies.delete(emailId);
   card.closest('.ai-feed-card-wrap')?.remove();
-  // A card leaving the DOM never goes through loadAiFeed() itself — show
-  // the empty state directly if that was the last one.
+  // A card leaving the DOM never goes through loadAiFeed() itself, so the
+  // badge needs its own update here too — counting the remaining DOM nodes
+  // is cheaper than a round trip to /api/ai-feed just to get a number this
+  // view already knows by construction.
+  setBadgeCount(aiFeedView.querySelectorAll('.ai-feed-card-wrap').length);
+  // Same reasoning for the empty state — show it directly if that was the
+  // last one, rather than waiting for the next loadAiFeed().
   if (aiFeedView.querySelector('.ai-feed-card-wrap')) return;
   aiFeedStatus.textContent = 'All caught up — nothing needs your attention right now.';
   if (!aiFeedStatus.isConnected) aiFeedView.prepend(aiFeedStatus);

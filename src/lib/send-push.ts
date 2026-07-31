@@ -6,6 +6,12 @@ export interface FeedNotification {
   title: string;
   body: string;
   emailId: string;
+  // Total AI Feed items now pending (including this one) — lets the
+  // service worker set the app-icon badge to an absolute count on
+  // arrival, without needing to fetch it separately or guess at an
+  // increment (a push that arrives while the app is open and the user is
+  // actively clearing items would make a blind +1 wrong).
+  count: number;
 }
 
 // VAPID's sub claim is how a push service (Apple/Google/Mozilla) can

@@ -12,7 +12,7 @@ vi.mock('../lib/sender-preferences', () => ({
   getSenderPreference: vi.fn(),
   markSenderPending: vi.fn(),
 }));
-vi.mock('../lib/ai-feed', () => ({ upsertFeedItem: vi.fn() }));
+vi.mock('../lib/ai-feed', () => ({ upsertFeedItem: vi.fn(), getFeedItems: vi.fn() }));
 vi.mock('../lib/language-settings', () => ({ getSpokenLanguages: vi.fn() }));
 vi.mock('../lib/send-push', () => ({ sendFeedNotification: vi.fn() }));
 
@@ -20,7 +20,7 @@ const { mailService } = await import('../mail/registry');
 const { classifyEmail } = await import('./triage');
 const { buildEmailForModel } = await import('./email-for-model');
 const { getSenderPreference, markSenderPending } = await import('../lib/sender-preferences');
-const { upsertFeedItem } = await import('../lib/ai-feed');
+const { upsertFeedItem, getFeedItems } = await import('../lib/ai-feed');
 const { getSpokenLanguages } = await import('../lib/language-settings');
 const { sendFeedNotification } = await import('../lib/send-push');
 const { startAutoClassification } = await import('./auto-classify');
@@ -95,6 +95,7 @@ beforeEach(() => {
   vi.mocked(getSenderPreference).mockResolvedValue(undefined);
   vi.mocked(getSpokenLanguages).mockResolvedValue([]);
   vi.mocked(classifyEmail).mockResolvedValue(triage());
+  vi.mocked(getFeedItems).mockResolvedValue([triage()]);
 });
 
 describe('startAutoClassification', () => {
@@ -184,6 +185,7 @@ describe('startAutoClassification', () => {
         title: message.subject,
         body: message.snippet,
         emailId: message.id,
+        count: 1,
       }),
     );
   });

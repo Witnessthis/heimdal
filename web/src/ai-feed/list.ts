@@ -1,4 +1,5 @@
 import type { AiFeedListItem } from '@server/routes/ai-feed-types';
+import { setBadgeCount } from '../badge';
 import { buildAiFeedCard } from './card';
 import { aiFeedStatus, aiFeedView } from './dom';
 
@@ -23,6 +24,12 @@ export async function loadAiFeed(): Promise<void> {
     aiFeedStatus.textContent = 'Could not load the AI feed — check your connection and try again.';
     return;
   }
+
+  // The server-side count (not just what pushed a notification) is the
+  // source of truth for the badge — this also corrects it for anything
+  // that changed the feed without a push firing (e.g. dismissing/confirming
+  // on another device), same as loadAiFeed() itself does for the card list.
+  setBadgeCount(items.length);
 
   if (items.length === 0) {
     aiFeedStatus.textContent = 'All caught up — nothing needs your attention right now.';

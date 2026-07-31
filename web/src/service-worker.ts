@@ -14,15 +14,27 @@ precacheAndRoute(self.__WB_MANIFEST);
 self.addEventListener('push', (event) => {
   const data = event.data?.json() ?? {};
   event.waitUntil(
-    self.registration.showNotification(data.title ?? 'Heimdal', {
-      body: data.body ?? '',
-      icon: '/icons/icon-192.png',
-      badge: '/icons/icon-192.png',
-      // Same tag for a re-send of the same email collapses into one
-      // notification instead of stacking duplicates.
-      tag: data.emailId,
-      data: { emailId: data.emailId },
-    }),
+    Promise.all([
+      self.registration.showNotification(data.title ?? 'Heimdal', {
+        body: data.body ?? '',
+        icon: '/icons/icon-192.png',
+        badge: '/icons/icon-192.png',
+        // Same tag for a re-send of the same email collapses into one
+        // notification instead of stacking duplicates.
+        tag: data.emailId,
+        data: { emailId: data.emailId },
+      }),
+      // An absolute count from the server (see send-push.ts), not a blind
+      // increment — this fires even while the app is closed, which is the
+      // whole point of setting it here rather than only from the open app
+      // (see badge.ts's callers). 'setAppBadge' isn't in every browser
+      // (no Firefox support at all, and Safari's coverage in a service
+      // worker specifically is unclear) — feature-detect and swallow, same
+      // as badge.ts.
+      'setAppBadge' in self.navigator && typeof data.count === 'number'
+        ? self.navigator.setAppBadge(data.count).catch(() => {})
+        : Promise.resolve(),
+    ]),
   );
 });
 

@@ -28,7 +28,7 @@ const { getAllSubscriptions, removeSubscription } = await import('./push-subscri
 const { sendFeedNotification, vapidSubject } = await import('./send-push');
 
 const DATA_DIR = '/data';
-const notification = { title: 'Subject line', body: 'A short preview', emailId: 'imap:INBOX:1' };
+const notification = { title: 'Subject line', body: 'A short preview', emailId: 'imap:INBOX:1', count: 3 };
 const subA = { endpoint: 'https://push.example/a', keys: { p256dh: 'p256dh-a', auth: 'auth-a' } };
 const subB = { endpoint: 'https://push.example/b', keys: { p256dh: 'p256dh-b', auth: 'auth-b' } };
 

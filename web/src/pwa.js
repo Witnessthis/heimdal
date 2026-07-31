@@ -1,7 +1,10 @@
-// Service-worker registration via vite-plugin-pwa (see vite.config.ts for
-// the caching strategy and why the sw.js URL must never change). In dev
-// the virtual module resolves to a no-op — the worker only exists in
-// production builds.
+// Service-worker registration via vite-plugin-pwa (see vite.config.ts
+// for the caching strategy — the worker now lives at /service-worker.js,
+// not /sw.js; see that file's comment for why the rename wasn't bridged
+// for already-installed clients). devOptions.enabled means this also
+// registers a real worker under `vite dev` now, not just production
+// builds — needed since push notifications require an actual active
+// service worker to test against a real phone.
 import { registerSW } from 'virtual:pwa-register';
 
 registerSW();

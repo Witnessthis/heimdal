@@ -6,6 +6,7 @@ import {
 } from '../settings/reading-prefs';
 import { cardData } from './card-data';
 import { bestPreviewText, isRichHtml } from './preview';
+import { renderUnsubscribeAction } from './unsubscribe';
 
 // Rewrites a message's HTML body before it's handed to the sandboxed
 // iframe. When allowImages is false, remote images are blocked — a
@@ -140,11 +141,26 @@ export function renderHtmlBody(card: HTMLElement, html: string): void {
       resizeToContent();
       // Images finishing change body's rendered height after the load
       // event already fired — keep the iframe's height in sync as that
-      // happens instead of leaving stale empty space or a cut-off card.
+      // happens for a beat. But not forever: this card's .card-wrap sits
+      // under content-visibility: auto (feed.css), which skips/restores
+      // its rendering as it crosses the viewport edge while scrolling —
+      // and restoring a heavy cross-document iframe subtree is exactly
+      // the kind of layout churn that can retrigger a ResizeObserver on
+      // its own content. Left attached indefinitely, that turns ordinary
+      // scrolling past an expanded card into repeated iframe relayout
+      // work. Images/fonts settle within a couple seconds of load, so
+      // disconnect once it's been quiet that long rather than watching
+      // for the card's entire expanded lifetime.
       const doc = iframe.contentDocument;
-      if (doc?.body && 'ResizeObserver' in window) {
-        new ResizeObserver(resizeToContent).observe(doc.body);
-      }
+      if (!doc?.body || !('ResizeObserver' in window)) return;
+      let settleTimer: ReturnType<typeof setTimeout>;
+      const observer = new ResizeObserver(() => {
+        resizeToContent();
+        clearTimeout(settleTimer);
+        settleTimer = setTimeout(() => observer.disconnect(), 1500);
+      });
+      observer.observe(doc.body);
+      settleTimer = setTimeout(() => observer.disconnect(), 1500);
     });
 
     bodyWrap.appendChild(iframe);
@@ -213,6 +229,7 @@ export function clearRenderedBody(card: HTMLElement): void {
   const bodyWrap = card.querySelector<HTMLElement>('.card-body-wrap');
   bodyWrap?.querySelector('.card-html-body')?.remove();
   bodyWrap?.querySelector('.load-images-btn')?.remove();
+  bodyWrap?.querySelector('.unsubscribe-btn')?.remove();
   card.querySelector<HTMLElement>('.card-body')!.style.display = '';
 }
 
@@ -225,6 +242,7 @@ function renderResolvedBody(card: HTMLElement, data: EmailSummary | EmailMessage
     const bodyEl = card.querySelector<HTMLElement>('.card-body')!;
     bodyEl.textContent = bestPreviewText(data) || '(empty message)';
   }
+  renderUnsubscribeAction(card, data);
 }
 
 export async function ensureFullBodyLoaded(card: HTMLElement): Promise<void> {

@@ -3,6 +3,7 @@ import { type Attachment as MailparserAttachment, simpleParser } from 'mailparse
 import type { ImapSecret, ProviderConfig } from '../../../lib/provider-credentials';
 import { BaseProvider } from '../../base-provider';
 import { ReconnectingConnection } from '../../lifecycle';
+import { parseListUnsubscribe } from '../../list-unsubscribe';
 import { InvalidRequestError, type ListMessagesOptions, type ProviderKind } from '../../provider';
 import type { DraftInput, EmailAddress, EmailMessage, EmailSummary, Folder, Page, Thread } from '../../types';
 import { renderRawMessage, sendMail } from './smtp';
@@ -38,6 +39,18 @@ function toEmailAddress(addr: { name?: string; address?: string } | undefined): 
 
 function stripAngleBrackets(id: string): string {
   return id.replace(/[<>]/g, '');
+}
+
+/** mailparser lowercases header names and stores each as a plain string,
+ *  except when a header appears more than once (string[]) — real senders
+ *  never repeat List-Unsubscribe, but this stays defensive rather than
+ *  throwing on a malformed message. Any other header shape (address
+ *  objects, dates — never the case for these two headers) is ignored. */
+function headerString(headers: Map<string, unknown> | undefined, name: string): string | undefined {
+  const value = headers?.get(name);
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value)) return value.find((v): v is string => typeof v === 'string');
+  return undefined;
 }
 
 /** Parses the raw `References:` header block (as returned by a targeted
@@ -393,6 +406,10 @@ export class ImapProvider extends BaseProvider {
     // to resolve the cid: references in the body itself.
     const inlineImages = (parsed?.attachments ?? []).filter((a) => a.related);
     const downloadableAttachments = (parsed?.attachments ?? []).filter((a) => !a.related);
+    const unsubscribe = parseListUnsubscribe(
+      headerString(parsed?.headers, 'list-unsubscribe'),
+      headerString(parsed?.headers, 'list-unsubscribe-post'),
+    );
 
     return {
       id: encodeMessageId(folderPath, msg.uid),
@@ -421,6 +438,7 @@ export class ImapProvider extends BaseProvider {
       })),
       inReplyTo: parsed?.inReplyTo,
       references,
+      unsubscribe,
     };
   }
 

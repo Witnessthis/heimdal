@@ -9,13 +9,19 @@ const page = (name: string) => resolve(__dirname, 'web', `${name}.html`);
 export default defineConfig({
   root: 'web',
   plugins: [
-    // Replaces the hand-rolled web/public/sw.js (already reduced to a
-    // transitional cache-clearing worker) with a Workbox worker emitted
-    // at the SAME URL/scope — that's the supersede mechanism: browsers
-    // refetch a registered SW script on navigation, bypassing the old
-    // worker's fetch handler, so even clients still running the ancient
-    // cache-first worker get this one. Never rename or drop the sw.js
-    // path while old installed clients may exist.
+    // Emits web/src/service-worker.ts at /service-worker.js — deliberately
+    // NOT the same path the previous Workbox worker used (/sw.js): push
+    // notifications need a hand-written `push` listener (see
+    // service-worker.ts), which generateSW mode can't add, so this
+    // switched to injectManifest. Decided in conversation not to bridge
+    // old installed clients across the rename (no shim kept alive at
+    // /sw.js) — a browser that already has /sw.js registered just keeps
+    // running it frozen, since a 404 on its update check doesn't break
+    // anything, it just never updates. Recovering requires manually
+    // deleting and re-adding the installed PWA (or clearing the site's
+    // stored data) on any device installed before this change — do that
+    // on this app's own installed devices once this ships, or push
+    // notifications will silently never arrive there.
     VitePWA({
       // skipWaiting + clientsClaim + cleanupOutdatedCaches: updates land
       // on the next navigation without a manual "refresh to update" flow.
@@ -26,15 +32,21 @@ export default defineConfig({
       // Registration happens in web/src/pwa.js (which also clears the
       // legacy pre-Workbox cache), not via an injected inline script.
       injectRegister: false,
-      workbox: {
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'service-worker.ts',
+      injectManifest: {
         globPatterns: ['**/*.{html,js,css,png,webmanifest,woff2}'],
-        // MPA: all pages are precached individually; never rewrite
-        // navigations to some fallback document.
-        navigateFallback: null,
-        // Nothing runtime-cached on purpose: /api must always hit the
-        // network — a service worker intercepting the SSE stream
-        // (/api/mail/events) is a classic silent hang.
-        runtimeCaching: [],
+      },
+      // Registers (and actually runs) the service worker under `vite
+      // dev` too, not just production builds — this app's primary dev
+      // loop is testing live against a phone over the LAN (see the
+      // `server.host` option below), and push notifications need a real
+      // active service worker to test at all. type: 'module' matches
+      // how Vite serves unbundled ES modules in dev.
+      devOptions: {
+        enabled: true,
+        type: 'module',
       },
     }),
   ],

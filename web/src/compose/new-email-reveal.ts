@@ -26,7 +26,13 @@ const newEmailBg = document.getElementById('new-email-bg') as HTMLElement;
 // logic below.
 const OPEN_FRACTION = 0.1;
 
-function hiddenScrollTop(): number {
+// Exported for settings.ts's handleScroll: the New Email strip's own
+// height is the *resting* top of the inbox from the user's perspective
+// (see the comment above ensureNewEmailBgPinned) — the bottom nav's
+// "at the top" check needs to measure against this, not a guessed
+// pixel constant, or being pinned here at rest reads as already
+// scrolled past it.
+export function hiddenScrollTop(): number {
   return hiddenMarker.offsetTop;
 }
 

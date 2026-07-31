@@ -2,73 +2,15 @@ import { generateText, type ModelMessage, NoObjectGeneratedError, Output } from 
 import { z } from 'zod';
 import { detectLanguage, resolveReplyLanguage } from './language';
 import { getModel } from './model';
+import { type EmailTriage, modelDecisionSchema } from './triage-schema';
 import type { EmailForModel } from './types';
+
+export type { EmailTriage, ModelDecisionOutput } from './triage-schema';
+export { modelDecisionSchema } from './triage-schema';
 
 // "capped at a couple of attempts, then fails gracefully" — README's
 // "Validation and retry". 1 initial try + 2 corrective retries.
 const MAX_ATTEMPTS = 3;
-
-// Zod's z.iso.datetime() embeds a large regex `pattern` in the JSON Schema
-// it generates for schema-locked structured output — confirmed by testing
-// to be exactly what breaks Ollama's grammar compiler ("Failed to
-// initialize samplers: failed to parse grammar") on a schema with this
-// much other structure around it. A .refine() enforces the identical
-// ISO-8601 check at parse time without ever appearing in the JSON Schema
-// sent to the model, sidestepping the crash entirely — confirmed by
-// testing too.
-const isoDateTime = z
-  .string()
-  .refine((val) => !Number.isNaN(Date.parse(val)) && /^\d{4}-\d{2}-\d{2}T/.test(val), {
-    message: 'must be an ISO 8601 date-time string',
-  });
-
-// What the model actually produces. emailId is deliberately NOT here — the
-// call is always scoped to exactly one email (see buildPrompt), so the app
-// already knows which email this is about and stitches emailId on after
-// the call returns, rather than asking the model to echo back a fact it
-// was never in a position to get right or wrong.
-//
-// No .optional() fields anywhere on purpose: an LLM generating JSON is
-// trying to complete a shape it's been shown, one token at a time —
-// omitting a key is an unnatural act for that process (it produced
-// explicit `null` instead, in testing), where writing *something* is the
-// path of least resistance. Every field here is always required, with an
-// explicit value standing in for "no" / "none" instead of relying on
-// absence to mean that. suspicious carries its reason the same way
-// draftReply carries its subject/body — only present in the branch where
-// it's meaningful, never a dangling optional next to a boolean.
-export const modelDecisionSchema = z.object({
-  // Exactly one — what happens to this email's visibility right now.
-  visibility: z.discriminatedUnion('type', [
-    z.object({ type: z.literal('feed') }),
-    z.object({ type: z.literal('snooze'), until: isoDateTime }),
-    z.object({ type: z.literal('filtered') }),
-  ]),
-  // True only for the rare "uncertain about an editorial newsletter"
-  // case — see INSTRUCTIONS. The app checks a per-sender preference store
-  // before ever reaching this field: an already-resolved sender's mail
-  // never triggers a repeat ask, and a "hide" sender's mail skips the
-  // model entirely, so this field only matters the first time a given
-  // sender's editorial content shows up.
-  checkSenderPreference: z.boolean(),
-  unsubscribeCandidate: z.boolean(),
-  draftReply: z.discriminatedUnion('type', [
-    z.object({ type: z.literal('none') }),
-    z.object({ type: z.literal('draft'), subject: z.string(), body: z.string() }),
-  ]),
-  suspicious: z.discriminatedUnion('type', [
-    z.object({ type: z.literal('no') }),
-    z.object({ type: z.literal('yes'), reason: z.string() }),
-  ]),
-});
-
-export type ModelDecisionOutput = z.infer<typeof modelDecisionSchema>;
-
-// The full record persisted to the AI feed store — model output plus the
-// one fact the app already had before ever calling the model.
-export interface EmailTriage extends ModelDecisionOutput {
-  emailId: string;
-}
 
 // Deliberately no language-handling here at all — draftReply's language is
 // entirely a Pass 2 concern (see redraftInLanguage below and the chat
@@ -85,7 +27,7 @@ You are never told who the user's contacts are, and you don't need to be — jud
 Signals that an email is personal and expects a reply:
 - Directly addresses "you" with a specific question or request.
 - Informal, conversational register (short sentences, casual phrasing).
-- Asks something only the recipient can answer (availability, an opinion, a decision).
+- Asks the recipient a direct question and expects an answer — this is NOT limited to things only the recipient could know (availability, an opinion, a decision); a plain factual/definitional question ("What does X mean?", "How do I do Y?") sent straight to the user counts just as much. The test is whether a real person asked a real question expecting a real reply, not whether the subject matter happens to be personal.
 - Comes from an individual human name, not a company/team/no-reply address.
 
 Signals that an email does NOT expect a reply, however it's addressed:
@@ -104,11 +46,11 @@ For the single email described below, decide:
 
 3. unsubscribeCandidate — true if this email's content is promotional/marketing in character: sales language, discount codes, "shop now" calls to action. Judge this from the actual content, not the format or how the email arrived — a newsletter that isn't sales-driven doesn't automatically count, but any real promotional content does, even from a source the user has generally chosen to hear from. An email that's mainly transactional (a receipt, a confirmation) with a small promotional section tacked on the bottom is NOT a candidate — judge the email's primary purpose, not every section of it. When genuinely unsure, lean toward flagging it.
 
-4. draftReply — exactly one: {"type":"none"} unless this email genuinely expects a personal response (see the signals above), in which case {"type":"draft","subject":...,"body":...}. When genuinely unsure whether a reply is warranted at all, draft one anyway — an unused draft costs nothing, but a missing one might be needed. For the draft itself:
+4. draftReply — exactly one: {"type":"none"} unless this email genuinely expects a reply from the user (see the signals above), in which case {"type":"draft","subject":...,"body":...}. This isn't limited to personal/subjective asks — a direct factual or definitional question sent straight to the user deserves an attempted answer just as much as a scheduling question does. When genuinely unsure whether a reply is warranted at all, draft one anyway — an unused draft costs nothing, but a missing one might be needed. For the draft itself:
    - Keep it short and minimal.
    - Match the tone/formality of the original email — casual in, casual out; formal in, formal out.
    - Mirror whether the original included a greeting and sign-off — except if the email reads as a formal inquiry, always include a brief greeting and sign-off regardless of what the original did.
-   - If the answer is obvious from context, commit to it directly (e.g. "Yes, Thursday works for me") rather than hedging — the user reviews and edits before anything sends, so a direct answer saves more effort than a noncommittal placeholder.
+   - Always attempt a real, substantive answer to whatever the email is actually asking. Never draft a reply that is itself just another question bouncing the ask back to the sender unanswered — that isn't a draft, it's a restatement of the problem. If the answer is obvious from context, commit to it directly (e.g. "Yes, Thursday works for me"). If it isn't — you don't actually know the user's real availability, opinion, or decision — still commit to a concrete, reasonable best guess rather than deflecting: propose a specific time instead of asking "what time works for you?"; give a plausible stance instead of asking "what do you think?". The user reviews and edits before anything sends, so a concrete starting point (even a wrong one) saves more effort than a reply that only asks the question back.
    - Never draft a reply to no-reply/automated senders or content that isn't actually addressed to the user personally.
 
 5. suspicious — exactly one: {"type":"no"} unless this email shows signs of phishing or a scam, in which case {"type":"yes","reason":"..."} with a short explanation. Look for:
@@ -128,7 +70,15 @@ Correct output: {"visibility":{"type":"filtered"},"checkSenderPreference":false,
 Email: From "PayPal Support" <security@paypa1-verify.com>, Subject "Your account has been limited" — "We noticed unusual activity. Verify your identity immediately or your account will be suspended within 24 hours. Click here to confirm your password."
 Correct output: {"visibility":{"type":"feed"},"checkSenderPreference":false,"unsubscribeCandidate":false,"draftReply":{"type":"none"},"suspicious":{"type":"yes","reason":"Display name claims PayPal but the domain (paypa1-verify.com) is a lookalike, not paypal.com; urgent threat language and a request to verify a password are classic phishing patterns."}}
 
-Base every judgment only on the email content given below. Do not invent facts not present in the email.`;
+Email: From "Maria Chen" <maria.chen@example.com>, Subject "thoughts on the proposal?" — "Hey, did you get a chance to look at the proposal I sent over? Curious what you think, especially about the timeline."
+Wrong draftReply (do NOT do this — it just asks the question back instead of answering it): {"type":"draft","subject":"Re: thoughts on the proposal?","body":"Hi Maria, thanks for sending that over — what specifically did you want my thoughts on, the timeline or something else?"}
+Correct draftReply (commits to a real stance, even without full context): {"type":"draft","subject":"Re: thoughts on the proposal?","body":"Hi Maria, yes, took a look — overall it seems solid. The timeline feels a little tight, but workable. Happy to discuss further if useful."}
+
+Email: From "Jonas Berg" <jonas.berg@example.com>, Subject "Word meaning" — "What does empathy mean?"
+Wrong draftReply (do NOT do this — this is a real, direct question sent to the user; "none" treats it as if it weren't): {"type":"none"}
+Correct draftReply: {"type":"draft","subject":"Re: Word meaning","body":"Hi Jonas, empathy means being able to understand and share what someone else is feeling — putting yourself in their shoes, not just recognizing it intellectually but sensing it with them."}
+
+Base every classification judgment — visibility, checkSenderPreference, unsubscribeCandidate, suspicious — only on the email content given below; do not invent facts about the sender or situation that aren't present. This does NOT apply to draftReply: answering a genuine question is expected to draw on your own general knowledge (definitions, facts, how-to explanations, anything else you actually know), not just what's written in the email itself. Refusing to answer a real question because the answer "isn't in the email" defeats the whole point of drafting a reply.`;
 
 function buildPrompt(email: EmailForModel): string {
   const from = email.from.name ? `${email.from.name} <${email.from.address}>` : email.from.address;

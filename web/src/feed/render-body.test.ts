@@ -1,5 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import { prepareHtmlForRender } from './render-body';
+
+// render-body.ts imports unsubscribe.ts, which reads #unsubscribe-* elements
+// from the DOM at module load time — importing it without that markup
+// present would throw on import, even though prepareHtmlForRender itself
+// never touches any of it. See compose.test.ts for the same pattern.
+document.body.innerHTML = `
+  <div id="unsubscribe-confirm">
+    <span id="unsubscribe-address"></span>
+    <p id="unsubscribe-error"></p>
+    <button id="unsubscribe-cancel"></button>
+    <button id="unsubscribe-send"></button>
+  </div>
+`;
+
+const { prepareHtmlForRender } = await import('./render-body');
 
 // Parses prepareHtmlForRender's output back into a document so assertions
 // check real elements/attributes rather than raw substrings.

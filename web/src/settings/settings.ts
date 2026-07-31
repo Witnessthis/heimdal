@@ -1,5 +1,8 @@
-import { ensureNewEmailBgPinned } from '../compose/new-email-reveal';
+import { loadAiFeed } from '../ai-feed/list';
+import { ensureNewEmailBgPinned, hiddenScrollTop } from '../compose/new-email-reveal';
 import { aiFeedView, feed, nav, navAiFeed, navInbox, navSettings, settingsView } from '../feed/dom';
+import { loadLanguageSettings } from './languages';
+import { refreshNotificationRow } from './notifications';
 import {
   isAutoLoadImagesEnabled,
   isRichHtmlEnabled,
@@ -62,11 +65,21 @@ function showView(view: 'ai-feed' | 'inbox' | 'settings'): void {
     // just run once at module load.
     ensureNewEmailBgPinned();
   }
+  if (view === 'ai-feed') loadAiFeed();
   if (view === 'settings') {
     loadTotpStatus();
+    loadLanguageSettings();
+    void refreshNotificationRow();
     alignSubSettingConnectors();
   }
 }
+
+// AI Feed is the default landing view (see index.html — unlike #feed/
+// #settings-view, it starts visible with no inline display:none), so it
+// never gets its one showView('ai-feed') call from a nav click on first
+// load — load it once here too, the same way bootstrap() in inbox.ts
+// pre-fetches the inbox despite #feed starting hidden.
+loadAiFeed();
 window.addEventListener('resize', () => {
   if (settingsView.style.display !== 'none') alignSubSettingConnectors();
 });
@@ -203,8 +216,14 @@ document.getElementById('logout-btn')!.addEventListener('click', async () => {
 // only in the feed. Settings is a short, static list rather than a
 // long scroll a reader is trying to get out of the way of, so the nav
 // (the only way back to the inbox) just stays put there instead.
+//
+// The threshold is hiddenScrollTop(), not a guessed pixel constant: the
+// New Email reveal strip keeps #feed pinned there at rest (see
+// new-email-reveal.ts), so that's the real "top" of the inbox as far as
+// the user is concerned — scrolling to exactly that resting position
+// must never read as "scrolled down" and hide the nav.
 export function handleScroll(scrollTop: number): void {
-  if (scrollTop > lastScrollY && scrollTop > 50) {
+  if (scrollTop > lastScrollY && scrollTop > hiddenScrollTop()) {
     nav.classList.add('hide');
   } else {
     nav.classList.remove('hide');

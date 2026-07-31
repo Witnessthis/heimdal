@@ -5,12 +5,16 @@ import fastifyHelmet from '@fastify/helmet';
 import fastifyRateLimit from '@fastify/rate-limit';
 import fastifyStatic from '@fastify/static';
 import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastify';
+import { startAutoClassification } from './ai/auto-classify';
 import { consumeTotpSeedFile, loadCredentials, setTotpSecret } from './lib/credentials';
 import { generateSetupToken } from './lib/session';
 import { mailService } from './mail/registry';
+import { aiFeedRoutes } from './routes/ai-feed';
 import { authRoutes } from './routes/auth';
 import { mailRoutes } from './routes/mail';
 import { providerSetupRoutes } from './routes/provider-setup';
+import { pushRoutes } from './routes/push';
+import { settingsRoutes } from './routes/settings';
 import { setupRoutes } from './routes/setup';
 import { totpRoutes } from './routes/totp';
 
@@ -101,6 +105,9 @@ export async function buildServer(opts: BuildServerOptions): Promise<FastifyInst
   await server.register(totpRoutes, { prefix: '/api/totp', dataDir });
   await server.register(providerSetupRoutes, { prefix: '/api/provider', dataDir });
   await server.register(mailRoutes, { prefix: '/api/mail', dataDir });
+  await server.register(settingsRoutes, { prefix: '/api/settings', dataDir });
+  await server.register(aiFeedRoutes, { prefix: '/api/ai-feed', dataDir });
+  await server.register(pushRoutes, { prefix: '/api/push', dataDir });
 
   // @fastify/static throws on a missing root, so guard: in dev the built
   // frontend doesn't exist and the Vite dev server (with its /api proxy
@@ -146,6 +153,12 @@ async function main() {
   await mailService.init(DATA_DIR).catch((err) => {
     server.log.error(err, 'Failed to initialize mail provider on startup');
   });
+
+  // Registered on the mailService singleton itself (see its own doc
+  // comment), so this stays wired through any later provider-setup/
+  // reconfigure — no need to re-call this after mailService.init() runs
+  // again from the provider-setup route.
+  startAutoClassification(DATA_DIR);
 
   await server.listen({ port: PORT, host: '::' });
 }

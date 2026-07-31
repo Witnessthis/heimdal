@@ -1,4 +1,7 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   consumePendingTotpToken,
   consumeSetupToken,
@@ -9,6 +12,14 @@ import {
   validatePendingTotpToken,
   validateSession,
 } from './session';
+
+let dir: string;
+beforeEach(async () => {
+  dir = await mkdtemp(join(tmpdir(), 'heimdal-session-'));
+});
+afterEach(async () => {
+  await rm(dir, { recursive: true, force: true });
+});
 
 describe('setup token', () => {
   it('accepts the exact generated token, dash- and case-insensitive', () => {
@@ -38,32 +49,32 @@ describe('setup token', () => {
 describe('session lifecycle', () => {
   afterEach(() => vi.useRealTimers());
 
-  it('validates a fresh session and rejects an unknown token', () => {
-    const token = createSession();
-    expect(validateSession(token)).toBe(true);
-    expect(validateSession('not-a-real-token')).toBe(false);
+  it('validates a fresh session and rejects an unknown token', async () => {
+    const token = await createSession(dir);
+    expect(await validateSession(dir, token)).toBe(true);
+    expect(await validateSession(dir, 'not-a-real-token')).toBe(false);
   });
 
-  it('rejects a destroyed session', () => {
-    const token = createSession();
-    destroySession(token);
-    expect(validateSession(token)).toBe(false);
+  it('rejects a destroyed session', async () => {
+    const token = await createSession(dir);
+    await destroySession(dir, token);
+    expect(await validateSession(dir, token)).toBe(false);
   });
 
-  it('expires after 30 days of inactivity', () => {
+  it('expires after 30 days of inactivity', async () => {
     vi.useFakeTimers();
-    const token = createSession();
+    const token = await createSession(dir);
     vi.advanceTimersByTime(31 * 24 * 60 * 60 * 1000);
-    expect(validateSession(token)).toBe(false);
+    expect(await validateSession(dir, token)).toBe(false);
   });
 
-  it('slides the 30-day window forward on each validation', () => {
+  it('slides the 30-day window forward on each validation', async () => {
     vi.useFakeTimers();
-    const token = createSession();
+    const token = await createSession(dir);
     vi.advanceTimersByTime(20 * 24 * 60 * 60 * 1000); // 20d in — refreshes
-    expect(validateSession(token)).toBe(true);
+    expect(await validateSession(dir, token)).toBe(true);
     vi.advanceTimersByTime(20 * 24 * 60 * 60 * 1000); // 40d since creation, 20d since use
-    expect(validateSession(token)).toBe(true);
+    expect(await validateSession(dir, token)).toBe(true);
   });
 });
 

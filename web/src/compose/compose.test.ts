@@ -28,6 +28,12 @@ document.body.innerHTML = `
     <p id="compose-error"></p>
   </div>
   <nav id="bottom-nav"></nav>
+  <div id="unsubscribe-confirm">
+    <span id="unsubscribe-address"></span>
+    <p id="unsubscribe-error"></p>
+    <button id="unsubscribe-cancel"></button>
+    <button id="unsubscribe-send"></button>
+  </div>
 `;
 
 const { parseAddressList } = await import('./compose');

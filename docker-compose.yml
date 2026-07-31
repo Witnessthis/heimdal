@@ -8,6 +8,15 @@ services:
       - DOMAIN=${DOMAIN:-}
     volumes:
       - ./data:/app/data
+      # Caddy's own storage (its Let's Encrypt cert/account state) — not
+      # under /app/data, and not persisted otherwise. Without this,
+      # every container recreation (a plain restart is fine; a redeploy
+      # that recreates the container isn't) loses the cert and requests
+      # a brand-new one from Let's Encrypt, which is exactly the kind of
+      # thing that trips their per-domain rate limit if it happens more
+      # than a few times. Path matches the "heimdal" user's home
+      # directory Caddy defaults to (see Dockerfile's adduser call).
+      - caddy-data:/home/heimdal/.local/share/caddy
     restart: unless-stopped
 
   # Local LLM backend — a separate concern from Heimdal itself (see
@@ -29,3 +38,4 @@ services:
 
 volumes:
   ollama-models:
+  caddy-data:

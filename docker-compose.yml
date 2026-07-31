@@ -6,6 +6,12 @@ services:
       - "443:443"
     environment:
       - DOMAIN=${DOMAIN:-}
+      # Without this, getModel() (src/ai/model.ts) falls back to its dev
+      # default of 127.0.0.1:11434 — this container's own loopback, where
+      # nothing listens, since Ollama runs in the separate `ollama`
+      # service below. Must include the /v1 path segment; see that
+      # file's own comment for why.
+      - OLLAMA_BASE_URL=http://ollama:11434/v1
     volumes:
       - ./data:/app/data
       # Caddy's own storage (its Let's Encrypt cert/account state) — not

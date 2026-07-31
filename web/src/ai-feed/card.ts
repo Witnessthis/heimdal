@@ -133,52 +133,48 @@ function buildDismissButton(onDismiss: () => void): HTMLButtonElement {
   return btn;
 }
 
+// A checkbox, not the .ai-feed-choice toggle-pill tried briefly instead
+// — a verb-labeled button ("Hide") reads as an immediate action, which
+// is misleading for something that's actually staged until Confirm; a
+// checkbox inherently communicates "a setting to apply later," matching
+// the real behavior. The earlier checkbox attempt's real problem was
+// sizing (20px, too small to comfortably tap), not the metaphor itself
+// — see .ai-feed-checkbox-row in ai-feed.css for the larger version.
+// Still always has a real value (never "untouched"): pre-staged to
+// 'show' the moment this row is built, so Confirm always resolves the
+// sender preference one way or the other even if the user never taps
+// it — closes the old gap where an unanswered question left the sender
+// stuck in 'pending' forever with no way to revisit it (see chat
+// history). Only if undefined: loadAiFeed() rebuilds every card from
+// scratch on each tab visit, so a choice already made on an earlier
+// build of this same card must not get silently reset back to the
+// default.
 function buildSenderPreferenceRow(item: AiFeedListItem, onStagedChange: () => void): HTMLElement {
   const emailId = item.triage.emailId;
-  const row = document.createElement('div');
-  row.className = 'ai-feed-row';
+  if (getStaged(emailId).senderPreference === undefined) {
+    setStaged(emailId, { senderPreference: 'show' });
+  }
+
+  // A <label>, not a <div> — same as every other row in this footer,
+  // .ai-feed-row's own justify-content: space-between already puts the
+  // checkbox on the right for free, and wrapping the whole row (not
+  // just the checkbox itself) keeps the tap target large on mobile.
+  const row = document.createElement('label');
+  row.className = 'ai-feed-row ai-feed-checkbox-row';
 
   const text = document.createElement('span');
   text.className = 'ai-feed-row-text';
-  text.textContent = 'Keep seeing mail from this sender?';
+  text.textContent = 'Hide emails from this sender?';
 
-  const controls = document.createElement('div');
-  controls.className = 'ai-feed-row-controls';
-
-  const showBtn = document.createElement('button');
-  const hideBtn = document.createElement('button');
-  showBtn.type = 'button';
-  hideBtn.type = 'button';
-  showBtn.className = 'ai-feed-choice';
-  hideBtn.className = 'ai-feed-choice';
-  showBtn.textContent = 'Show';
-  hideBtn.textContent = 'Hide';
-  showBtn.classList.toggle('active', getStaged(emailId).senderPreference === 'show');
-  hideBtn.classList.toggle('active', getStaged(emailId).senderPreference === 'hide');
-  showBtn.addEventListener('click', () => {
-    setStaged(emailId, { senderPreference: 'show' });
-    showBtn.classList.add('active');
-    hideBtn.classList.remove('active');
-    onStagedChange();
-  });
-  hideBtn.addEventListener('click', () => {
-    setStaged(emailId, { senderPreference: 'hide' });
-    hideBtn.classList.add('active');
-    showBtn.classList.remove('active');
+  const checkbox = document.createElement('input');
+  checkbox.type = 'checkbox';
+  checkbox.checked = getStaged(emailId).senderPreference === 'hide';
+  checkbox.addEventListener('change', () => {
+    setStaged(emailId, { senderPreference: checkbox.checked ? 'hide' : 'show' });
     onStagedChange();
   });
 
-  controls.append(
-    showBtn,
-    hideBtn,
-    buildDismissButton(() => {
-      clearStagedField(emailId, 'senderPreference');
-      row.remove();
-      onStagedChange();
-    }),
-  );
-
-  row.append(text, controls);
+  row.append(text, checkbox);
   return row;
 }
 
@@ -456,8 +452,10 @@ export function buildAiFeedCard(item: AiFeedListItem): HTMLElement {
   let notifyActionsChanged = () => {};
   const onStagedChange = () => notifyActionsChanged();
 
-  if (triage.checkSenderPreference) footer.appendChild(buildSenderPreferenceRow(item, onStagedChange));
-
+  // Reply first — see chat history: the model's answer (or the prompt to
+  // write one) is the most actionable thing on the card, ahead of the
+  // sender-preference/unsubscribe/suspicious rows below it.
+  //
   // Pre-stage an AI draft the first time this card is built this session
   // — see buildDraftPreviewRow's own comment on why Confirm should send
   // it by default rather than only once the user has opened and edited
@@ -474,6 +472,8 @@ export function buildAiFeedCard(item: AiFeedListItem): HTMLElement {
       ? triage.draftReply
       : { subject: item.subject?.startsWith('Re: ') ? item.subject : `Re: ${item.subject || ''}`, body: '' };
   footer.appendChild(buildReplySlot(item, fallbackDraft, onStagedChange));
+
+  if (triage.checkSenderPreference) footer.appendChild(buildSenderPreferenceRow(item, onStagedChange));
 
   if (triage.unsubscribeCandidate && item.unsubscribe.type !== 'none') {
     footer.appendChild(buildUnsubscribeRow(item, onStagedChange));

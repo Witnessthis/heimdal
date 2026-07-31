@@ -63,7 +63,11 @@ main#ai-feed-view::-webkit-scrollbar {
   padding-top: 10px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  /* 18px, not the original 8px — the interactive rows here
+     (sender-preference, reply, unsubscribe, ...) sat close enough
+     together that adjacent controls felt cramped on mobile; still not
+     enough at 12px (see chat history), so bumped further. */
+  gap: 18px;
 }
 
 .ai-feed-row {
@@ -81,6 +85,56 @@ main#ai-feed-view::-webkit-scrollbar {
   font-size: 0.85rem;
   color: var(--accent);
   cursor: default;
+}
+
+/* The sender-preference row's checkbox — custom-drawn (appearance: none),
+   reusing .ai-feed-choice's own idle-border/active-fill accent color
+   language below so this reads as the same family of control rather
+   than a generic browser checkbox. 26px, not the initial 20px — that
+   was too small a tap target on mobile even though the whole row (a
+   <label>) is technically clickable; a visually bigger box reads as a
+   more confident target too, not just a functionally bigger one. */
+.ai-feed-checkbox-row {
+  cursor: pointer;
+}
+.ai-feed-checkbox-row input[type="checkbox"] {
+  appearance: none;
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  margin: 0;
+  border-radius: 6px;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border-soft));
+  background: transparent;
+  cursor: pointer;
+  position: relative;
+}
+.ai-feed-checkbox-row input[type="checkbox"]:hover {
+  border-color: var(--accent);
+}
+/* base.css's button/a:focus-visible rule doesn't reach input elements —
+   same outline treatment, applied explicitly here. */
+.ai-feed-checkbox-row input[type="checkbox"]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.ai-feed-checkbox-row input[type="checkbox"]:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+/* A checkmark drawn from a rotated border corner — no SVG needed for
+   something this small and purely decorative (see e.g. this app's own
+   reply/forward icons for when an actual <svg> is worth it instead). */
+.ai-feed-checkbox-row input[type="checkbox"]:checked::after {
+  content: "";
+  position: absolute;
+  left: 8px;
+  top: 3px;
+  width: 6px;
+  height: 12px;
+  border: solid var(--bg);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
 }
 
 /* A visibly boxed, indented block — deliberately NOT styled like the

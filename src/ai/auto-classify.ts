@@ -46,7 +46,19 @@ async function handleNewMessage(
   // budget — per classifyEmail's own doc comment, expected occasionally
   // with small/local models, not exceptional. This message just gets no
   // automated decision this round.
-  if (!triage) return;
+  if (!triage) {
+    console.log(`Classification produced no valid response for ${event.messageId}`);
+    return;
+  }
+  // A "filtered" result and a failed classification above look identical
+  // from the outside otherwise — nothing in the AI feed, no error logged
+  // — which made a genuine "the event pipeline never ran" bug
+  // indistinguishable from "it ran and correctly decided this one wasn't
+  // worth showing." This closes that gap for good, not just for one
+  // debugging session.
+  console.log(
+    `Classified ${event.messageId}: visibility=${triage.visibility.type}, checkSenderPreference=${triage.checkSenderPreference}, draftReply=${triage.draftReply.type}`,
+  );
 
   // markSenderPending is a no-op once this sender has any state at all
   // (pending, show, or hide) — see its own doc comment — so it's always

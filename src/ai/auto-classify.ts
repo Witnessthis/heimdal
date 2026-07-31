@@ -1,4 +1,4 @@
-import { upsertFeedItem } from '../lib/ai-feed';
+import { getFeedItems, upsertFeedItem } from '../lib/ai-feed';
 import { getSpokenLanguages } from '../lib/language-settings';
 import { sendFeedNotification } from '../lib/send-push';
 import { getSenderPreference, markSenderPending } from '../lib/sender-preferences';
@@ -77,10 +77,15 @@ async function handleNewMessage(
   // about something they can't actually see or act on; there's no
   // resurface-time notification mechanism, that's a separate feature.
   if (triage.visibility.type === 'feed') {
+    // getFeedItems already reflects this item (upsertFeedItem above has
+    // run) plus any snoozed items whose resurface time has passed — the
+    // same count the AI Feed view itself would show right now.
+    const count = (await getFeedItems(dataDir)).length;
     await sendFeedNotification(dataDir, {
       title: message.subject || '(no subject)',
       body: message.snippet,
       emailId: triage.emailId,
+      count,
     });
   }
 }

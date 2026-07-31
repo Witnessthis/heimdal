@@ -1,10 +1,24 @@
+import type { EmailMessage, EmailSummary } from '@server/mail/types';
 import type { AiFeedListItem, ConfirmBody } from '@server/routes/ai-feed-types';
 import { openComposeToStageDraft } from '../compose/compose';
+import { cardData } from '../feed/card-data';
 import { formatRelativeTime } from '../feed/preview';
 import { clearRenderedBody, ensureFullBodyLoaded, markRead } from '../feed/render-body';
+import { openDeleteEmailConfirm } from './delete-email-confirm';
 import { aiFeedStatus, aiFeedView } from './dom';
 import { openDraftActionsMenu } from './draft-actions-menu';
 import { clearStagedField, dismissDraftReply, dropStaged, getStaged, setStaged } from './staged-actions';
+
+// loadAiFeed() rebuilds every card from scratch on each tab show (see
+// list.ts) — a fresh <article> has no entry in cardData's WeakMap (keyed
+// by DOM node) and no dataset.fullyLoaded, so a message read minutes ago
+// looks brand-new to ensureFullBodyLoaded and gets genuinely re-fetched
+// over the network, spinner and all, the next time its (new) card is
+// expanded. This cache is keyed by emailId instead, so it survives the
+// rebuild: buildAiFeedCard seeds cardData from it for a returning
+// message, and the click handler below feeds it back in after every
+// full load.
+const loadedBodies = new Map<string, EmailSummary | EmailMessage>();
 
 // Tap-to-expand only — no swipe/select, unlike the inbox's gestures.ts.
 // One delegated listener, registered once here rather than per-card,
@@ -19,7 +33,10 @@ aiFeedView.addEventListener('click', (e) => {
 
   const expanded = card.classList.toggle('expanded');
   if (expanded) {
-    ensureFullBodyLoaded(card);
+    void ensureFullBodyLoaded(card).then(() => {
+      const data = cardData.get(card);
+      if (data) loadedBodies.set(card.dataset.id!, data);
+    });
     markRead(card);
   } else {
     clearRenderedBody(card);
@@ -29,6 +46,7 @@ aiFeedView.addEventListener('click', (e) => {
 
 function removeCard(card: HTMLElement, emailId: string): void {
   dropStaged(emailId);
+  loadedBodies.delete(emailId);
   card.closest('.ai-feed-card-wrap')?.remove();
   // A card leaving the DOM never goes through loadAiFeed() itself — show
   // the empty state directly if that was the last one.
@@ -327,6 +345,11 @@ function buildUnsubscribeRow(item: AiFeedListItem, onStagedChange: () => void): 
   return row;
 }
 
+// Pure information, nothing else — no dismiss (there's nothing to "not
+// change" about it) and no Delete button here either; that lives in the
+// card's own action row instead (see renderActions in buildAiFeedCard),
+// styled to match this banner's danger color as the one visible signal
+// tying the two together.
 function buildSuspiciousRow(reason: string): HTMLElement {
   const row = document.createElement('div');
   row.className = 'ai-feed-row ai-feed-row-suspicious';
@@ -335,10 +358,7 @@ function buildSuspiciousRow(reason: string): HTMLElement {
   text.className = 'ai-feed-row-text';
   text.textContent = `⚠ ${reason}`;
 
-  row.append(
-    text,
-    buildDismissButton(() => row.remove()),
-  );
+  row.append(text);
   return row;
 }
 
@@ -360,6 +380,13 @@ export function buildAiFeedCard(item: AiFeedListItem): HTMLElement {
   // itself on expand — this card renders its own staged unsubscribe row
   // instead of that immediate-fire one.
   card.dataset.aiFeed = 'true';
+
+  // Already fetched this message on an earlier build of this card (see
+  // loadedBodies above) — seed it in now so the first expand of this
+  // fresh element hits ensureFullBodyLoaded's cache branch instead of
+  // re-fetching over the network.
+  const cachedBody = loadedBodies.get(triage.emailId);
+  if (cachedBody) cardData.set(card, cachedBody);
 
   const front = document.createElement('div');
   front.className = 'card-front';
@@ -388,23 +415,29 @@ export function buildAiFeedCard(item: AiFeedListItem): HTMLElement {
   subject.className = 'card-subject';
   subject.textContent = item.subject || '(no subject)';
 
-  // Labeled explicitly — an inbox card never needs this (there's only
-  // ever one block of text, obviously the email), but an AI feed card
-  // can also show a boxed, separately-labeled draft reply below (see
-  // buildDraftReplyRow), so without a label here there's no way to tell
-  // "the email you received" apart from "the reply about to be sent" at
-  // a glance.
-  const bodyLabel = document.createElement('span');
-  bodyLabel.className = 'ai-feed-row-label';
-  bodyLabel.textContent = 'Email received';
-
+  // Starts collapsed (unlike an earlier version of this card) — shows
+  // the same snippet the list response already carries, faded out via
+  // .card-body-wrap's existing ::after (the same cue inbox cards use),
+  // plus an explicit chevron below it: the fade alone isn't a strong
+  // enough signal on its own that there's more to read, particularly on
+  // a card type someone hasn't necessarily learned the conventions of
+  // yet the way they have for the inbox.
   const body = document.createElement('div');
   body.className = 'card-body';
+  body.textContent = item.snippet;
   const bodyWrap = document.createElement('div');
   bodyWrap.className = 'card-body-wrap';
   bodyWrap.appendChild(body);
 
-  content.append(meta, subject, bodyLabel, bodyWrap);
+  // Static, app-authored markup, never derived from data — safe as
+  // innerHTML the same way the other stroke-icon SVGs in this app are
+  // (see e.g. card.ts's inbox reply/forward icons).
+  const expandHint = document.createElement('div');
+  expandHint.className = 'ai-feed-expand-hint';
+  expandHint.innerHTML =
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>';
+
+  content.append(meta, subject, bodyWrap, expandHint);
   front.appendChild(content);
   card.appendChild(front);
 
@@ -445,7 +478,9 @@ export function buildAiFeedCard(item: AiFeedListItem): HTMLElement {
   if (triage.unsubscribeCandidate && item.unsubscribe.type !== 'none') {
     footer.appendChild(buildUnsubscribeRow(item, onStagedChange));
   }
-  if (triage.suspicious.type === 'yes') footer.appendChild(buildSuspiciousRow(triage.suspicious.reason));
+  if (triage.suspicious.type === 'yes') {
+    footer.appendChild(buildSuspiciousRow(triage.suspicious.reason));
+  }
 
   const errorEl = document.createElement('p');
   errorEl.className = 'ai-feed-error';
@@ -461,6 +496,25 @@ export function buildAiFeedCard(item: AiFeedListItem): HTMLElement {
   // exactly the "what am I confirming?" confusion this replaces.
   function renderActions(): void {
     actions.innerHTML = '';
+
+    // Delete email sits here, not inside the suspicious banner itself —
+    // that banner is pure information now, and this is the one real
+    // action tied to it. Styled to match the banner's danger color as
+    // the visible signal connecting the two, and placed leftmost (away
+    // from Confirm) since it's the one destructive action in this row.
+    // Unrelated to staging — always available whenever the message is
+    // flagged, regardless of what else is or isn't staged.
+    if (triage.suspicious.type === 'yes') {
+      const deleteBtn = document.createElement('button');
+      deleteBtn.type = 'button';
+      deleteBtn.className = 'btn-action-danger';
+      deleteBtn.textContent = 'Delete email';
+      deleteBtn.addEventListener('click', () => {
+        openDeleteEmailConfirm(triage.emailId, () => removeCard(card, triage.emailId));
+      });
+      actions.appendChild(deleteBtn);
+    }
+
     const hasStagedContent =
       getStaged(triage.emailId).senderPreference != null ||
       getStaged(triage.emailId).draftReply != null ||
@@ -493,15 +547,6 @@ export function buildAiFeedCard(item: AiFeedListItem): HTMLElement {
 
   footer.append(errorEl, actions);
   front.appendChild(footer);
-
-  // Starts expanded, unlike an inbox card — the whole point of a feed
-  // item is "here's a decision to make," and the original email's actual
-  // content is exactly the context that decision needs. Tapping still
-  // collapses it, same as any other card, for anyone who wants it out of
-  // the way once read.
-  card.classList.add('expanded');
-  ensureFullBodyLoaded(card);
-  markRead(card);
 
   const wrap = document.createElement('div');
   wrap.className = 'ai-feed-card-wrap';

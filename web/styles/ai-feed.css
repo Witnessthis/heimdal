@@ -38,6 +38,25 @@ main#ai-feed-view::-webkit-scrollbar {
   margin: 0 12px 10px;
 }
 
+/* Only shown collapsed — the fade at the bottom of .card-body-wrap (see
+   feed.css) is the same "there's more" cue inbox cards use, but on its
+   own it's a subtle gradient, not an explicit signal; this chevron spells
+   it out. Hidden once expanded since the hint no longer applies. */
+.ai-feed-expand-hint {
+  display: flex;
+  justify-content: center;
+  margin-top: 2px;
+  color: var(--accent);
+  cursor: pointer;
+}
+.ai-feed-expand-hint svg {
+  width: 18px;
+  height: 18px;
+}
+.card.expanded .ai-feed-expand-hint {
+  display: none;
+}
+
 .ai-feed-footer {
   border-top: 1px solid var(--border-soft);
   margin-top: 10px;
@@ -99,14 +118,6 @@ main#ai-feed-view::-webkit-scrollbar {
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--accent);
-}
-/* Same label used standalone above the original email's own body (see
-   buildAiFeedCard) — that placement isn't inside a flex column like the
-   draft-preview box is, so it needs its own block display/spacing rather
-   than relying on a flex gap. */
-.card-content > .ai-feed-row-label {
-  display: block;
-  margin: 8px 0 4px;
 }
 .ai-feed-draft-subject {
   margin: 0;
@@ -174,9 +185,10 @@ main#ai-feed-view::-webkit-scrollbar {
   color: var(--bg);
 }
 
-/* Suspicious is informational only — no controls, just the reason and
-   its own dismiss — so it gets a full-width banner treatment instead of
-   the label+controls row layout every other row uses. */
+/* Pure information now — no action lives inside this box (see
+   buildAiFeedCard's renderActions for Delete email, styled to match this
+   banner's danger color as the one visible signal tying the two
+   together, even though it sits in the action row below, not here). */
 .ai-feed-row-suspicious {
   align-items: flex-start;
   padding: 8px 10px;
@@ -185,6 +197,24 @@ main#ai-feed-view::-webkit-scrollbar {
 }
 .ai-feed-row-suspicious .ai-feed-row-text {
   color: var(--danger);
+}
+
+/* Danger-tinted sibling of .btn-action/.btn-action-primary, sized to
+   match them (not the smaller .ai-feed-choice pills the footer rows
+   use) — this sits in the same action row as Dismiss/Confirm. */
+.btn-action-danger {
+  padding: 7px 14px;
+  border-radius: 6px;
+  border: 1px solid var(--danger);
+  background: transparent;
+  color: var(--danger);
+  font-size: 0.85rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.btn-action-danger:hover {
+  background: var(--danger);
+  color: var(--bg);
 }
 
 .ai-feed-error {

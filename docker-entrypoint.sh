@@ -18,12 +18,17 @@ else
 EOF
 fi
 
-# /app/data is a bind-mounted volume (see docker-compose.yml) whose
-# ownership comes from the host, not this image, so it can't be fixed up
-# at build time — do it here, every start, before dropping to the
-# non-root user below. Idempotent and cheap either way.
-mkdir -p /app/data
-chown -R heimdal:heimdal /app/data /etc/caddy
+# /app/data (bind-mounted from the host) and the caddy-data volume
+# (Caddy's cert/account storage — see docker-compose.yml) both get their
+# ownership from outside this image, so it can't be fixed up at build
+# time — do it here, every start, before dropping to the non-root user
+# below. Idempotent and cheap either way. Without this, a freshly
+# created caddy-data volume is root-owned and Caddy (running as heimdal
+# below) can't write its certificate into it. Not $HOME — this script
+# still runs as root at this point, so that would resolve to /root.
+CADDY_DATA_DIR=/home/heimdal/.local/share/caddy
+mkdir -p /app/data "$CADDY_DATA_DIR"
+chown -R heimdal:heimdal /app/data /etc/caddy "$CADDY_DATA_DIR"
 
 # This container starts as root only for the setup above. Everything
 # that actually talks to the network or reads a decrypted secret runs as

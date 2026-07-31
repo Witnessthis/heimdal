@@ -1,3 +1,4 @@
+import { loadAiFeed } from '../ai-feed/list';
 import { ensureNewEmailBgPinned } from '../compose/new-email-reveal';
 import { aiFeedView, feed, nav, navAiFeed, navInbox, navSettings, settingsView } from '../feed/dom';
 import { loadLanguageSettings } from './languages';
@@ -63,12 +64,20 @@ function showView(view: 'ai-feed' | 'inbox' | 'settings'): void {
     // just run once at module load.
     ensureNewEmailBgPinned();
   }
+  if (view === 'ai-feed') loadAiFeed();
   if (view === 'settings') {
     loadTotpStatus();
     loadLanguageSettings();
     alignSubSettingConnectors();
   }
 }
+
+// AI Feed is the default landing view (see index.html — unlike #feed/
+// #settings-view, it starts visible with no inline display:none), so it
+// never gets its one showView('ai-feed') call from a nav click on first
+// load — load it once here too, the same way bootstrap() in inbox.ts
+// pre-fetches the inbox despite #feed starting hidden.
+loadAiFeed();
 window.addEventListener('resize', () => {
   if (settingsView.style.display !== 'none') alignSubSettingConnectors();
 });

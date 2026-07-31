@@ -40,10 +40,7 @@
   </main>
 
   <main id="ai-feed-view">
-    <div class="ai-feed-placeholder">
-      <p class="ai-feed-placeholder-title">AI Feed</p>
-      <p class="ai-feed-placeholder-desc">Coming soon — this will surface the mail most worth your attention, picked out by AI.</p>
-    </div>
+    <div class="ai-feed-status" id="ai-feed-status">Loading…</div>
   </main>
 
   <main id="settings-view" style="display: none">
@@ -223,6 +220,18 @@
       <div class="modal-actions">
         <button type="button" class="btn-action" id="unsubscribe-cancel">Cancel</button>
         <button type="button" class="btn-action-primary" id="unsubscribe-send">Send</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="draft-actions-menu" class="modal-overlay" style="display: none">
+    <div class="modal-panel">
+      <button type="button" class="modal-close-btn" id="draft-actions-close" aria-label="Close">×</button>
+      <p class="modal-title">Your reply</p>
+      <p class="modal-desc">Edit it before it sends, or remove it from this card.</p>
+      <div class="modal-actions">
+        <button type="button" class="btn-action" id="draft-actions-remove">Remove</button>
+        <button type="button" class="btn-action-primary" id="draft-actions-edit">Edit</button>
       </div>
     </div>
   </div>

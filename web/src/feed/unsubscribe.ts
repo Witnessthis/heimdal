@@ -98,8 +98,16 @@ async function performOneClick(btn: HTMLButtonElement, messageId: string): Promi
  *  the latter (a full-fetch-only field, like body/attachments), so a
  *  summary just falls through as absent rather than needing its own
  *  branch here. Same button, same label, regardless of mechanism — what
- *  differs is only what tapping it actually does. */
+ *  differs is only what tapping it actually does.
+ *
+ *  Skipped entirely for AI feed cards (card.dataset.aiFeed === 'true') —
+ *  those render their own staged unsubscribe row instead (unsubscribe is
+ *  staged behind the card's Confirm there, not immediate — see
+ *  web/src/ai-feed/card.ts), and this function would otherwise still fire
+ *  on every expand/re-expand via renderResolvedBody(), appending a second,
+ *  conflicting immediate-fire button alongside it. */
 export function renderUnsubscribeAction(card: HTMLElement, data: EmailSummary | EmailMessage): void {
+  if (card.dataset.aiFeed === 'true') return;
   const unsubscribe = 'unsubscribe' in data ? data.unsubscribe : undefined;
   if (!unsubscribe || unsubscribe.type === 'none') return;
 

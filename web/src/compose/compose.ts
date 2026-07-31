@@ -18,6 +18,13 @@ const composeToRow = document.getElementById('compose-to-row') as HTMLElement;
 export const addressLockBar = document.getElementById('compose-to-lock') as HTMLElement;
 const addressLockText = document.getElementById('compose-to-lock-text') as HTMLElement;
 const addressEditBtn = document.getElementById('compose-to-edit') as HTMLElement;
+// Queried directly rather than imported from address-swipe.ts — same
+// circular-import-evaluation-order reason that module queries composeView
+// directly instead of importing it (see its own comment): address-
+// swipe.ts imports from this module, so this module reaching back into
+// it would resolve to undefined during its own still-in-progress
+// evaluation.
+const addressSendBtn = document.getElementById('compose-to-send') as HTMLElement;
 const composeCc = document.getElementById('compose-cc') as HTMLInputElement;
 const composeBcc = document.getElementById('compose-bcc') as HTMLInputElement;
 const composeExpandToggle = document.getElementById('compose-expand-toggle') as HTMLElement;
@@ -31,6 +38,15 @@ interface ComposeThreadContext {
   threadId?: string;
 }
 let composeThreadContext: ComposeThreadContext | null = null;
+
+// Set only by openComposeToStageDraft() (an AI feed card preparing a
+// draft reply) — when present, sendComposeMessage() hands the edited
+// fields back to the caller instead of sending anything itself. The
+// actual send happens later, when the card as a whole is confirmed (see
+// web/src/ai-feed/card.ts). This is the single gate that makes staging
+// safe regardless of which UI element ends up calling
+// sendComposeMessage() — see the swipe-to-send bar's own comment below.
+let composeOnPrepared: ((draft: { subject: string; text: string }) => void) | null = null;
 
 // Right-aligned inline hints (see .field-hint CSS) stand in for a
 // separate label row or a native placeholder — but should stay
@@ -146,6 +162,13 @@ export function openCompose({
   composeBody.scrollTop = 0;
   composeError.textContent = '';
   composeThreadContext = { inReplyTo, threadId };
+  // composeOnPrepared, if any, is set by openComposeToStageDraft() just
+  // before it calls openCompose() — this is a visual cue only (for
+  // screen readers, since the icon itself is an unchanged checkmark in
+  // both modes); sendComposeMessage() is what actually enforces "never
+  // send while staging" regardless of which UI element triggered it (see
+  // that function and composeOnPrepared's own doc comment).
+  addressSendBtn.setAttribute('aria-label', composeOnPrepared ? 'Done' : 'Send');
   composeView.style.display = 'flex';
   nav.style.display = 'none';
   // Always starts collapsed, regardless of mode — even though reply/
@@ -174,6 +197,25 @@ export function openCompose({
 export function closeCompose(): void {
   composeView.style.display = 'none';
   nav.style.display = '';
+  // Unconditional, regardless of how compose is closing (Done, Discard,
+  // a successful send) — so a later plain "new email" compose never
+  // accidentally carries a stale staging callback.
+  composeOnPrepared = null;
+}
+
+// Opens compose fully prepared and editable, like a reply, but staged:
+// nothing sends from here. Used by an AI feed card reviewing/editing its
+// drafted reply before the card as a whole is confirmed — see
+// web/src/ai-feed/card.ts. `to` is always non-empty (it's the original
+// sender), so openCompose's own setAddressLocked(Boolean(to)) already
+// locks the recipient exactly like a real reply does — there's nothing
+// extra to do here to stop an edited/wrong recipient from being used.
+export function openComposeToStageDraft(
+  draft: { to: string; subject: string; body: string; inReplyTo?: string; threadId?: string },
+  onPrepared: (draft: { subject: string; text: string }) => void,
+): void {
+  composeOnPrepared = onPrepared;
+  openCompose({ mode: 'reply', ...draft });
 }
 
 // Comma-separated plain addresses only, matching the app's existing
@@ -192,6 +234,16 @@ export async function sendComposeMessage(): Promise<void> {
   const to = parseAddressList(composeTo.value);
   if (to.length === 0) {
     composeError.textContent = 'Add at least one recipient.';
+    return;
+  }
+  // Staging mode: hand the (possibly edited) draft back to the card that
+  // opened compose instead of sending anything — see composeOnPrepared's
+  // own doc comment. This check runs before anything else below, so it's
+  // physically impossible to send from here while staging, regardless of
+  // which UI element (the swipe-to-send bar included) triggered this call.
+  if (composeOnPrepared) {
+    composeOnPrepared({ subject: composeSubject.value, text: composeBody.value });
+    closeCompose();
     return;
   }
   composeSending = true;

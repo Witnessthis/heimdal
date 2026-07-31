@@ -1,29 +1,202 @@
-/* AI Feed — placeholder panel for now (no curation logic yet; see
-   showView() in settings.ts for the view-switching wiring). Same
-   full-screen-panel treatment as the other two views (#feed,
-   #settings-view), sharing the fixed bottom-nav clearance. */
+/* AI Feed — see web/src/ai-feed/*.ts for the card-building/staging logic.
+   Same full-screen-panel treatment as #feed/#settings-view, sharing the
+   fixed bottom-nav clearance, but a plain scrollable list rather than
+   #feed's flex-centered placeholder — cards need to stack top-down like
+   #feed's cards do. */
 main#ai-feed-view {
   position: absolute;
   inset: 0;
   overflow-y: auto;
+  scrollbar-width: none;
+  padding: calc(16px + env(safe-area-inset-top, 0px)) 0 calc(72px + env(safe-area-inset-bottom, 0px));
+}
+main#ai-feed-view::-webkit-scrollbar {
+  display: none;
+}
+
+/* Loading / empty / error text — the sole content shown before any cards
+   exist, or again once the last one leaves. Centers itself rather than
+   the whole view centering around it (see main#ai-feed-view above), the
+   same relationship .feed-status has with #feed. */
+.ai-feed-status {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: calc(16px + env(safe-area-inset-top, 0px)) 20px calc(72px + env(safe-area-inset-bottom, 0px));
-}
-.ai-feed-placeholder {
   text-align: center;
-  max-width: 320px;
-}
-.ai-feed-placeholder-title {
-  font-size: 1.1rem;
-  font-weight: 700;
-  color: var(--fg);
-  margin: 0 0 8px;
-}
-.ai-feed-placeholder-desc {
-  font-size: 0.9rem;
+  padding: 48px 24px;
   color: var(--fg-dim);
+}
+
+/* Deliberately NOT reusing .card-wrap's content-visibility:auto trick
+   (see feed.css) — that exists to skip rendering cost across hundreds of
+   inbox cards, and its contain-intrinsic-size stand-in assumes a plain
+   collapsed inbox card's height. AI feed cards carry an extra footer even
+   collapsed, so that estimate would be wrong here, and the list is short
+   by design anyway (the whole point of triage) — not worth the mismatch
+   for a perf win that doesn't matter at this scale. */
+.ai-feed-card-wrap {
+  margin: 0 12px 10px;
+}
+
+.ai-feed-footer {
+  border-top: 1px solid var(--border-soft);
+  margin-top: 10px;
+  padding-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ai-feed-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+/* --accent, not --fg-dim — matches .ai-feed-row-label's own reasoning:
+   this is footer/action chrome (a prompt, a status line), not email
+   content, and needs to read as visibly different from .card-body's
+   plain --fg-dim paragraph text, not just structurally different. The
+   suspicious banner still overrides this to --danger below. */
+.ai-feed-row-text {
+  font-size: 0.85rem;
+  color: var(--accent);
+  cursor: default;
+}
+
+/* A visibly boxed, indented block — deliberately NOT styled like the
+   plain email body above it (.card-body has no border/background of its
+   own). This is outgoing content you're about to send, not anything you
+   received; it needs to read as a distinct, separate thing at a glance,
+   not just another paragraph of text on the card.
+
+   A real <button>, not a div — the whole box is the tap target that
+   opens draft-actions-menu.ts's Edit/Remove sheet (replacing two small
+   side-by-side icon buttons that were easy to miss/mis-tap), so it needs
+   a full button reset: block width, left-aligned text, no default button
+   chrome beyond what's declared here. */
+.ai-feed-draft-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.ai-feed-draft-preview:hover,
+.ai-feed-draft-preview:focus-visible {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+.ai-feed-row-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--accent);
+}
+/* Same label used standalone above the original email's own body (see
+   buildAiFeedCard) — that placement isn't inside a flex column like the
+   draft-preview box is, so it needs its own block display/spacing rather
+   than relying on a flex gap. */
+.card-content > .ai-feed-row-label {
+  display: block;
+  margin: 8px 0 4px;
+}
+.ai-feed-draft-subject {
   margin: 0;
-  line-height: 1.5;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--fg);
+}
+.ai-feed-draft-body {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--fg-dim);
+  white-space: pre-wrap;
+}
+
+.ai-feed-row-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+/* Idle border already tinted --accent (not the neutral --border-soft
+   most other buttons in the app use) — same reasoning as
+   .ai-feed-row-text above: this needs to read as AI-feed action chrome
+   at a glance, not blend into the plain content around it. .active below
+   is the stronger, "this is what's committed" version of the same color. */
+.ai-feed-choice {
+  padding: 5px 10px;
+  border-radius: 5px;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border-soft));
+  background: transparent;
+  color: var(--accent);
+  font-size: 0.8rem;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ai-feed-choice:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.ai-feed-choice.active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.ai-feed-row-dismiss {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.ai-feed-row-dismiss:hover {
+  background: var(--danger);
+  color: var(--bg);
+}
+
+/* Suspicious is informational only — no controls, just the reason and
+   its own dismiss — so it gets a full-width banner treatment instead of
+   the label+controls row layout every other row uses. */
+.ai-feed-row-suspicious {
+  align-items: flex-start;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+}
+.ai-feed-row-suspicious .ai-feed-row-text {
+  color: var(--danger);
+}
+
+.ai-feed-error {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--danger);
+  min-height: 1em;
+}
+
+.ai-feed-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 2px;
 }

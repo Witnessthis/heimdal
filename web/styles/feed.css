@@ -371,6 +371,7 @@
   background: color-mix(in srgb, black 55%, transparent);
 }
 .modal-panel {
+  position: relative;
   width: 100%;
   max-width: 360px;
   padding: 20px;
@@ -383,6 +384,31 @@
   margin: 0 0 8px;
   font-size: 1.05rem;
   font-weight: 700;
+}
+/* An explicit close affordance, top-right — for a modal like
+   draft-actions-menu.ts's that has no dedicated Cancel button (just its
+   two real actions), backdrop-tap-to-close alone isn't telegraphed
+   clearly enough on its own. */
+.modal-close-btn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 5px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 1.3rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.modal-close-btn:hover {
+  background: var(--danger);
+  color: var(--bg);
 }
 .modal-desc {
   margin: 0;

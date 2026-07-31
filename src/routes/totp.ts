@@ -21,7 +21,7 @@ export const totpRoutes: FastifyPluginAsync<Options> = async (fastify, { dataDir
   // onRequest, not preHandler — runs before Fastify's schema validation, so
   // an unauthenticated request gets a 401 instead of a 400 that leaks the
   // body schema.
-  fastify.addHook('onRequest', requireAuth);
+  fastify.addHook('onRequest', requireAuth(dataDir));
 
   fastify.get('/status', async (_request, reply) => {
     const credentials = await loadCredentials(dataDir);

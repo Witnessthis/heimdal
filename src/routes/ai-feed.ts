@@ -87,7 +87,7 @@ export async function executeConfirm(
 }
 
 export const aiFeedRoutes: FastifyPluginAsync<Options> = async (fastify, { dataDir }) => {
-  fastify.addHook('onRequest', requireAuth);
+  fastify.addHook('onRequest', requireAuth(dataDir));
   fastify.addHook('preHandler', async (_request, reply) => {
     if (!mailService.isConfigured()) {
       return reply.code(409).send({ error: 'No mail provider configured' });

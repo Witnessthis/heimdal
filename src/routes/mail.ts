@@ -29,11 +29,11 @@ const addressSchema = {
   },
 };
 
-export const mailRoutes: FastifyPluginAsync<Options> = async (fastify) => {
+export const mailRoutes: FastifyPluginAsync<Options> = async (fastify, { dataDir }) => {
   // onRequest, not preHandler — runs before Fastify's schema validation, so
   // an unauthenticated request gets a 401 instead of a 400 that leaks the
   // body schema.
-  fastify.addHook('onRequest', requireAuth);
+  fastify.addHook('onRequest', requireAuth(dataDir));
   fastify.addHook('preHandler', async (_request, reply) => {
     if (!mailService.isConfigured()) {
       return reply.code(409).send({ error: 'No mail provider configured' });

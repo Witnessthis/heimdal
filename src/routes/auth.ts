@@ -40,7 +40,7 @@ export const authRoutes: FastifyPluginAsync<Options> = async (fastify, { dataDir
         return reply.send({ totpRequired: true, pendingToken });
       }
 
-      const token = createSession();
+      const token = await createSession(dataDir);
       return reply.setCookie(SESSION_COOKIE, token, sessionCookieOpts).send({ ok: true });
     },
   );
@@ -76,20 +76,20 @@ export const authRoutes: FastifyPluginAsync<Options> = async (fastify, { dataDir
       if (!valid) return reply.code(401).send({ error: 'Invalid code' });
 
       consumePendingTotpToken(pendingToken);
-      const token = createSession();
+      const token = await createSession(dataDir);
       return reply.setCookie(SESSION_COOKIE, token, sessionCookieOpts).send({ ok: true });
     },
   );
 
   fastify.post('/logout', async (request, reply) => {
     const token = request.cookies[SESSION_COOKIE];
-    if (token) destroySession(token);
+    if (token) await destroySession(dataDir, token);
     return reply.clearCookie(SESSION_COOKIE, { path: '/' }).send({ ok: true });
   });
 
   fastify.get('/me', async (request, reply) => {
     const token = request.cookies[SESSION_COOKIE];
-    if (!token || !validateSession(token)) {
+    if (!token || !(await validateSession(dataDir, token))) {
       return reply.code(401).send({ error: 'Unauthorized' });
     }
     // See require-auth.ts — keeps the browser's cookie in step with the

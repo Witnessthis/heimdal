@@ -1,11 +1,9 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto';
+import { mkdir } from 'node:fs/promises';
+import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 
 let setupToken: string | null = null;
-
-interface Session {
-  expiresAt: number;
-}
-const sessions = new Map<string, Session>();
 
 // 30 days, sliding — refreshed on every validated request (see
 // validateSession and require-auth.ts), so an actively-used session
@@ -39,25 +37,68 @@ export function consumeSetupToken(token: string): boolean {
   return match;
 }
 
-export function createSession(): string {
+// Persisted (node:sqlite, same convention as sender-preferences.ts/
+// ai-feed.ts — no native binding to cross-compile for the Raspberry Pi
+// deploy target) rather than an in-memory Map. The dev server's tsx watch
+// does a full process restart on every backend file change; an in-memory
+// store would wipe every logged-in session on each one, forcing a fresh
+// login after every edit. Only the long-lived login session gets this
+// treatment — the setup token above and the pending-TOTP token below are
+// both short-lived, single-use values scoped to one in-progress flow, not
+// worth the same durability.
+const SESSION_FILE_NAME = 'sessions.sqlite';
+
+async function openSessionDb(dataDir: string): Promise<DatabaseSync> {
+  await mkdir(dataDir, { recursive: true });
+  const db = new DatabaseSync(join(dataDir, SESSION_FILE_NAME));
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS sessions (
+      token TEXT PRIMARY KEY,
+      expires_at INTEGER NOT NULL
+    )
+  `);
+  return db;
+}
+
+export async function createSession(dataDir: string): Promise<string> {
   const token = randomBytes(32).toString('hex');
-  sessions.set(token, { expiresAt: Date.now() + SESSION_TTL_MS });
+  const db = await openSessionDb(dataDir);
+  try {
+    db.prepare('INSERT INTO sessions (token, expires_at) VALUES (?, ?)').run(
+      token,
+      Date.now() + SESSION_TTL_MS,
+    );
+  } finally {
+    db.close();
+  }
   return token;
 }
 
-export function validateSession(token: string): boolean {
-  const session = sessions.get(token);
-  if (!session) return false;
-  if (Date.now() >= session.expiresAt) {
-    sessions.delete(token);
-    return false;
+export async function validateSession(dataDir: string, token: string): Promise<boolean> {
+  const db = await openSessionDb(dataDir);
+  try {
+    const row = db.prepare('SELECT expires_at FROM sessions WHERE token = ?').get(token) as
+      | { expires_at: number }
+      | undefined;
+    if (!row) return false;
+    if (Date.now() >= row.expires_at) {
+      db.prepare('DELETE FROM sessions WHERE token = ?').run(token);
+      return false;
+    }
+    db.prepare('UPDATE sessions SET expires_at = ? WHERE token = ?').run(Date.now() + SESSION_TTL_MS, token);
+    return true;
+  } finally {
+    db.close();
   }
-  session.expiresAt = Date.now() + SESSION_TTL_MS;
-  return true;
 }
 
-export function destroySession(token: string): void {
-  sessions.delete(token);
+export async function destroySession(dataDir: string, token: string): Promise<void> {
+  const db = await openSessionDb(dataDir);
+  try {
+    db.prepare('DELETE FROM sessions WHERE token = ?').run(token);
+  } finally {
+    db.close();
+  }
 }
 
 // Pending TOTP tokens — issued after password verification, consumed on TOTP verification

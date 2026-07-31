@@ -8,7 +8,7 @@ interface Options {
 }
 
 export const settingsRoutes: FastifyPluginAsync<Options> = async (fastify, { dataDir }) => {
-  fastify.addHook('onRequest', requireAuth);
+  fastify.addHook('onRequest', requireAuth(dataDir));
 
   // `available` is included on every read rather than exposed as its own
   // endpoint — it's the same static ISO-639-1 list every time, but this

@@ -12,6 +12,7 @@ import { mailService } from './mail/registry';
 import { aiFeedRoutes } from './routes/ai-feed';
 import { authRoutes } from './routes/auth';
 import { mailRoutes } from './routes/mail';
+import { memoryRoutes } from './routes/memory';
 import { providerSetupRoutes } from './routes/provider-setup';
 import { pushRoutes } from './routes/push';
 import { settingsRoutes } from './routes/settings';
@@ -108,6 +109,7 @@ export async function buildServer(opts: BuildServerOptions): Promise<FastifyInst
   await server.register(settingsRoutes, { prefix: '/api/settings', dataDir });
   await server.register(aiFeedRoutes, { prefix: '/api/ai-feed', dataDir });
   await server.register(pushRoutes, { prefix: '/api/push', dataDir });
+  await server.register(memoryRoutes, { prefix: '/api/memory', dataDir });
 
   // @fastify/static throws on a missing root, so guard: in dev the built
   // frontend doesn't exist and the Vite dev server (with its /api proxy

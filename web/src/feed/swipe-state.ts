@@ -8,9 +8,16 @@
 // pulling in the whole gesture recognizer (render-body, selection, and
 // their transitive imports) merely to reach setOpenSwipeCard.
 export let openSwipeCard: HTMLElement | null = null;
+// Which side is revealed on openSwipeCard — 'trailing' for the original
+// Reply/Forward reveal (swipe left), 'leading' for Reprocess/Delete (swipe
+// right). Needed alongside openSwipeCard itself so closeSwipe/gestures.ts
+// know which direction to reset the transform from and to compute the
+// correct signed offset while a swipe is already open.
+export let openSwipeSide: 'leading' | 'trailing' | null = null;
 
-export function setOpenSwipeCard(card: HTMLElement | null): void {
+export function setOpenSwipeCard(card: HTMLElement | null, side: 'leading' | 'trailing' | null = null): void {
   openSwipeCard = card;
+  openSwipeSide = card ? side : null;
 }
 
 // Snaps a card's swipe-reveal shut. Safe to call on a card that isn't
@@ -24,5 +31,8 @@ export function closeSwipe(card: HTMLElement | null): void {
     front.style.transition = '';
     front.style.transform = '';
   }
-  if (openSwipeCard === card) openSwipeCard = null;
+  if (openSwipeCard === card) {
+    openSwipeCard = null;
+    openSwipeSide = null;
+  }
 }

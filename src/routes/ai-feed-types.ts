@@ -20,7 +20,17 @@ import type { EmailAddress } from '../mail/types';
 // own dependency-light file (only pulling in other already-lean
 // @server/* modules, same as EmailMessage/UnsubscribeAction already do)
 // avoids that entirely.
-export interface ConfirmBody {
+// Carried by both /confirm and /dismiss — independent of whichever button
+// actually closes the card (see chat history: dismiss alone is too
+// ambiguous to learn from, but the user may still want to leave this signal
+// before dismissing). undefined means no opinion at all, and must have zero
+// effect on the memory loop either way — see describeCardAction in
+// ai-feed.ts, the only place this is read.
+export interface CategoryFeedback {
+  categoryPreference?: 'more' | 'less';
+}
+
+export interface ConfirmBody extends CategoryFeedback {
   draftReply?: { subject: string; body: string };
   // 'unsubscribe': attempt the real mechanism, then always record local
   // suppression too (a fallback for senders that ignore it). 'suppress':
@@ -28,6 +38,8 @@ export interface ConfirmBody {
   // again. See executeConfirm in ai-feed.ts.
   unsubscribeAction?: 'unsubscribe' | 'suppress';
 }
+
+export type DismissBody = CategoryFeedback;
 
 export interface AiFeedListItem {
   triage: EmailTriage;

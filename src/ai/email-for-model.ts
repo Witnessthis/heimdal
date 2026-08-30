@@ -9,7 +9,11 @@ import type { EmailForModel } from './types';
 // their raw source would otherwise read as if it were message content,
 // the same concern web/src/feed/preview.ts's htmlToText() was built to
 // guard against on the frontend).
-function extractPlainBody(body: EmailMessage['body']): string | undefined {
+//
+// Exported for src/ai/memory-update.ts's buildMemoryEvent, which needs the
+// same plain-text extraction to give the memory-update model an actual
+// content excerpt to reason about — not just this module's own use.
+export function extractPlainBody(body: EmailMessage['body']): string | undefined {
   if (body.text) return body.text;
   if (body.html) return convert(body.html);
   return undefined;

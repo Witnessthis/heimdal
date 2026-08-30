@@ -65,6 +65,7 @@ export default defineConfig({
         'totp-setup': page('totp-setup'),
         'connect-provider': page('connect-provider'),
         'connect-imap': page('connect-imap'),
+        memory: page('memory'),
       },
     },
   },

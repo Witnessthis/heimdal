@@ -99,6 +99,12 @@
   display: flex;
   justify-content: flex-end;
 }
+/* Revealed by swiping right instead of left (Reprocess/Delete) — same
+   button layout as .card-swipe-actions above, just anchored to the
+   opposite edge. */
+.card-swipe-actions-leading {
+  justify-content: flex-start;
+}
 /* Icon + label stacked, same shape as .nav-tab — the two icons alone
    (mirrored arrows) read as too similar at a glance, so the label
    does the actual disambiguating work. */
@@ -131,6 +137,18 @@
 }
 .card-action-forward {
   background: var(--accent);
+}
+/* --info (each theme's own ANSI blue, otherwise only used for Cc/Bcc) reads
+   as "informational, non-destructive" here too — distinct from Reply's
+   --identity and Forward's --accent. */
+.card-action-reprocess {
+  background: var(--info);
+}
+/* Solid-fill danger, matching Reply/Forward's own convention here (not the
+   outlined .btn-action-danger style used for the AI Feed's suspicious-card
+   delete button, which is a different, non-swipe control). */
+.card-action-delete {
+  background: var(--danger);
 }
 
 /* Grid, not a plain block: once a checkbox column exists (selection

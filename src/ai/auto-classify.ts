@@ -1,5 +1,6 @@
 import { getFeedItems, upsertFeedItem } from '../lib/ai-feed';
 import { getSpokenLanguages } from '../lib/language-settings';
+import { getMemory } from '../lib/memory-notes';
 import { sendFeedNotification } from '../lib/send-push';
 import { isSuppressed } from '../lib/unsubscribe-suppressions';
 import type { MailEvent } from '../mail/provider';
@@ -51,7 +52,8 @@ async function handleNewMessage(
   const unsubscribeEligible = message.unsubscribe.type !== 'none';
 
   const userLanguages = await getSpokenLanguages(dataDir);
-  let triage = await classifyEmail(buildEmailForModel(message), { userLanguages });
+  const memory = await getMemory(dataDir);
+  let triage = await classifyEmail(buildEmailForModel(message), { userLanguages, memory });
   if (!triage) {
     // The model couldn't be coaxed into a valid response within the retry
     // budget — per classifyEmail's own doc comment, expected occasionally

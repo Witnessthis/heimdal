@@ -10,6 +10,7 @@ vi.mock('./triage', () => ({ classifyEmail: vi.fn() }));
 vi.mock('./email-for-model', () => ({ buildEmailForModel: vi.fn() }));
 vi.mock('../lib/ai-feed', () => ({ upsertFeedItem: vi.fn(), getFeedItems: vi.fn() }));
 vi.mock('../lib/language-settings', () => ({ getSpokenLanguages: vi.fn() }));
+vi.mock('../lib/memory-notes', () => ({ getMemory: vi.fn() }));
 vi.mock('../lib/send-push', () => ({ sendFeedNotification: vi.fn() }));
 vi.mock('../lib/unsubscribe-suppressions', () => ({ isSuppressed: vi.fn() }));
 
@@ -18,6 +19,7 @@ const { classifyEmail } = await import('./triage');
 const { buildEmailForModel } = await import('./email-for-model');
 const { upsertFeedItem, getFeedItems } = await import('../lib/ai-feed');
 const { getSpokenLanguages } = await import('../lib/language-settings');
+const { getMemory } = await import('../lib/memory-notes');
 const { sendFeedNotification } = await import('../lib/send-push');
 const { isSuppressed } = await import('../lib/unsubscribe-suppressions');
 const { startAutoClassification } = await import('./auto-classify');
@@ -88,6 +90,7 @@ beforeEach(() => {
     body: message.body.text,
   });
   vi.mocked(getSpokenLanguages).mockResolvedValue([]);
+  vi.mocked(getMemory).mockResolvedValue('');
   vi.mocked(classifyEmail).mockResolvedValue(triage());
   vi.mocked(getFeedItems).mockResolvedValue([triage()]);
   vi.mocked(isSuppressed).mockResolvedValue(false);
@@ -102,6 +105,20 @@ describe('startAutoClassification', () => {
     await vi.waitFor(() =>
       expect(classifyEmail).toHaveBeenCalledWith(expect.anything(), {
         userLanguages: ['English', 'Danish'],
+        memory: '',
+      }),
+    );
+  });
+
+  it('passes the stored personalized-memory notes through to classifyEmail', async () => {
+    vi.mocked(getMemory).mockResolvedValue('- The user dismisses most newsletters.');
+    const listener = captureListener();
+
+    listener({ type: 'newMessage', folderId: 'imap:INBOX', messageId: message.id });
+    await vi.waitFor(() =>
+      expect(classifyEmail).toHaveBeenCalledWith(expect.anything(), {
+        userLanguages: [],
+        memory: '- The user dismisses most newsletters.',
       }),
     );
   });

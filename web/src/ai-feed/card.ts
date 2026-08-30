@@ -3,6 +3,7 @@ import type { AiFeedListItem, ConfirmBody } from '@server/routes/ai-feed-types';
 import { setBadgeCount } from '../badge';
 import { openComposeToStageDraft } from '../compose/compose';
 import { cardData } from '../feed/card-data';
+import { feed } from '../feed/dom';
 import { formatRelativeTime } from '../feed/preview';
 import { clearRenderedBody, ensureFullBodyLoaded, markRead } from '../feed/render-body';
 import { openDeleteEmailConfirm } from './delete-email-confirm';
@@ -46,6 +47,17 @@ aiFeedView.addEventListener('click', (e) => {
 });
 
 function removeCard(card: HTMLElement, emailId: string): void {
+  // Confirmed or dismissed — either way this card has been dealt with, so
+  // the underlying email shouldn't still read as unread back in the inbox.
+  // markRead flips the real IMAP flag (card.dataset.id is already set to
+  // the same emailId — see buildAiFeedCard); it no-ops if this card was
+  // never marked unread to begin with (e.g. already read via expanding it).
+  // The inbox's own card for this message, if currently mounted, doesn't
+  // pick this up on its own (messageUpdated SSE events carry no read-state
+  // detail — see chat history), so its unread styling is cleared directly
+  // here too.
+  markRead(card);
+  feed.querySelector(`[data-id="${CSS.escape(emailId)}"]`)?.classList.remove('unread');
   dropStaged(emailId);
   loadedBodies.delete(emailId);
   card.closest('.ai-feed-card-wrap')?.remove();
@@ -70,7 +82,16 @@ async function handleDismiss(
     b.disabled = true;
   });
   try {
-    const res = await fetch(`/api/ai-feed/${encodeURIComponent(emailId)}/dismiss`, { method: 'POST' });
+    // Carries categoryPreference along even on a plain dismiss — see
+    // describeCardAction in src/routes/ai-feed.ts: that's the one signal
+    // unambiguous enough to feed the memory loop regardless of which button
+    // closes the card. undefined (the common case) means no memory update
+    // fires at all.
+    const res = await fetch(`/api/ai-feed/${encodeURIComponent(emailId)}/dismiss`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ categoryPreference: getStaged(emailId).categoryPreference }),
+    });
     if (!res.ok) throw new Error(`status ${res.status}`);
     removeCard(card, emailId);
   } catch {
@@ -112,6 +133,7 @@ async function handleConfirm(
     const payload: ConfirmBody = {
       draftReply: staged.draftReply ?? undefined,
       unsubscribeAction: staged.unsubscribeAction,
+      categoryPreference: staged.categoryPreference,
     };
     const res = await fetch(`/api/ai-feed/${encodeURIComponent(emailId)}/confirm`, {
       method: 'POST',
@@ -303,6 +325,54 @@ function buildUnsubscribeRow(item: AiFeedListItem, onStagedChange: () => void): 
   return row;
 }
 
+// Shown on every card, unlike buildUnsubscribeRow's conditional rendering —
+// this is the one signal unambiguous enough to feed the personalized-memory
+// loop regardless of which button (Confirm or Dismiss) closes the card (see
+// describeCardAction in src/routes/ai-feed.ts and chat history: a plain
+// dismiss alone is too ambiguous to learn from). A <select>, same reasoning
+// as buildUnsubscribeRow's own: three mutually exclusive choices including a
+// true "say nothing" default, which a dropdown states directly. Left at ''
+// (no opinion) has zero effect on the memory loop either way — this never
+// gates whether Confirm appears (see hasStagedContent below), so leaving it
+// untouched and just tapping Dismiss remains the normal path.
+function buildCategoryPreferenceRow(item: AiFeedListItem, onStagedChange: () => void): HTMLElement {
+  const emailId = item.triage.emailId;
+  const row = document.createElement('div');
+  row.className = 'ai-feed-row';
+
+  const text = document.createElement('span');
+  text.className = 'ai-feed-row-text';
+  text.textContent = 'Keep seeing emails like this?';
+
+  const select = document.createElement('select');
+  select.className = 'ai-feed-select';
+
+  function addOption(value: string, label: string): void {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = label;
+    select.appendChild(option);
+  }
+  addOption('', 'No preference');
+  addOption('more', 'Yes, show more like this');
+  addOption('less', 'No, show less like this');
+
+  select.value = getStaged(emailId).categoryPreference ?? '';
+  select.addEventListener('change', () => {
+    setStaged(emailId, {
+      categoryPreference: select.value === '' ? undefined : (select.value as 'more' | 'less'),
+    });
+    onStagedChange();
+  });
+
+  const selectWrap = document.createElement('span');
+  selectWrap.className = 'ai-feed-select-wrap';
+  selectWrap.appendChild(select);
+
+  row.append(text, selectWrap);
+  return row;
+}
+
 // Pure information, nothing else — no dismiss (there's nothing to "not
 // change" about it) and no Delete button here either; that lives in the
 // card's own action row instead (see renderActions in buildAiFeedCard),
@@ -440,6 +510,8 @@ export function buildAiFeedCard(item: AiFeedListItem): HTMLElement {
   if (triage.suspicious.type === 'yes') {
     footer.appendChild(buildSuspiciousRow(triage.suspicious.reason));
   }
+
+  footer.appendChild(buildCategoryPreferenceRow(item, onStagedChange));
 
   const errorEl = document.createElement('p');
   errorEl.className = 'ai-feed-error';

@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Heimdal — Personalized memory</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Philosopher:wght@700&display=swap" />
+
+  <link rel="manifest" href="manifest.webmanifest" />
+  <meta name="theme-color" content="#1a1a2e" />
+  <script type="module" src="./src/pwa.js"></script>
+
+  <!-- iOS PWA support -->
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="Heimdal" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+
+  <style>
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      background: #1a1a2e;
+      color: #f1f1f1;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    body { display: flex; flex-direction: column; align-items: center; padding: 24px; }
+
+    .top-bar { width: 100%; max-width: 480px; margin-bottom: 8px; }
+    .back-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: #888;
+      text-decoration: none;
+      font-size: 0.875rem;
+      padding: 6px 0;
+    }
+    .back-link:hover { color: #e94560; }
+
+    h1 { font-size: 2rem; margin: 8px 0 4px; color: #e94560; font-family: 'Philosopher', serif; letter-spacing: 0.05em; }
+    .subtitle { color: #aaa; margin: 0 0 24px; max-width: 480px; }
+
+    .content { width: 100%; max-width: 480px; display: flex; flex-direction: column; gap: 14px; }
+
+    textarea {
+      width: 100%;
+      min-height: 320px;
+      padding: 14px;
+      border-radius: 8px;
+      border: 1px solid #333;
+      background: #0d0d1a;
+      color: #f1f1f1;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.9rem;
+      line-height: 1.5;
+      resize: vertical;
+    }
+    textarea:focus { outline: none; border-color: #e94560; }
+    textarea::placeholder { color: #666; }
+
+    .actions { display: flex; align-items: center; gap: 12px; }
+    button[type="submit"] {
+      padding: 12px 20px;
+      border-radius: 6px;
+      border: none;
+      background: #e94560;
+      color: white;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button[type="submit"]:hover { background: #c73a52; }
+    button[type="submit"]:disabled { background: #5a2530; cursor: wait; }
+
+    .status { color: #888; font-size: 0.85rem; min-height: 20px; }
+    .status.error { color: #e94560; }
+  </style>
+</head>
+<body>
+  <div class="top-bar">
+    <a class="back-link" href="/">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="m15 18-6-6 6-6" />
+      </svg>
+      Back to Settings
+    </a>
+  </div>
+
+  <h1>Personalized memory</h1>
+  <p class="subtitle">
+    Notes Heimdal has picked up over time from how you actually confirm or dismiss cards in your Feed —
+    used to inform future triage alongside its own judgment. Edit or clear anything that's wrong; your
+    own wording is kept as-is unless your later actions clearly contradict it.
+  </p>
+
+  <form id="form" class="content">
+    <textarea id="content" placeholder="Nothing learned yet — this fills in automatically as you use the Feed."></textarea>
+    <div class="actions">
+      <button type="submit" id="save-btn">Save</button>
+      <span class="status" id="status"></span>
+    </div>
+  </form>
+
+  <script>
+    (async function () {
+      const meRes = await fetch('/api/me');
+      if (meRes.status === 401) {
+        window.location.replace('/login.html?next=/memory.html');
+        return;
+      }
+      try {
+        const res = await fetch('/api/memory');
+        const data = await res.json();
+        document.getElementById('content').value = data.content ?? '';
+      } catch {
+        document.getElementById('status').textContent = 'Could not load — check your connection and try again.';
+        document.getElementById('status').classList.add('error');
+      }
+    })();
+
+    document.getElementById('form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const statusEl = document.getElementById('status');
+      const saveBtn = document.getElementById('save-btn');
+      statusEl.textContent = '';
+      statusEl.classList.remove('error');
+      saveBtn.disabled = true;
+      saveBtn.textContent = 'Saving…';
+
+      try {
+        const res = await fetch('/api/memory', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: document.getElementById('content').value }),
+        });
+        if (!res.ok) throw new Error(`status ${res.status}`);
+        statusEl.textContent = 'Saved.';
+      } catch {
+        statusEl.textContent = 'Could not save — check your connection and try again.';
+        statusEl.classList.add('error');
+      } finally {
+        saveBtn.disabled = false;
+        saveBtn.textContent = 'Save';
+      }
+    });
+  </script>
+</body>
+</html>

@@ -2,17 +2,18 @@ import { feed } from './dom';
 import { LONG_PRESS_MOVE_TOLERANCE_PX } from './gesture-constants';
 import { clearRenderedBody, ensureFullBodyLoaded, markRead } from './render-body';
 import { selectedIds, toggleSelect } from './selection';
-import { closeSwipe, openSwipeCard, setOpenSwipeCard } from './swipe-state';
+import { closeSwipe, openSwipeCard, openSwipeSide, setOpenSwipeCard } from './swipe-state';
 
 // One consolidated gesture recognizer for #feed, covering three
 // behaviors that all start as "a pointer went down somewhere in the
 // feed": tap (expand/collapse or select), long-press (enter selection
-// mode), and a horizontal swipe on a card (reveal Reply/Forward). The
-// New Email button's reveal is handled separately, by plain native
-// scroll + CSS scroll-snap (see compose/new-email-reveal.ts) — it needs
-// no gesture recognition of its own. Pointer Events unify mouse and
-// touch behind one event model, so this works the same way on both
-// without separate mousedown/touchstart handling.
+// mode), and a horizontal swipe on a card (reveal Reply/Forward on a
+// swipe left, Reprocess/Delete on a swipe right). The New Email button's
+// reveal is handled separately, by plain native scroll + CSS scroll-snap
+// (see compose/new-email-reveal.ts) — it needs no gesture recognition of
+// its own. Pointer Events unify mouse and touch behind one event model,
+// so this works the same way on both without separate mousedown/
+// touchstart handling.
 //
 // Direction is decided ONCE per gesture, the first time movement
 // crosses LONG_PRESS_MOVE_TOLERANCE_PX — horizontal-dominant commits to
@@ -24,6 +25,17 @@ import { closeSwipe, openSwipeCard, setOpenSwipeCard } from './swipe-state';
 const LONG_PRESS_MS = 500;
 const SWIPE_REVEAL_PX = 144; // two 72px action buttons — matches .card-swipe-actions CSS
 const SWIPE_OPEN_THRESHOLD_PX = 40;
+
+// The signed offset .card-front is already sitting at, given whatever
+// (if anything) is currently open on this exact card — 0 when nothing's
+// open on it, -SWIPE_REVEAL_PX for the trailing (Reply/Forward) reveal,
+// +SWIPE_REVEAL_PX for the leading (Reprocess/Delete) one. Shared between
+// pointermove (to keep dragging from wherever it already sits) and
+// pointerup (to compute the real end position from the same baseline).
+function openOffsetFor(card: HTMLElement): number {
+  if (card !== openSwipeCard) return 0;
+  return openSwipeSide === 'leading' ? SWIPE_REVEAL_PX : -SWIPE_REVEAL_PX;
+}
 
 let pressTimer: ReturnType<typeof setTimeout> | null = null;
 let pressStartX = 0;
@@ -91,8 +103,7 @@ feed.addEventListener('pointermove', (e) => {
   if (gestureDirection === 'swipe' && activeCard) {
     e.preventDefault();
     const front = activeCard.querySelector<HTMLElement>('.card-front')!;
-    const openOffset = activeCard === openSwipeCard ? -SWIPE_REVEAL_PX : 0;
-    const offset = Math.min(0, Math.max(-SWIPE_REVEAL_PX, openOffset + dx));
+    const offset = Math.min(SWIPE_REVEAL_PX, Math.max(-SWIPE_REVEAL_PX, openOffsetFor(activeCard) + dx));
     front.style.transition = 'none';
     front.style.transform = `translateX(${offset}px)`;
   }
@@ -104,13 +115,17 @@ feed.addEventListener('pointerup', (e) => {
     const front = activeCard.querySelector<HTMLElement>('.card-front')!;
     front.style.transition = '';
     const dx = e.clientX - pressStartX;
-    const wasOpen = activeCard === openSwipeCard;
-    const finalOffset = (wasOpen ? -SWIPE_REVEAL_PX : 0) + dx;
+    const finalOffset = openOffsetFor(activeCard) + dx;
     if (openSwipeCard && openSwipeCard !== activeCard) closeSwipe(openSwipeCard);
     if (finalOffset < -SWIPE_OPEN_THRESHOLD_PX) {
       activeCard.classList.add('swipe-open');
       front.style.transform = `translateX(${-SWIPE_REVEAL_PX}px)`;
-      setOpenSwipeCard(activeCard);
+      setOpenSwipeCard(activeCard, 'trailing');
+      dragJustSettled = true;
+    } else if (finalOffset > SWIPE_OPEN_THRESHOLD_PX) {
+      activeCard.classList.add('swipe-open');
+      front.style.transform = `translateX(${SWIPE_REVEAL_PX}px)`;
+      setOpenSwipeCard(activeCard, 'leading');
       dragJustSettled = true;
     } else {
       closeSwipe(activeCard);

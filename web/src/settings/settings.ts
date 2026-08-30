@@ -130,6 +130,10 @@ document.getElementById('mail-account-btn')!.addEventListener('click', () => {
   window.location.href = '/connect-provider.html';
 });
 
+document.getElementById('memory-btn')!.addEventListener('click', () => {
+  window.location.href = '/memory.html';
+});
+
 // Builds the theme picker grid once — the list of available themes
 // never changes at runtime, so there's no need to rebuild it every
 // time Settings is shown (unlike loadTotpStatus, which reflects

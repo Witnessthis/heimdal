@@ -138,6 +138,17 @@ export interface ClassifyEmailOptions {
   /** The user's own spoken languages, for the translateDraft pass.
    *  Defaults to English — see resolveReplyLanguage. */
   userLanguages?: string[];
+  /** Free-text notes on how this specific user actually behaves, built up
+   *  over time from their real Feed-card actions (see
+   *  src/ai/memory-update.ts) and editable by them directly (see
+   *  src/routes/memory.ts). Empty/omitted means nothing's been learned yet
+   *  — classification then runs exactly as it did before this existed. */
+  memory?: string;
+}
+
+function buildInstructions(memory: string | undefined): string {
+  if (!memory) return INSTRUCTIONS;
+  return `${INSTRUCTIONS}\n\nWhat you've learned about this specific user from how they've actually acted on past emails:\n${memory}\n\nUse this to inform visibility and draftReply judgments above — but the content-based signals described earlier still take priority whenever they conflict with a learned pattern.`;
 }
 
 /** Classifies one email. Returns null if the model couldn't be coaxed into
@@ -152,12 +163,13 @@ export async function classifyEmail(
   options: ClassifyEmailOptions = {},
 ): Promise<EmailTriage | null> {
   const messages: ModelMessage[] = [{ role: 'user', content: buildPrompt(email) }];
+  const instructions = buildInstructions(options.memory);
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     try {
       const result = await generateText({
         model: getModel(),
-        instructions: INSTRUCTIONS,
+        instructions,
         messages,
         output: Output.object({ schema: modelDecisionSchema }),
       });

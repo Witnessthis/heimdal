@@ -1,4 +1,5 @@
 import type { FastifyPluginAsync } from 'fastify';
+import { reprocessMessage } from '../ai/reprocess';
 import { requireAuth } from '../lib/require-auth';
 import { performOneClickUnsubscribe } from '../mail/perform-unsubscribe';
 import { InvalidRequestError } from '../mail/provider';
@@ -158,6 +159,18 @@ export const mailRoutes: FastifyPluginAsync<Options> = async (fastify, { dataDir
 
   fastify.post<{ Params: { id: string } }>('/messages/:id/delete', async (request, reply) => {
     await mailService.getProvider().deleteMessage(request.params.id);
+    return reply.send({ ok: true });
+  });
+
+  // Fire-and-forget, same reasoning as everywhere else this pattern is
+  // already used in this codebase: classifyEmail is an LLM round-trip, and
+  // this request must return immediately rather than hold the swipe button
+  // (and the HTTP connection) open for it. See reprocessMessage's own doc
+  // comment for what this actually does.
+  fastify.post<{ Params: { id: string } }>('/messages/:id/reprocess', async (request, reply) => {
+    void reprocessMessage(dataDir, request.params.id).catch((err) =>
+      console.error(`Reprocess failed for ${request.params.id}:`, err),
+    );
     return reply.send({ ok: true });
   });
 

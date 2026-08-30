@@ -57,7 +57,7 @@ describe('no mail provider configured', () => {
   it.each([
     { method: 'GET' as const, url: '/api/ai-feed', payload: undefined },
     { method: 'POST' as const, url: '/api/ai-feed/imap:INBOX:1/confirm', payload: {} },
-    { method: 'POST' as const, url: '/api/ai-feed/imap:INBOX:1/dismiss', payload: undefined },
+    { method: 'POST' as const, url: '/api/ai-feed/imap:INBOX:1/dismiss', payload: {} },
   ])('returns 409 for $method $url when no provider is set up', async ({ method, url, payload }) => {
     const res = await app.inject({ method, url, payload, cookies: { session } });
     expect(res.statusCode).toBe(409);

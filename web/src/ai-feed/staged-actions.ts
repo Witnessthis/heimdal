@@ -20,6 +20,12 @@ export interface StagedActions {
   // (a fallback for senders that ignore it). 'suppress': skip the real
   // mechanism, just stop this sender being force-shown again.
   unsubscribeAction?: 'unsubscribe' | 'suppress';
+  // The one signal unambiguous enough to feed the personalized-memory loop
+  // regardless of which button (Confirm or Dismiss) closes the card — see
+  // describeCardAction in src/routes/ai-feed.ts. undefined means no opinion
+  // at all, with zero effect either way; a plain dismiss no longer feeds the
+  // memory loop on its own (see chat history — too ambiguous to learn from).
+  categoryPreference?: 'more' | 'less';
 }
 
 const staged = new Map<string, StagedActions>();

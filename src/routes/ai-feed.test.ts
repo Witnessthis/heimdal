@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { EmailTriage } from '../ai/triage';
 import type { EmailMessage, EmailSummary } from '../mail/types';
 
+vi.mock('../ai/memory-update', () => ({ buildMemoryEvent: vi.fn(), scheduleMemoryUpdate: vi.fn() }));
 vi.mock('../lib/ai-feed', () => ({ getFeedItems: vi.fn(), removeFeedItem: vi.fn() }));
 vi.mock('../lib/unsubscribe-suppressions', () => ({ isSuppressed: vi.fn(), recordSuppression: vi.fn() }));
 vi.mock('../mail/perform-unsubscribe', () => ({ performOneClickUnsubscribe: vi.fn() }));
@@ -9,11 +10,14 @@ vi.mock('../mail/registry', () => ({
   mailService: { getProvider: vi.fn(), isConfigured: vi.fn() },
 }));
 
+const { buildMemoryEvent, scheduleMemoryUpdate } = await import('../ai/memory-update');
 const { getFeedItems, removeFeedItem } = await import('../lib/ai-feed');
 const { isSuppressed, recordSuppression } = await import('../lib/unsubscribe-suppressions');
 const { performOneClickUnsubscribe } = await import('../mail/perform-unsubscribe');
 const { mailService } = await import('../mail/registry');
-const { buildFeedList, executeConfirm } = await import('./ai-feed');
+const { buildFeedList, executeConfirm, describeCardAction, logCardActionForMemory } = await import(
+  './ai-feed'
+);
 
 const DATA_DIR = '/data';
 
@@ -79,6 +83,8 @@ beforeEach(() => {
     getMessageSummaries: getMessageSummariesMock,
     send: sendMock,
   } as unknown as ReturnType<typeof mailService.getProvider>);
+  vi.mocked(buildMemoryEvent).mockReturnValue('event description');
+  vi.mocked(scheduleMemoryUpdate).mockResolvedValue(undefined);
 });
 
 describe('executeConfirm', () => {
@@ -255,5 +261,88 @@ describe('buildFeedList', () => {
     vi.mocked(getFeedItems).mockResolvedValue([]);
     expect(await buildFeedList(DATA_DIR)).toEqual([]);
     expect(getMessageSummariesMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('describeCardAction', () => {
+  describe('confirmed', () => {
+    it('describes nothing staged', () => {
+      expect(describeCardAction({}, true)).toBe('confirmed with nothing staged');
+    });
+
+    it('describes a sent draft reply', () => {
+      expect(describeCardAction({ draftReply: { subject: 'Re: Hi', body: 'ok' } }, true)).toBe(
+        'confirmed — sent the drafted reply',
+      );
+    });
+
+    it('describes an unsubscribe-and-suppress choice', () => {
+      expect(describeCardAction({ unsubscribeAction: 'unsubscribe' }, true)).toBe(
+        "confirmed — chose 'Unsubscribe & suppress' for this sender",
+      );
+    });
+
+    it('describes a suppress-only choice', () => {
+      expect(describeCardAction({ unsubscribeAction: 'suppress' }, true)).toBe(
+        "confirmed — chose 'Suppress only' for this sender",
+      );
+    });
+
+    it('combines a draft reply and an unsubscribe choice made in the same confirm', () => {
+      expect(
+        describeCardAction(
+          {
+            draftReply: { subject: 'Re: Hi', body: 'ok' },
+            unsubscribeAction: 'suppress',
+          },
+          true,
+        ),
+      ).toBe("confirmed — sent the drafted reply; chose 'Suppress only' for this sender");
+    });
+
+    it('still reports a category preference alongside other staged actions', () => {
+      expect(describeCardAction({ unsubscribeAction: 'suppress', categoryPreference: 'less' }, true)).toBe(
+        "confirmed — chose 'Suppress only' for this sender; explicitly said they want to see fewer emails like this in the Feed — a deliberate, unambiguous signal",
+      );
+    });
+  });
+
+  describe('dismissed', () => {
+    it('is null for a plain dismiss with no category preference — too ambiguous to learn from', () => {
+      expect(describeCardAction({}, false)).toBeNull();
+    });
+
+    it('describes a "show more" preference set before dismissing', () => {
+      expect(describeCardAction({ categoryPreference: 'more' }, false)).toBe(
+        'dismissed — explicitly said they want to keep seeing emails like this in the Feed — a deliberate, unambiguous signal',
+      );
+    });
+
+    it('describes a "show less" preference set before dismissing', () => {
+      expect(describeCardAction({ categoryPreference: 'less' }, false)).toBe(
+        'dismissed — explicitly said they want to see fewer emails like this in the Feed — a deliberate, unambiguous signal',
+      );
+    });
+  });
+});
+
+describe('logCardActionForMemory', () => {
+  it('folds the action into the memory file using the full current message — body included, not just the summary', async () => {
+    getMessageMock.mockResolvedValue(message());
+
+    await logCardActionForMemory(DATA_DIR, triage(), 'dismissed without acting on it');
+
+    expect(getMessageMock).toHaveBeenCalledWith('imap:INBOX:1');
+    expect(buildMemoryEvent).toHaveBeenCalledWith(message(), triage(), 'dismissed without acting on it');
+    expect(scheduleMemoryUpdate).toHaveBeenCalledWith(DATA_DIR, 'event description');
+  });
+
+  it('propagates (for its fire-and-forget caller to swallow) when the message no longer exists', async () => {
+    getMessageMock.mockRejectedValue(new Error('not found'));
+
+    await expect(
+      logCardActionForMemory(DATA_DIR, triage(), 'dismissed without acting on it'),
+    ).rejects.toThrow('not found');
+    expect(scheduleMemoryUpdate).not.toHaveBeenCalled();
   });
 });

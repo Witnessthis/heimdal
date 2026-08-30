@@ -100,4 +100,60 @@ describe('ImapProvider against GreenMail', () => {
     expect(message.from.address).toBe(USER);
     expect(message.subject).toBe(subject);
   });
+
+  it('batches summaries for multiple specific ids in one call, skipping any that no longer exist', async () => {
+    const subjectA = `Heimdal batch A ${Date.now()}`;
+    const subjectB = `Heimdal batch B ${Date.now()}`;
+    await provider.send({ to: [{ address: USER }], subject: subjectA, body: { text: 'a' } });
+    await provider.send({ to: [{ address: USER }], subject: subjectB, body: { text: 'b' } });
+
+    const inbox = (await provider.listFolders()).find((f) => f.kind === 'inbox');
+    expect(inbox).toBeDefined();
+
+    const [msgA, msgB] = await retry(async () => {
+      const page = await provider.listMessages({ folderId: inbox!.id, pageSize: 25 });
+      const a = page.items.find((m) => m.subject === subjectA);
+      const b = page.items.find((m) => m.subject === subjectB);
+      if (!a || !b) throw new Error('messages not delivered yet');
+      return [a, b];
+    });
+
+    // A fabricated id in the same folder that doesn't correspond to any
+    // real message — the whole point of this test is that one missing id
+    // among several real ones doesn't take down the batch or throw.
+    const missingId = `${msgA.id.slice(0, msgA.id.lastIndexOf(':') + 1)}999999`;
+
+    const summaries = await provider.getMessageSummaries([msgA.id, msgB.id, missingId]);
+
+    expect(summaries.size).toBe(2);
+    expect(summaries.get(msgA.id)?.subject).toBe(subjectA);
+    expect(summaries.get(msgB.id)?.subject).toBe(subjectB);
+    expect(summaries.has(missingId)).toBe(false);
+  });
+
+  it('deleteMessage really removes the message, with no Trash folder involved', async () => {
+    const subject = `Heimdal delete-me ${Date.now()}`;
+    await provider.send({ to: [{ address: USER }], subject, body: { text: 'delete me' } });
+
+    const inbox = (await provider.listFolders()).find((f) => f.kind === 'inbox');
+    expect(inbox).toBeDefined();
+    // This account has no Trash folder at all (see beforeAll) — proof that
+    // deleteMessage() genuinely doesn't depend on one existing.
+    expect(inbox?.kind).not.toBe('trash');
+    expect((await provider.listFolders()).some((f) => f.kind === 'trash')).toBe(false);
+
+    const message = await retry(async () => {
+      const page = await provider.listMessages({ folderId: inbox!.id, pageSize: 25 });
+      const found = page.items.find((m) => m.subject === subject);
+      if (!found) throw new Error('message not delivered yet');
+      return found;
+    });
+
+    await provider.deleteMessage(message.id);
+
+    await retry(async () => {
+      const page = await provider.listMessages({ folderId: inbox!.id, pageSize: 25 });
+      if (page.items.some((m) => m.subject === subject)) throw new Error('message still present');
+    });
+  });
 });

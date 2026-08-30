@@ -21,19 +21,26 @@ import type { EmailAddress } from '../mail/types';
 // @server/* modules, same as EmailMessage/UnsubscribeAction already do)
 // avoids that entirely.
 export interface ConfirmBody {
-  senderPreference?: 'show' | 'hide';
   draftReply?: { subject: string; body: string };
-  unsubscribe?: boolean;
+  // 'unsubscribe': attempt the real mechanism, then always record local
+  // suppression too (a fallback for senders that ignore it). 'suppress':
+  // skip the real mechanism, just stop this sender being force-shown
+  // again. See executeConfirm in ai-feed.ts.
+  unsubscribeAction?: 'unsubscribe' | 'suppress';
 }
 
 export interface AiFeedListItem {
   triage: EmailTriage;
   from: EmailAddress;
   subject: string;
-  snippet: string;
   receivedAt: string;
   isRead: boolean;
   messageId?: string;
   threadId: string;
   unsubscribe: UnsubscribeAction;
+  // Computed fresh on every list build (see buildFeedList), not stored —
+  // a real List-Unsubscribe mechanism this sender hasn't already been
+  // handled for. Always current even if suppression state changed after
+  // this item was originally classified (e.g. handled from elsewhere).
+  unsubscribeEligible: boolean;
 }

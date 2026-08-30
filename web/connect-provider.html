@@ -104,13 +104,13 @@
 
   <script>
     (async function () {
-      const [meRes, statusRes] = await Promise.all([fetch('/api/me'), fetch('/api/provider/status')]);
+      // No longer bounces home when a provider is already configured —
+      // this page also serves as the "change mail account" flow from
+      // Settings (see settings.ts), not just first-run onboarding.
+      const meRes = await fetch('/api/me');
       if (meRes.status === 401) {
         window.location.replace('/login.html?next=/connect-provider.html');
-        return;
       }
-      const status = await statusRes.json();
-      if (status.configured) window.location.replace('/');
     })();
 
     document.getElementById('option-imap').addEventListener('click', () => {

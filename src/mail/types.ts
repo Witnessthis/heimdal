@@ -38,6 +38,16 @@ export interface EmailSummary {
    *  callers must fall back to fetching the full EmailMessage in that
    *  case. */
   body?: EmailBody;
+  /** Parsed from the List-Unsubscribe/List-Unsubscribe-Post headers, when
+   *  present — see list-unsubscribe.ts. Available even on a summary-only
+   *  fetch: unlike body content, these are two specific named headers a
+   *  provider can request cheaply without pulling any body/attachment
+   *  content (see ImapProvider.toSummary), so there's no reason to make a
+   *  caller wait for the full message just to know whether one exists.
+   *  Always present rather than optional: "no header" is itself a
+   *  meaningful, common outcome ({ type: 'none' }), not an absence to
+   *  special-case at every call site. */
+  unsubscribe: UnsubscribeAction;
 }
 
 export interface EmailBody {
@@ -52,13 +62,6 @@ export interface EmailMessage extends EmailSummary {
   attachments: Attachment[];
   inReplyTo?: string;
   references: string[];
-  /** Parsed from the List-Unsubscribe/List-Unsubscribe-Post headers, when
-   *  present — see list-unsubscribe.ts. Only available on the full
-   *  fetch (a header, like body/attachments, that the list view's bounded
-   *  preview fetch doesn't pull down), and always present rather than
-   *  optional: "no header" is itself a meaningful, common outcome
-   *  ({ type: 'none' }), not an absence to special-case at every call site. */
-  unsubscribe: UnsubscribeAction;
 }
 
 export interface Thread {

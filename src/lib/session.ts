@@ -37,7 +37,7 @@ export function consumeSetupToken(token: string): boolean {
   return match;
 }
 
-// Persisted (node:sqlite, same convention as sender-preferences.ts/
+// Persisted (node:sqlite, same convention as unsubscribe-suppressions.ts/
 // ai-feed.ts — no native binding to cross-compile for the Raspberry Pi
 // deploy target) rather than an in-memory Map. The dev server's tsx watch
 // does a full process restart on every backend file change; an in-memory

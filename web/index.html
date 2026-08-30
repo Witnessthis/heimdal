@@ -96,7 +96,7 @@
       <div class="setting-row" style="border-bottom: none;">
         <div class="setting-info">
           <span class="setting-name" id="push-action-label">Enable notifications</span>
-          <span class="setting-desc" id="push-desc">Get a phone notification when something worth seeing lands in the AI Feed</span>
+          <span class="setting-desc" id="push-desc">Get a phone notification when something worth seeing lands in your Feed</span>
         </div>
         <button class="btn-action" id="push-btn" type="button">Enable</button>
       </div>
@@ -112,13 +112,20 @@
 
       <p class="section-label" style="margin-top: 32px;">Account</p>
       <div class="setting-row" style="border-bottom: none;">
+        <div class="setting-info">
+          <span class="setting-name" id="mail-account-label">Mail account</span>
+          <span class="setting-desc" id="mail-account-desc">Loading…</span>
+        </div>
+        <button class="btn-action" id="mail-account-btn" type="button">Change</button>
+      </div>
+      <div class="setting-row" style="border-bottom: none;">
         <button class="btn-logout" id="logout-btn" type="button">Log out</button>
       </div>
     </div>
   </main>
 
   <nav class="bottom-nav" id="bottom-nav">
-    <button class="nav-tab active" id="nav-ai-feed" type="button" aria-label="AI Feed">
+    <button class="nav-tab active" id="nav-ai-feed" type="button" aria-label="Feed">
       <!-- Placeholder icon (sparkles) until there's a real Heimdal logo
            mark to use here instead. -->
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -127,7 +134,7 @@
         <path d="M22 4h-4"/>
         <circle cx="4" cy="20" r="2"/>
       </svg>
-      AI Feed
+      Feed
     </button>
     <button class="nav-tab" id="nav-inbox" type="button" aria-label="Inbox">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -249,7 +256,7 @@
     <div class="modal-panel">
       <button type="button" class="modal-close-btn" id="delete-email-close" aria-label="Close">×</button>
       <p class="modal-title">Delete this email?</p>
-      <p class="modal-desc">It moves to Trash, not permanently deleted.</p>
+      <p class="modal-desc">This permanently deletes the email. This cannot be undone.</p>
       <p class="modal-error" id="delete-email-error"></p>
       <div class="modal-actions">
         <button type="button" class="btn-action" id="delete-email-cancel">Cancel</button>

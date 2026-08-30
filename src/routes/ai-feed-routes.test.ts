@@ -65,12 +65,12 @@ describe('no mail provider configured', () => {
 });
 
 describe('POST /:emailId/confirm request validation', () => {
-  it('rejects a senderPreference value outside show/hide', async () => {
+  it('rejects an unsubscribeAction value outside unsubscribe/suppress', async () => {
     const res = await app.inject({
       method: 'POST',
       url: '/api/ai-feed/imap:INBOX:1/confirm',
       cookies: { session },
-      payload: { senderPreference: 'maybe' },
+      payload: { unsubscribeAction: 'maybe' },
     });
     // Schema validation (400) runs before the provider-configured gate
     // (409) — an invalid request should never even reach that check.

@@ -1,7 +1,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-// Plain JSON, not SQLite like sender-preferences.ts/ai-feed.ts — this is a
+// Plain JSON, not SQLite like unsubscribe-suppressions.ts/ai-feed.ts — this is a
 // single global value with nothing to filter or query by, the same shape
 // of problem credentials.ts already solves this way.
 

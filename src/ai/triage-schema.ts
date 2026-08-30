@@ -47,14 +47,6 @@ export const modelDecisionSchema = z.object({
     z.object({ type: z.literal('snooze'), until: isoDateTime }),
     z.object({ type: z.literal('filtered') }),
   ]),
-  // True only for the rare "uncertain about an editorial newsletter"
-  // case — see triage.ts's INSTRUCTIONS. The app checks a per-sender
-  // preference store before ever reaching this field: an already-resolved
-  // sender's mail never triggers a repeat ask, and a "hide" sender's mail
-  // skips the model entirely, so this field only matters the first time a
-  // given sender's editorial content shows up.
-  checkSenderPreference: z.boolean(),
-  unsubscribeCandidate: z.boolean(),
   draftReply: z.discriminatedUnion('type', [
     z.object({ type: z.literal('none') }),
     z.object({ type: z.literal('draft'), subject: z.string(), body: z.string() }),

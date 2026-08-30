@@ -35,6 +35,17 @@ export interface MailProvider {
 
   listFolders(): Promise<Folder[]>;
   listMessages(options: ListMessagesOptions): Promise<Page<EmailSummary>>;
+  /** Summary-only data (same shape/cost as a listMessages() row — no body
+   *  fetch) for a specific, non-contiguous set of message ids, keyed by
+   *  id. An id whose message no longer exists is simply absent from the
+   *  result rather than throwing — callers treat that as "this one's
+   *  gone" (see src/routes/ai-feed.ts's buildFeedList). Exists because
+   *  the AI Feed needs current sender/subject/unsubscribe data for a
+   *  scattered set of already-classified emailIds, not a paged range —
+   *  one batched fetch instead of one full getMessage() round trip per
+   *  item, which used to make the Feed's load time scale linearly with
+   *  how many items were pending (see chat history). */
+  getMessageSummaries(messageIds: string[]): Promise<Map<string, EmailSummary>>;
   getMessage(messageId: string): Promise<EmailMessage>;
   getThread(threadId: string): Promise<Thread>;
 
@@ -42,10 +53,11 @@ export interface MailProvider {
   setFlagged(messageId: string, flagged: boolean): Promise<void>;
   moveToFolder(messageId: string, folderId: string): Promise<void>;
   archive(messageId: string): Promise<void>;
-  /** Soft-delete (moves to Trash/Deleted Items). There is deliberately no
-   *  permanentlyDelete() — keeps the one truly irreversible verb out of the
-   *  interface entirely. */
-  trash(messageId: string): Promise<void>;
+  /** A real, permanent delete (see ImapProvider.deleteMessage's own doc
+   *  comment for why this isn't a move to a Trash folder) — reachable only
+   *  from a user-triggered route (src/routes/mail.ts), the same way
+   *  send() is; the model never calls this directly (see src/ai/apply.ts). */
+  deleteMessage(messageId: string): Promise<void>;
 
   saveDraft(input: DraftInput): Promise<{ draftId: string }>;
   updateDraft(draftId: string, input: DraftInput): Promise<void>;

@@ -5,7 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 /** One row per subscribed browser/device — a user may have more than one
  *  (phone + desktop), so this is a table keyed by endpoint (unique per
  *  subscription), not a single global value. node:sqlite for the same
- *  reasons as sender-preferences.ts/ai-feed.ts: no native binding to
+ *  reasons as unsubscribe-suppressions.ts/ai-feed.ts: no native binding to
  *  cross-compile for the Raspberry Pi deploy target. */
 export interface StoredSubscription {
   endpoint: string;

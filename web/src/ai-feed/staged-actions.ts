@@ -3,10 +3,9 @@
 // carried on the card DOM element itself: loadAiFeed() rebuilds every
 // card from scratch on each tab show, and staging should survive that
 // rebuild (glancing away to Settings and back shouldn't silently discard
-// an in-progress draft edit or a picked sender-preference answer) — a
-// plain module-level Map outlives any individual card element.
+// an in-progress draft edit) — a plain module-level Map outlives any
+// individual card element.
 export interface StagedActions {
-  senderPreference?: 'show' | 'hide';
   // null, not just absent — draftReply is pre-staged with the model's own
   // draft as soon as a card is built (see card.ts's buildAiFeedCard: the
   // draft is complete and ready-to-send by default, editing is optional,
@@ -14,10 +13,13 @@ export interface StagedActions {
   // would just get silently re-staged the next time loadAiFeed() rebuilds
   // this card. null is the durable "user dismissed this" marker for as
   // long as this session's Map entry lives; use dismissDraftReply() to
-  // set it, never clearStagedField() (which is only for the other two
-  // fields, neither of which is ever auto-staged in the first place).
+  // set it — the other fields are never auto-staged in the first place,
+  // so plainly overwriting them with setStaged() is enough.
   draftReply?: { subject: string; body: string } | null;
-  unsubscribe?: boolean;
+  // 'unsubscribe': attempt the real mechanism, then always suppress too
+  // (a fallback for senders that ignore it). 'suppress': skip the real
+  // mechanism, just stop this sender being force-shown again.
+  unsubscribeAction?: 'unsubscribe' | 'suppress';
 }
 
 const staged = new Map<string, StagedActions>();
@@ -28,12 +30,6 @@ export function getStaged(emailId: string): StagedActions {
 
 export function setStaged(emailId: string, patch: Partial<StagedActions>): void {
   staged.set(emailId, { ...getStaged(emailId), ...patch });
-}
-
-export function clearStagedField(emailId: string, field: 'senderPreference' | 'unsubscribe'): void {
-  const current = { ...getStaged(emailId) };
-  delete current[field];
-  staged.set(emailId, current);
 }
 
 export function dismissDraftReply(emailId: string): void {

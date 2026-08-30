@@ -8,7 +8,7 @@ import { clearRenderedBody, ensureFullBodyLoaded, markRead } from '../feed/rende
 import { openDeleteEmailConfirm } from './delete-email-confirm';
 import { aiFeedStatus, aiFeedView } from './dom';
 import { openDraftActionsMenu } from './draft-actions-menu';
-import { clearStagedField, dismissDraftReply, dropStaged, getStaged, setStaged } from './staged-actions';
+import { dismissDraftReply, dropStaged, getStaged, setStaged } from './staged-actions';
 
 // loadAiFeed() rebuilds every card from scratch on each tab show (see
 // list.ts) — a fresh <article> has no entry in cardData's WeakMap (keyed
@@ -96,7 +96,7 @@ async function handleConfirm(
   // does nothing for a 'link' unsubscribe itself (see executeConfirm in
   // src/routes/ai-feed.ts) — this is the one piece of it that only ever
   // happens client-side.
-  if (staged.unsubscribe && item.unsubscribe.type === 'link') {
+  if (staged.unsubscribeAction === 'unsubscribe' && item.unsubscribe.type === 'link') {
     window.open(item.unsubscribe.url, '_blank', 'noopener,noreferrer');
   }
 
@@ -110,9 +110,8 @@ async function handleConfirm(
     // a real draft or absent, so null collapses to omitted here rather
     // than being sent and failing schema validation.
     const payload: ConfirmBody = {
-      senderPreference: staged.senderPreference,
       draftReply: staged.draftReply ?? undefined,
-      unsubscribe: staged.unsubscribe,
+      unsubscribeAction: staged.unsubscribeAction,
     };
     const res = await fetch(`/api/ai-feed/${encodeURIComponent(emailId)}/confirm`, {
       method: 'POST',
@@ -127,61 +126,6 @@ async function handleConfirm(
       b.disabled = false;
     });
   }
-}
-
-function buildDismissButton(onDismiss: () => void): HTMLButtonElement {
-  const btn = document.createElement('button');
-  btn.type = 'button';
-  btn.className = 'ai-feed-row-dismiss';
-  btn.setAttribute('aria-label', 'Dismiss');
-  btn.textContent = '×';
-  btn.addEventListener('click', onDismiss);
-  return btn;
-}
-
-// A checkbox, not the .ai-feed-choice toggle-pill tried briefly instead
-// — a verb-labeled button ("Hide") reads as an immediate action, which
-// is misleading for something that's actually staged until Confirm; a
-// checkbox inherently communicates "a setting to apply later," matching
-// the real behavior. The earlier checkbox attempt's real problem was
-// sizing (20px, too small to comfortably tap), not the metaphor itself
-// — see .ai-feed-checkbox-row in ai-feed.css for the larger version.
-// Still always has a real value (never "untouched"): pre-staged to
-// 'show' the moment this row is built, so Confirm always resolves the
-// sender preference one way or the other even if the user never taps
-// it — closes the old gap where an unanswered question left the sender
-// stuck in 'pending' forever with no way to revisit it (see chat
-// history). Only if undefined: loadAiFeed() rebuilds every card from
-// scratch on each tab visit, so a choice already made on an earlier
-// build of this same card must not get silently reset back to the
-// default.
-function buildSenderPreferenceRow(item: AiFeedListItem, onStagedChange: () => void): HTMLElement {
-  const emailId = item.triage.emailId;
-  if (getStaged(emailId).senderPreference === undefined) {
-    setStaged(emailId, { senderPreference: 'show' });
-  }
-
-  // A <label>, not a <div> — same as every other row in this footer,
-  // .ai-feed-row's own justify-content: space-between already puts the
-  // checkbox on the right for free, and wrapping the whole row (not
-  // just the checkbox itself) keeps the tap target large on mobile.
-  const row = document.createElement('label');
-  row.className = 'ai-feed-row ai-feed-checkbox-row';
-
-  const text = document.createElement('span');
-  text.className = 'ai-feed-row-text';
-  text.textContent = 'Hide emails from this sender?';
-
-  const checkbox = document.createElement('input');
-  checkbox.type = 'checkbox';
-  checkbox.checked = getStaged(emailId).senderPreference === 'hide';
-  checkbox.addEventListener('change', () => {
-    setStaged(emailId, { senderPreference: checkbox.checked ? 'hide' : 'show' });
-    onStagedChange();
-  });
-
-  row.append(text, checkbox);
-  return row;
 }
 
 // One row, in one of two states, for every card — never absent. A card
@@ -307,6 +251,16 @@ function buildNoReplyRow(
   return row;
 }
 
+// Triggered purely by a real List-Unsubscribe mechanism this sender
+// hasn't already been handled for (item.unsubscribeEligible) — not by any
+// AI judgment about the content, see chat history. A <select>, not a set
+// of buttons — the three choices (do nothing / unsubscribe & suppress /
+// suppress only) are mutually exclusive, and a dropdown says that
+// directly instead of relying on side-by-side buttons' active/idle
+// styling to imply it. "Unsubscribe & suppress" is withheld for a
+// suspicious (phishing-flagged) email: never fire a real mailto/one-click
+// request at attacker-controlled content — "Suppress only" (never
+// touches the sender) is always available instead.
 function buildUnsubscribeRow(item: AiFeedListItem, onStagedChange: () => void): HTMLElement {
   const emailId = item.triage.emailId;
   const row = document.createElement('div');
@@ -314,36 +268,38 @@ function buildUnsubscribeRow(item: AiFeedListItem, onStagedChange: () => void): 
 
   const text = document.createElement('span');
   text.className = 'ai-feed-row-text';
-  text.textContent = 'Looks promotional';
+  text.textContent = 'Suppress option';
 
-  const controls = document.createElement('div');
-  controls.className = 'ai-feed-row-controls';
+  const select = document.createElement('select');
+  select.className = 'ai-feed-select';
 
-  const toggle = document.createElement('button');
-  toggle.type = 'button';
-  toggle.className = 'ai-feed-choice';
-  function renderState(): void {
-    const staged = Boolean(getStaged(emailId).unsubscribe);
-    toggle.textContent = staged ? 'Will unsubscribe ✓' : 'Unsubscribe';
-    toggle.classList.toggle('active', staged);
+  function addOption(value: string, label: string): void {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = label;
+    select.appendChild(option);
   }
-  renderState();
-  toggle.addEventListener('click', () => {
-    setStaged(emailId, { unsubscribe: !getStaged(emailId).unsubscribe });
-    renderState();
+  addOption('', 'No action');
+  if (item.triage.suspicious.type !== 'yes') addOption('unsubscribe', 'Unsubscribe & suppress');
+  addOption('suppress', 'Suppress only');
+
+  select.value = getStaged(emailId).unsubscribeAction ?? '';
+  select.addEventListener('change', () => {
+    setStaged(emailId, {
+      unsubscribeAction: select.value === '' ? undefined : (select.value as 'unsubscribe' | 'suppress'),
+    });
     onStagedChange();
   });
 
-  controls.append(
-    toggle,
-    buildDismissButton(() => {
-      clearStagedField(emailId, 'unsubscribe');
-      row.remove();
-      onStagedChange();
-    }),
-  );
+  // The native dropdown arrow is browser/OS chrome — appearance: none
+  // strips it so the CSS-drawn chevron below (.ai-feed-select-wrap::after,
+  // colored via the same --accent the select's own border/text use) can
+  // take its place instead of a fixed black arrow that ignores theming.
+  const selectWrap = document.createElement('span');
+  selectWrap.className = 'ai-feed-select-wrap';
+  selectWrap.appendChild(select);
 
-  row.append(text, controls);
+  row.append(text, selectWrap);
   return row;
 }
 
@@ -417,16 +373,15 @@ export function buildAiFeedCard(item: AiFeedListItem): HTMLElement {
   subject.className = 'card-subject';
   subject.textContent = item.subject || '(no subject)';
 
-  // Starts collapsed (unlike an earlier version of this card) — shows
-  // the same snippet the list response already carries, faded out via
-  // .card-body-wrap's existing ::after (the same cue inbox cards use),
-  // plus an explicit chevron below it: the fade alone isn't a strong
-  // enough signal on its own that there's more to read, particularly on
-  // a card type someone hasn't necessarily learned the conventions of
-  // yet the way they have for the inbox.
+  // Starts collapsed, left empty deliberately — the list response no
+  // longer carries a snippet (see buildFeedList's own doc comment: a
+  // summary-only fetch, same tradeoff the inbox list already made, for
+  // the same reason). ensureFullBodyLoaded() populates this element once
+  // the card is actually expanded; it still needs to exist here so that
+  // (and the fade/overflow cue below) has something to find via
+  // querySelector, same as the inbox's own card.
   const body = document.createElement('div');
   body.className = 'card-body';
-  body.textContent = item.snippet;
   const bodyWrap = document.createElement('div');
   bodyWrap.className = 'card-body-wrap';
   bodyWrap.appendChild(body);
@@ -479,9 +434,7 @@ export function buildAiFeedCard(item: AiFeedListItem): HTMLElement {
       : { subject: item.subject?.startsWith('Re: ') ? item.subject : `Re: ${item.subject || ''}`, body: '' };
   footer.appendChild(buildReplySlot(item, fallbackDraft, onStagedChange));
 
-  if (triage.checkSenderPreference) footer.appendChild(buildSenderPreferenceRow(item, onStagedChange));
-
-  if (triage.unsubscribeCandidate && item.unsubscribe.type !== 'none') {
+  if (item.unsubscribeEligible) {
     footer.appendChild(buildUnsubscribeRow(item, onStagedChange));
   }
   if (triage.suspicious.type === 'yes') {
@@ -496,10 +449,10 @@ export function buildAiFeedCard(item: AiFeedListItem): HTMLElement {
 
   // Dismiss always works — a card can always be ignored outright. Confirm
   // only appears once there's actually something for it to apply
-  // (senderPreference/unsubscribe/a staged reply): showing it
-  // unconditionally, back when a plain "nothing flagged" card had no
-  // staged content at all, made it functionally identical to Dismiss —
-  // exactly the "what am I confirming?" confusion this replaces.
+  // (unsubscribe/a staged reply): showing it unconditionally, back when a
+  // plain "nothing flagged" card had no staged content at all, made it
+  // functionally identical to Dismiss — exactly the "what am I
+  // confirming?" confusion this replaces.
   function renderActions(): void {
     actions.innerHTML = '';
 
@@ -522,9 +475,7 @@ export function buildAiFeedCard(item: AiFeedListItem): HTMLElement {
     }
 
     const hasStagedContent =
-      getStaged(triage.emailId).senderPreference != null ||
-      getStaged(triage.emailId).draftReply != null ||
-      getStaged(triage.emailId).unsubscribe === true;
+      getStaged(triage.emailId).draftReply != null || getStaged(triage.emailId).unsubscribeAction != null;
 
     const dismissBtn = document.createElement('button');
     dismissBtn.type = 'button';

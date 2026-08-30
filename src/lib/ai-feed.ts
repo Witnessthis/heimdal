@@ -7,8 +7,8 @@ import type { EmailTriage } from '../ai/triage';
 // One row per email currently awaiting a decision; removed once dealt
 // with (see removeFeedItem) rather than accumulating forever. See chat
 // history for the full design: this is deliberately separate from
-// sender-preferences.ts (that's a small, long-lived per-sender table;
-// this is a larger, short-lived per-email one), and from the old
+// unsubscribe-suppressions.ts (that's a small, long-lived per-sender
+// table; this is a larger, short-lived per-email one), and from the old
 // src/ai/apply.ts/ModelDecision scaffolding, which predates this design
 // and hasn't been reconciled with it yet.
 //
@@ -17,8 +17,8 @@ import type { EmailTriage } from '../ai/triage';
 // visibility (show only "feed", plus "snooze" items whose time has come)
 // rather than just look things up by emailId, and real columns let SQL
 // do that filtering directly instead of loading every row into JS first.
-// Built on node:sqlite for the same reasons as sender-preferences.ts: no
-// native binding to cross-compile for the Raspberry Pi deploy target,
+// Built on node:sqlite for the same reasons as unsubscribe-suppressions.ts:
+// no native binding to cross-compile for the Raspberry Pi deploy target,
 // and atomic upserts instead of hand-rolled read-then-write.
 
 const FILE_NAME = 'ai-feed.sqlite';
@@ -36,8 +36,6 @@ async function openDb(dataDir: string): Promise<DatabaseSync> {
       -- silent bug.
       visibility_type TEXT NOT NULL CHECK (visibility_type IN ('feed', 'snooze')),
       visibility_until TEXT,
-      check_sender_preference INTEGER NOT NULL,
-      unsubscribe_candidate INTEGER NOT NULL,
       draft_reply_type TEXT NOT NULL CHECK (draft_reply_type IN ('none', 'draft')),
       draft_reply_subject TEXT,
       draft_reply_body TEXT,
@@ -46,6 +44,20 @@ async function openDb(dataDir: string): Promise<DatabaseSync> {
       created_at TEXT NOT NULL
     )
   `);
+  // One-time migrations for columns that moved out of EmailTriage entirely
+  // (see chat history: unsubscribeCandidate, then checkSenderPreference) —
+  // an already-deployed file still has these NOT NULL columns, which would
+  // fail every insert below once they stop being supplied. Safe to attempt
+  // unconditionally: a fresh DB (CREATE TABLE above never included them)
+  // or an already-migrated one both just throw "no such column", swallowed
+  // here.
+  for (const column of ['unsubscribe_candidate', 'check_sender_preference']) {
+    try {
+      db.exec(`ALTER TABLE ai_feed DROP COLUMN ${column}`);
+    } catch {
+      // Already migrated, or never had the column — nothing to do.
+    }
+  }
   return db;
 }
 
@@ -53,8 +65,6 @@ interface Row {
   email_id: string;
   visibility_type: 'feed' | 'snooze';
   visibility_until: string | null;
-  check_sender_preference: number;
-  unsubscribe_candidate: number;
   draft_reply_type: 'none' | 'draft';
   draft_reply_subject: string | null;
   draft_reply_body: string | null;
@@ -69,8 +79,6 @@ function rowToTriage(row: Row): EmailTriage {
       row.visibility_type === 'snooze'
         ? { type: 'snooze', until: row.visibility_until as string }
         : { type: 'feed' },
-    checkSenderPreference: row.check_sender_preference === 1,
-    unsubscribeCandidate: row.unsubscribe_candidate === 1,
     draftReply:
       row.draft_reply_type === 'draft'
         ? { type: 'draft', subject: row.draft_reply_subject as string, body: row.draft_reply_body as string }
@@ -94,15 +102,13 @@ export async function upsertFeedItem(dataDir: string, triage: EmailTriage): Prom
   try {
     db.prepare(
       `INSERT INTO ai_feed (
-        email_id, visibility_type, visibility_until, check_sender_preference,
-        unsubscribe_candidate, draft_reply_type, draft_reply_subject, draft_reply_body,
+        email_id, visibility_type, visibility_until,
+        draft_reply_type, draft_reply_subject, draft_reply_body,
         suspicious_type, suspicious_reason, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(email_id) DO UPDATE SET
         visibility_type = excluded.visibility_type,
         visibility_until = excluded.visibility_until,
-        check_sender_preference = excluded.check_sender_preference,
-        unsubscribe_candidate = excluded.unsubscribe_candidate,
         draft_reply_type = excluded.draft_reply_type,
         draft_reply_subject = excluded.draft_reply_subject,
         draft_reply_body = excluded.draft_reply_body,
@@ -112,8 +118,6 @@ export async function upsertFeedItem(dataDir: string, triage: EmailTriage): Prom
       triage.emailId,
       triage.visibility.type,
       triage.visibility.type === 'snooze' ? triage.visibility.until : null,
-      triage.checkSenderPreference ? 1 : 0,
-      triage.unsubscribeCandidate ? 1 : 0,
       triage.draftReply.type,
       triage.draftReply.type === 'draft' ? triage.draftReply.subject : null,
       triage.draftReply.type === 'draft' ? triage.draftReply.body : null,

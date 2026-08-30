@@ -169,13 +169,15 @@
 
   <script>
     (async function () {
+      // No longer bounces home when a provider is already configured —
+      // this page also serves as the "change mail account" flow from
+      // Settings (see settings.ts), not just first-run onboarding, and
+      // /api/provider/imap already supports being submitted again to
+      // reconfigure (see src/mail/registry.ts).
       const meRes = await fetch('/api/me');
       if (meRes.status === 401) {
         window.location.replace('/login.html?next=/connect-imap.html');
-        return;
       }
-      const status = await fetch('/api/provider/status').then((r) => r.json());
-      if (status.configured) window.location.replace('/');
     })();
 
     function deriveSmtpHost(host) {

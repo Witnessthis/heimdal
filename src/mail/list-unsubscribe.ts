@@ -1,14 +1,11 @@
 /** RFC 2369 / RFC 8058 List-Unsubscribe parsing — deterministic, no model
- *  involved. Distinct from EmailTriage's unsubscribeCandidate
- *  (src/ai/triage.ts), which is the model's read on whether an email's
- *  *content* looks promotional; this is only about whether the email
- *  supplies a working, standards-based unsubscribe mechanism, and which
- *  kind. A promotional-looking email can have no List-Unsubscribe header
- *  at all (type: 'none'), and a non-promotional one can still carry one —
- *  most mailing-list software adds it unconditionally, regardless of
- *  content. Provider-agnostic on purpose: it only ever takes the raw
- *  header text, so a future Gmail/Outlook provider reuses it exactly as
- *  the IMAP one does, same as buildEmailForModel. */
+ *  involved. This is only about whether the email supplies a working,
+ *  standards-based unsubscribe mechanism, and which kind — the app itself
+ *  treats a working mechanism as the sole trigger for surfacing an
+ *  unsubscribe option (see src/ai/auto-classify.ts), not any judgment
+ *  about the email's content. Provider-agnostic on purpose: it only ever
+ *  takes the raw header text, so a future Gmail/Outlook provider reuses
+ *  it exactly as the IMAP one does, same as buildEmailForModel. */
 export type UnsubscribeAction =
   | { type: 'none' }
   | { type: 'oneClick'; url: string }

@@ -1,15 +1,15 @@
 import { getFeedItems, upsertFeedItem } from '../lib/ai-feed';
 import { getSpokenLanguages } from '../lib/language-settings';
 import { sendFeedNotification } from '../lib/send-push';
-import { getSenderPreference, markSenderPending } from '../lib/sender-preferences';
+import { isSuppressed } from '../lib/unsubscribe-suppressions';
 import type { MailEvent } from '../mail/provider';
 import { mailService } from '../mail/registry';
 import { buildEmailForModel } from './email-for-model';
-import { classifyEmail } from './triage';
+import { classifyEmail, type EmailTriage } from './triage';
 
 /** Wires classifyEmail() into live mail arrival. Subscribes to
  *  mailService's newMessage events and, for each one, runs the full AI
- *  feed pipeline: sender-preference gate -> classify -> persist. Call once
+ *  feed pipeline: suppression gate -> classify -> persist. Call once
  *  at startup (see server.ts, alongside mailService.init()) — the listener
  *  is registered on the mailService singleton itself, not on whatever
  *  provider happens to be connected at the time, so it survives a later
@@ -29,26 +29,48 @@ async function handleNewMessage(
   event: Extract<MailEvent, { type: 'newMessage' }>,
 ): Promise<void> {
   // No lighter-weight single-message fetch exists on MailProvider, so the
-  // sender-preference gate below runs after a full fetch rather than
-  // before it — one extra message body over the wire per hidden sender,
-  // never a batch, so not worth a new provider method for.
+  // suppression gate below runs after a full fetch rather than before it —
+  // one extra message body over the wire per suppressed sender, never a
+  // batch, so not worth a new provider method for.
   const message = await mailService.getProvider().getMessage(event.messageId);
 
-  // A sender the user has already said to hide never reaches the model at
-  // all — see chat history: "Do we want the LLM to process an email where
-  // the user has marked that sender as hide?" -> no.
-  const preference = await getSenderPreference(dataDir, message.from.address);
-  if (preference === 'hide') return;
+  // A sender the user has unsubscribed from or suppressed never reaches
+  // the model at all — see chat history: "if I have chosen to suppress an
+  // email, I don't want it to be processed by the AI ever again either."
+  // A full block, not just "don't force it into the feed."
+  if (await isSuppressed(dataDir, message.from.address)) return;
+
+  // Deterministic, no model involved (see list-unsubscribe.ts) — a real
+  // working unsubscribe mechanism is, on its own, enough to earn a feed
+  // slot regardless of what the AI below makes of the content (this
+  // sender is confirmed not suppressed, or the check above would already
+  // have returned). The AI still runs regardless (see chat history: it
+  // should still evaluate everything else — draft reply, phishing, etc.)
+  // — this only ever widens visibility, never narrows what the AI would
+  // have shown anyway.
+  const unsubscribeEligible = message.unsubscribe.type !== 'none';
 
   const userLanguages = await getSpokenLanguages(dataDir);
-  const triage = await classifyEmail(buildEmailForModel(message), { userLanguages });
-  // The model couldn't be coaxed into a valid response within the retry
-  // budget — per classifyEmail's own doc comment, expected occasionally
-  // with small/local models, not exceptional. This message just gets no
-  // automated decision this round.
+  let triage = await classifyEmail(buildEmailForModel(message), { userLanguages });
   if (!triage) {
-    console.log(`Classification produced no valid response for ${event.messageId}`);
-    return;
+    // The model couldn't be coaxed into a valid response within the retry
+    // budget — per classifyEmail's own doc comment, expected occasionally
+    // with small/local models, not exceptional. Normally this message
+    // just gets no automated decision this round — but an unsubscribe-
+    // eligible email still deserves its feed slot even without a usable
+    // AI read, so it gets a minimal stand-in triage instead of bailing.
+    if (!unsubscribeEligible) {
+      console.log(`Classification produced no valid response for ${event.messageId}`);
+      return;
+    }
+    triage = {
+      emailId: message.id,
+      visibility: { type: 'feed' },
+      draftReply: { type: 'none' },
+      suspicious: { type: 'no' },
+    } satisfies EmailTriage;
+  } else if (unsubscribeEligible && triage.visibility.type !== 'feed') {
+    triage = { ...triage, visibility: { type: 'feed' } };
   }
   // A "filtered" result and a failed classification above look identical
   // from the outside otherwise — nothing in the AI feed, no error logged
@@ -57,15 +79,8 @@ async function handleNewMessage(
   // worth showing." This closes that gap for good, not just for one
   // debugging session.
   console.log(
-    `Classified ${event.messageId}: visibility=${triage.visibility.type}, checkSenderPreference=${triage.checkSenderPreference}, draftReply=${triage.draftReply.type}`,
+    `Classified ${event.messageId}: visibility=${triage.visibility.type}, draftReply=${triage.draftReply.type}`,
   );
-
-  // markSenderPending is a no-op once this sender has any state at all
-  // (pending, show, or hide) — see its own doc comment — so it's always
-  // safe to call here without checking `preference` again first.
-  if (triage.checkSenderPreference) {
-    await markSenderPending(dataDir, message.from.address);
-  }
 
   // upsertFeedItem is itself a no-op for a "filtered" result, so there's
   // no need to branch on visibility here too.

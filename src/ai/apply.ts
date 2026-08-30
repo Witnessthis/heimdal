@@ -9,10 +9,11 @@ export interface ApplyResult {
 /** Turns a ModelDecision into MailProvider calls. This is the only place in
  *  the codebase that decides what a model output is allowed to do — and
  *  because ModelDecision has no send/delete variant, there is nothing here
- *  that could call provider.send() or provider.trash(). Those are reachable
- *  only from user-triggered routes (src/routes/mail.ts): a "quick-send"
- *  request the user issues after reviewing a draft this function created,
- *  or an explicit trash request. The app, not the model, owns those. */
+ *  that could call provider.send() or provider.deleteMessage(). Those are
+ *  reachable only from user-triggered routes (src/routes/mail.ts): a
+ *  "quick-send" request the user issues after reviewing a draft this
+ *  function created, or an explicit delete request. The app, not the
+ *  model, owns those. */
 export async function applyDecision(decision: ModelDecision): Promise<ApplyResult> {
   const provider = mailService.getProvider();
 

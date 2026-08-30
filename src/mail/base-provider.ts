@@ -31,6 +31,7 @@ export abstract class BaseProvider implements MailProvider {
 
   abstract listFolders(): Promise<Folder[]>;
   abstract listMessages(options: ListMessagesOptions): Promise<Page<EmailSummary>>;
+  abstract getMessageSummaries(messageIds: string[]): Promise<Map<string, EmailSummary>>;
   abstract getMessage(messageId: string): Promise<EmailMessage>;
   abstract getThread(threadId: string): Promise<Thread>;
 
@@ -38,7 +39,7 @@ export abstract class BaseProvider implements MailProvider {
   abstract setFlagged(messageId: string, flagged: boolean): Promise<void>;
   abstract moveToFolder(messageId: string, folderId: string): Promise<void>;
   abstract archive(messageId: string): Promise<void>;
-  abstract trash(messageId: string): Promise<void>;
+  abstract deleteMessage(messageId: string): Promise<void>;
 
   abstract saveDraft(input: DraftInput): Promise<{ draftId: string }>;
   abstract updateDraft(draftId: string, input: DraftInput): Promise<void>;

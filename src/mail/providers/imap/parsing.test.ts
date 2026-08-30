@@ -1,11 +1,13 @@
 import type { MessageEnvelopeObject } from 'imapflow';
-import type { Attachment as MailparserAttachment } from 'mailparser';
+import { type Attachment as MailparserAttachment, simpleParser } from 'mailparser';
 import { describe, expect, it } from 'vitest';
 import {
   computeThreadId,
   decodeMessageId,
   encodeMessageId,
+  extractHeaderValue,
   folderKindFromSpecialUse,
+  headerLineValue,
   parseReferencesHeader,
   resolveInlineImages,
 } from './index';
@@ -32,6 +34,41 @@ describe('message id encode/decode', () => {
   });
 });
 
+describe('extractHeaderValue', () => {
+  it('returns undefined for missing headers', () => {
+    expect(extractHeaderValue(undefined, 'List-Unsubscribe')).toBeUndefined();
+  });
+
+  it('returns undefined when the named header is absent', () => {
+    const headers = Buffer.from('Subject: hi\r\n');
+    expect(extractHeaderValue(headers, 'List-Unsubscribe')).toBeUndefined();
+  });
+
+  it('extracts a single-line value, matching case-insensitively', () => {
+    const headers = Buffer.from('list-unsubscribe: <https://example.com/unsub>\r\n');
+    expect(extractHeaderValue(headers, 'List-Unsubscribe')).toBe('<https://example.com/unsub>');
+  });
+
+  it('joins folded continuation lines', () => {
+    const headers = Buffer.from('List-Unsubscribe: <https://example.com/unsub>,\r\n <mailto:a@b.com>\r\n');
+    expect(extractHeaderValue(headers, 'List-Unsubscribe')).toBe(
+      '<https://example.com/unsub>, <mailto:a@b.com>',
+    );
+  });
+
+  it('stops at the next header and does not swallow following fields', () => {
+    const headers = Buffer.from('List-Unsubscribe: <https://example.com/unsub>\r\nSubject: hi\r\n');
+    expect(extractHeaderValue(headers, 'List-Unsubscribe')).toBe('<https://example.com/unsub>');
+  });
+
+  it('extracts a different requested header from the same block without confusing the two', () => {
+    const headers = Buffer.from(
+      'List-Unsubscribe: <https://example.com/unsub>\r\nList-Unsubscribe-Post: List-Unsubscribe=One-Click\r\n',
+    );
+    expect(extractHeaderValue(headers, 'List-Unsubscribe-Post')).toBe('List-Unsubscribe=One-Click');
+  });
+});
+
 describe('parseReferencesHeader', () => {
   it('returns an empty list for missing headers', () => {
     expect(parseReferencesHeader(undefined)).toEqual([]);
@@ -53,6 +90,38 @@ describe('parseReferencesHeader', () => {
   it('stops at the next header and does not swallow following fields', () => {
     const header = Buffer.from('References: <a@x.com>\r\nSubject: <not-a-ref@x.com>\r\n');
     expect(parseReferencesHeader(header)).toEqual(['a@x.com']);
+  });
+});
+
+describe('headerLineValue', () => {
+  // Real simpleParser output, not a hand-built stub — mailparser's
+  // *structured* `headers` Map deliberately reinterprets every "List-*"
+  // header under a single synthetic 'list' key (headers.get('list-
+  // unsubscribe') is always undefined), which is exactly the bug this
+  // guards against: only headerLines still exposes the raw, unprocessed
+  // header text this needs.
+  async function parse(rawHeaders: string) {
+    return simpleParser(`From: a@b.com\r\nTo: c@d.com\r\nSubject: test\r\n${rawHeaders}\r\n\r\nbody\r\n`);
+  }
+
+  it('extracts a List-Unsubscribe header mailparser groups elsewhere in its structured headers', async () => {
+    const parsed = await parse('List-Unsubscribe: <https://example.com/unsubscribe-test>');
+    expect(parsed.headers.get('list-unsubscribe')).toBeUndefined(); // the trap this guards against
+    expect(headerLineValue(parsed.headerLines, 'list-unsubscribe')).toBe(
+      '<https://example.com/unsubscribe-test>',
+    );
+  });
+
+  it('extracts List-Unsubscribe-Post alongside it', async () => {
+    const parsed = await parse(
+      'List-Unsubscribe: <https://example.com/unsubscribe-test>\r\nList-Unsubscribe-Post: List-Unsubscribe=One-Click',
+    );
+    expect(headerLineValue(parsed.headerLines, 'list-unsubscribe-post')).toBe('List-Unsubscribe=One-Click');
+  });
+
+  it('returns undefined when the header is absent', async () => {
+    const parsed = await parse('X-Other: irrelevant');
+    expect(headerLineValue(parsed.headerLines, 'list-unsubscribe')).toBeUndefined();
   });
 });
 

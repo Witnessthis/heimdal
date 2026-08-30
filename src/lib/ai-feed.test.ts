@@ -16,8 +16,6 @@ afterEach(async () => {
 const feedItem = (emailId: string): EmailTriage => ({
   emailId,
   visibility: { type: 'feed' },
-  checkSenderPreference: false,
-  unsubscribeCandidate: false,
   draftReply: { type: 'none' },
   suspicious: { type: 'no' },
 });
@@ -55,16 +53,6 @@ describe('upsertFeedItem / getFeedItem', () => {
     expect(await getFeedItem(dir, 'imap:INBOX:4')).toEqual(item);
   });
 
-  it('round-trips unsubscribeCandidate and checkSenderPreference', async () => {
-    const item: EmailTriage = {
-      ...feedItem('imap:INBOX:5'),
-      unsubscribeCandidate: true,
-      checkSenderPreference: true,
-    };
-    await upsertFeedItem(dir, item);
-    expect(await getFeedItem(dir, 'imap:INBOX:5')).toEqual(item);
-  });
-
   it('never stores a filtered result — a deliberate no-op', async () => {
     const filtered: EmailTriage = { ...feedItem('imap:INBOX:6'), visibility: { type: 'filtered' } };
     await upsertFeedItem(dir, filtered);
@@ -77,7 +65,7 @@ describe('upsertFeedItem / getFeedItem', () => {
 
   it('overwrites an existing item on re-classification rather than duplicating', async () => {
     await upsertFeedItem(dir, feedItem('imap:INBOX:7'));
-    const updated: EmailTriage = { ...feedItem('imap:INBOX:7'), unsubscribeCandidate: true };
+    const updated: EmailTriage = { ...feedItem('imap:INBOX:7'), suspicious: { type: 'yes', reason: 'test' } };
     await upsertFeedItem(dir, updated);
 
     expect(await getFeedItem(dir, 'imap:INBOX:7')).toEqual(updated);

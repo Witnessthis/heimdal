@@ -1,5 +1,5 @@
 import { type FetchMessageObject, ImapFlow, type MessageEnvelopeObject } from 'imapflow';
-import { type Attachment as MailparserAttachment, simpleParser } from 'mailparser';
+import { type HeaderLines, type Attachment as MailparserAttachment, simpleParser } from 'mailparser';
 import type { ImapSecret, ProviderConfig } from '../../../lib/provider-credentials';
 import { BaseProvider } from '../../base-provider';
 import { ReconnectingConnection } from '../../lifecycle';
@@ -41,35 +41,45 @@ function stripAngleBrackets(id: string): string {
   return id.replace(/[<>]/g, '');
 }
 
-/** mailparser lowercases header names and stores each as a plain string,
- *  except when a header appears more than once (string[]) — real senders
- *  never repeat List-Unsubscribe, but this stays defensive rather than
- *  throwing on a malformed message. Any other header shape (address
- *  objects, dates — never the case for these two headers) is ignored. */
-function headerString(headers: Map<string, unknown> | undefined, name: string): string | undefined {
-  const value = headers?.get(name);
-  if (typeof value === 'string') return value;
-  if (Array.isArray(value)) return value.find((v): v is string => typeof v === 'string');
-  return undefined;
+/** mailparser's structured `parsed.headers` Map deliberately does NOT
+ *  expose List-Unsubscribe/List-Unsubscribe-Post as plain strings under
+ *  their own name — it groups every "List-*" header under one synthetic
+ *  'list' key with its own semantic reinterpretation instead (confirmed:
+ *  `headers.get('list-unsubscribe')` is always undefined; the value ends
+ *  up at `headers.get('list').unsubscribe`, already re-parsed into
+ *  mailparser's own shape, not the original header text).
+ *  parseListUnsubscribe needs the exact raw RFC 2369/8058 text, so this
+ *  reads from `parsed.headerLines` instead — the one place mailparser
+ *  still exposes a header's unprocessed line regardless of any of its own
+ *  structured parsing elsewhere. Real senders never repeat List-
+ *  Unsubscribe, so the first match is enough. */
+export function headerLineValue(headerLines: HeaderLines | undefined, name: string): string | undefined {
+  const found = headerLines?.find((h) => h.key === name);
+  return found?.line.slice(found.line.indexOf(':') + 1).trim();
 }
 
-/** Parses the raw `References:` header block (as returned by a targeted
- *  `headers: ['references']` fetch) into an ordered list of message-ids,
- *  oldest first — the format mail clients use to record a message's full
- *  ancestor chain, not just its immediate parent. Line-based rather than a
- *  single regex so folded continuation lines (RFC 5322 — a long References
- *  header wrapped across multiple lines, each continuation starting with
- *  whitespace) are joined correctly instead of truncating at the first
- *  fold. */
-export function parseReferencesHeader(headers: Buffer | undefined): string[] {
-  if (!headers) return [];
+/** Extracts one named header's raw, unfolded value from a targeted
+ *  header-only IMAP fetch (e.g. listMessages'/getMessageSummaries'
+ *  `headers: [...]` option — a raw Buffer of just the requested header
+ *  lines, not a full message). Line-based rather than a single regex so
+ *  folded continuation lines (RFC 5322 — a header wrapped across multiple
+ *  lines, each continuation starting with whitespace) are joined
+ *  correctly instead of truncating at the first fold. Returns undefined
+ *  when the header wasn't present in the fetched block at all — distinct
+ *  from headerLineValue in this same file, which reads from mailparser's
+ *  HeaderLines on a *full* source fetch instead; this one has no
+ *  mailparser involved at all, since a header-only IMAP fetch never
+ *  builds one. */
+export function extractHeaderValue(headers: Buffer | undefined, name: string): string | undefined {
+  if (!headers) return undefined;
+  const prefix = new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}:`, 'i');
   const lines = headers.toString('utf8').split(/\r\n|\r|\n/);
   let collecting = false;
-  let value = '';
+  let value: string | undefined;
   for (const line of lines) {
-    if (/^References:/i.test(line)) {
+    if (prefix.test(line)) {
       collecting = true;
-      value = line.replace(/^References:/i, '');
+      value = line.replace(prefix, '').trim();
       continue;
     }
     if (collecting && /^[ \t]/.test(line)) {
@@ -78,7 +88,15 @@ export function parseReferencesHeader(headers: Buffer | undefined): string[] {
     }
     if (collecting) break;
   }
-  const ids = value.match(/<[^>]+>/g) ?? [];
+  return value;
+}
+
+/** Parses the raw `References:` header block into an ordered list of
+ *  message-ids, oldest first — the format mail clients use to record a
+ *  message's full ancestor chain, not just its immediate parent. */
+export function parseReferencesHeader(headers: Buffer | undefined): string[] {
+  const value = extractHeaderValue(headers, 'References');
+  const ids = value?.match(/<[^>]+>/g) ?? [];
   return ids.map(stripAngleBrackets);
 }
 
@@ -293,10 +311,18 @@ export class ImapProvider extends BaseProvider {
    *  consequently unavailable without a body fetch — left as
    *  empty/false, which is fine since neither is read anywhere in the UI
    *  today. Full content (and real hasAttachments) is only ever fetched
-   *  on demand, via getMessage(), once a card is actually expanded. */
+   *  on demand, via getMessage(), once a card is actually expanded.
+   *  `unsubscribe` is the one exception: List-Unsubscribe/-Post are two
+   *  specific named headers a targeted `headers: [...]` fetch can request
+   *  cheaply (see callers), unlike arbitrary body content, so this is
+   *  available here too rather than only on the full fetch. */
   private toSummary(folderId: string, msg: FetchMessageObject): EmailSummary {
     const envelope = msg.envelope;
     const flags = msg.flags ?? new Set<string>();
+    const unsubscribe = parseListUnsubscribe(
+      extractHeaderValue(msg.headers, 'List-Unsubscribe'),
+      extractHeaderValue(msg.headers, 'List-Unsubscribe-Post'),
+    );
 
     return {
       id: encodeMessageId(folderId, msg.uid),
@@ -311,6 +337,7 @@ export class ImapProvider extends BaseProvider {
       isRead: flags.has('\\Seen'),
       isFlagged: flags.has('\\Flagged'),
       hasAttachments: false,
+      unsubscribe,
     };
   }
 
@@ -361,14 +388,17 @@ export class ImapProvider extends BaseProvider {
         // keeps batch loading fast regardless of message size or
         // attachments (a multi-MB attachment used to single-handedly blow
         // up a batch's fetch time from ~1s to 10-25s even with a bounded
-        // preview fetch — see the conversation that led here). Full
-        // content is fetched separately, on demand, only when a card is
-        // actually expanded.
+        // preview fetch — see the conversation that led here). The two
+        // List-Unsubscribe headers are requested alongside references —
+        // named headers cost nothing like a body fetch does regardless of
+        // message size, so toSummary can populate `unsubscribe` for free.
+        // Full content is fetched separately, on demand, only when a card
+        // is actually expanded.
         for await (const msg of client.fetch(`${lowerBound}:${upperBound}`, {
           uid: true,
           envelope: true,
           flags: true,
-          headers: ['references'],
+          headers: ['references', 'list-unsubscribe', 'list-unsubscribe-post'],
         })) {
           items.push(await this.toSummary(options.folderId, msg));
         }
@@ -380,6 +410,58 @@ export class ImapProvider extends BaseProvider {
         lock.release();
       }
     });
+  }
+
+  /** Batched counterpart to toSummary()/listMessages() for a scattered set
+   *  of specific ids rather than a contiguous range — one connection (one
+   *  withClient() call) covers every id regardless of folder or how many
+   *  there are, instead of a caller looping getMessage() once per id (see
+   *  MailProvider's own doc comment on why this exists). Grouped by
+   *  folder since a UID set is only meaningful within one mailbox at a
+   *  time; in practice every AI Feed id is INBOX (IDLE only ever watches
+   *  one folder), so this almost always means exactly one group. One
+   *  folder failing (e.g. it was since deleted) doesn't take down the
+   *  others — each group is caught independently, same resilience
+   *  buildFeedList's old per-item try/catch had, just moved down a
+   *  layer. */
+  async getMessageSummaries(messageIds: string[]): Promise<Map<string, EmailSummary>> {
+    const uidsByFolder = new Map<string, number[]>();
+    for (const id of messageIds) {
+      const { folderPath, uid } = decodeMessageId(id);
+      const uids = uidsByFolder.get(folderPath);
+      if (uids) uids.push(uid);
+      else uidsByFolder.set(folderPath, [uid]);
+    }
+
+    const summaries = new Map<string, EmailSummary>();
+    if (uidsByFolder.size === 0) return summaries;
+
+    await this.withClient(async (client) => {
+      for (const [folderPath, uids] of uidsByFolder) {
+        try {
+          const lock = await client.getMailboxLock(folderPath);
+          try {
+            for await (const msg of client.fetch(
+              uids,
+              {
+                envelope: true,
+                flags: true,
+                headers: ['references', 'list-unsubscribe', 'list-unsubscribe-post'],
+              },
+              { uid: true },
+            )) {
+              const summary = this.toSummary(folderPath, msg);
+              summaries.set(summary.id, summary);
+            }
+          } finally {
+            lock.release();
+          }
+        } catch (err) {
+          console.error(`Failed to fetch message summaries from ${folderPath}:`, err);
+        }
+      }
+    });
+    return summaries;
   }
 
   /** Builds a normalized, full-content EmailMessage from a raw fetch
@@ -407,8 +489,8 @@ export class ImapProvider extends BaseProvider {
     const inlineImages = (parsed?.attachments ?? []).filter((a) => a.related);
     const downloadableAttachments = (parsed?.attachments ?? []).filter((a) => !a.related);
     const unsubscribe = parseListUnsubscribe(
-      headerString(parsed?.headers, 'list-unsubscribe'),
-      headerString(parsed?.headers, 'list-unsubscribe-post'),
+      headerLineValue(parsed?.headerLines, 'list-unsubscribe'),
+      headerLineValue(parsed?.headerLines, 'list-unsubscribe-post'),
     );
 
     return {
@@ -550,10 +632,26 @@ export class ImapProvider extends BaseProvider {
     await this.moveToFolder(messageId, folder.id);
   }
 
-  async trash(messageId: string): Promise<void> {
-    const folder = await this.findFolderByKind('trash');
-    if (!folder) throw new Error('No trash folder found on this account');
-    await this.moveToFolder(messageId, folder.id);
+  /** A real, permanent delete — sets \Deleted and expunges the message
+   *  from its current mailbox, via imapflow's messageDelete(). Deliberately
+   *  NOT a move to a Trash folder: that would depend on one existing and
+   *  being correctly identified (special-use flag or name heuristic, see
+   *  folderKindFromSpecialUse), which not every account has — see chat
+   *  history for the decision to require nothing about the account's
+   *  folder structure instead. Whether this is actually recoverable
+   *  afterwards is entirely up to the server (some auto-back up expunged
+   *  mail on their own); this app makes no promise either way. */
+  async deleteMessage(messageId: string): Promise<void> {
+    const { folderPath, uid } = decodeMessageId(messageId);
+    await this.withClient(async (client) => {
+      const lock = await client.getMailboxLock(folderPath);
+      try {
+        await client.messageDelete(String(uid), { uid: true });
+      } finally {
+        lock.release();
+      }
+    });
+    this.emitEvent({ type: 'messageDeleted', messageId });
   }
 
   async saveDraft(input: DraftInput): Promise<{ draftId: string }> {

@@ -156,8 +156,8 @@ export const mailRoutes: FastifyPluginAsync<Options> = async (fastify, { dataDir
     return reply.send({ ok: true });
   });
 
-  fastify.post<{ Params: { id: string } }>('/messages/:id/trash', async (request, reply) => {
-    await mailService.getProvider().trash(request.params.id);
+  fastify.post<{ Params: { id: string } }>('/messages/:id/delete', async (request, reply) => {
+    await mailService.getProvider().deleteMessage(request.params.id);
     return reply.send({ ok: true });
   });
 

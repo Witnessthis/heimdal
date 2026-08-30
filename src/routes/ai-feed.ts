@@ -1,7 +1,7 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { getFeedItems, removeFeedItem } from '../lib/ai-feed';
 import { requireAuth } from '../lib/require-auth';
-import { resolveSenderPreference } from '../lib/sender-preferences';
+import { isSuppressed, recordSuppression } from '../lib/unsubscribe-suppressions';
 import { performOneClickUnsubscribe } from '../mail/perform-unsubscribe';
 import { mailService } from '../mail/registry';
 import type { EmailMessage } from '../mail/types';
@@ -15,30 +15,48 @@ interface Options {
  *  data — a plain function (see executeConfirm's own doc comment for why)
  *  rather than inlined in the route handler. Drops (and cleans up) any
  *  row whose message no longer exists rather than surfacing a card for
- *  content that's gone. */
+ *  content that's gone.
+ *
+ *  Uses getMessageSummaries (one batched fetch for every pending id)
+ *  rather than looping getMessage() once per item — the latter used to
+ *  make this route's load time scale linearly with how many items were
+ *  pending (each one a full message fetch *and* its own fresh IMAP
+ *  connection), which is exactly the kind of thing "AI feed item counts
+ *  are small by design" doesn't hold up against once more than a couple
+ *  of items are actually pending at once (see chat history: real
+ *  response times up to 40-60s were measured). Summary data means no
+ *  snippet on the card face any more — same tradeoff the inbox list
+ *  already made (see ImapProvider.toSummary) — but expanding a card is
+ *  unaffected, since that already goes through its own on-demand
+ *  getMessage() fetch regardless. */
 export async function buildFeedList(dataDir: string): Promise<AiFeedListItem[]> {
   const triageItems = await getFeedItems(dataDir);
+  if (triageItems.length === 0) return [];
+
+  const summaries = await mailService.getProvider().getMessageSummaries(triageItems.map((t) => t.emailId));
+
   const items: AiFeedListItem[] = [];
   for (const triage of triageItems) {
-    try {
-      const message = await mailService.getProvider().getMessage(triage.emailId);
-      items.push({
-        triage,
-        from: message.from,
-        subject: message.subject,
-        snippet: message.snippet,
-        receivedAt: message.receivedAt,
-        isRead: message.isRead,
-        messageId: message.messageId,
-        threadId: message.threadId,
-        unsubscribe: message.unsubscribe,
-      });
-    } catch {
+    const message = summaries.get(triage.emailId);
+    if (!message) {
       // The message is gone (deleted/moved) since it was classified —
       // drop the stale feed row rather than showing a card for content
       // that no longer exists.
       await removeFeedItem(dataDir, triage.emailId);
+      continue;
     }
+    items.push({
+      triage,
+      from: message.from,
+      subject: message.subject,
+      receivedAt: message.receivedAt,
+      isRead: message.isRead,
+      messageId: message.messageId,
+      threadId: message.threadId,
+      unsubscribe: message.unsubscribe,
+      unsubscribeEligible:
+        message.unsubscribe.type !== 'none' && !(await isSuppressed(dataDir, message.from.address)),
+    });
   }
   return items;
 }
@@ -55,10 +73,6 @@ export async function executeConfirm(
   message: EmailMessage,
   staged: ConfirmBody,
 ): Promise<void> {
-  if (staged.senderPreference) {
-    await resolveSenderPreference(dataDir, message.from.address, staged.senderPreference);
-  }
-
   if (staged.draftReply) {
     await mailService.getProvider().send({
       to: [message.from],
@@ -69,7 +83,7 @@ export async function executeConfirm(
     });
   }
 
-  if (staged.unsubscribe) {
+  if (staged.unsubscribeAction === 'unsubscribe') {
     const unsubscribe = message.unsubscribe;
     if (unsubscribe.type === 'mailto') {
       await mailService.getProvider().send({
@@ -83,6 +97,15 @@ export async function executeConfirm(
     // 'link'/'none': nothing to do server-side. A 'link' unsubscribe is
     // opened client-side, synchronously inside the Confirm click handler,
     // before this route is ever called — see web/src/ai-feed/card.ts.
+
+    // Always recorded, regardless of whether the real attempt above
+    // reports success — a sender that never actually processes the
+    // request (or a 'link'/'none' mechanism this server can't verify at
+    // all) would otherwise keep getting force-shown forever. This is the
+    // local-suppression fallback the real attempt doesn't guarantee.
+    await recordSuppression(dataDir, message.from.address, 'unsubscribed');
+  } else if (staged.unsubscribeAction === 'suppress') {
+    await recordSuppression(dataDir, message.from.address, 'suppressed');
   }
 }
 
@@ -94,15 +117,12 @@ export const aiFeedRoutes: FastifyPluginAsync<Options> = async (fastify, { dataD
     }
   });
 
-  // No lighter-weight "get one summary by id" path exists on MailProvider
-  // — .unsubscribe is only ever populated by the full getMessage() fetch
-  // (see src/ai/auto-classify.ts's identical note) — so buildFeedList pays
-  // for one full fetch per pending item. Body/attachments are deliberately
-  // left out of the response to keep the list payload light; a card's
-  // full body still loads lazily through the ordinary /messages/:id route
-  // when expanded. AI feed item counts are small by design (triage's
-  // whole job is to keep this list short), so that second fetch on expand
-  // is cheaper than threading a body cache through just for this.
+  // See buildFeedList's own doc comment for how this stays fast: one
+  // batched summary fetch for every pending item, not one full-message
+  // fetch per item. Body/attachments are deliberately left out of the
+  // response to keep the list payload light either way; a card's full
+  // body still loads lazily through the ordinary /messages/:id route when
+  // expanded.
   fastify.get('/', async (_request, reply) => {
     return reply.send({ items: await buildFeedList(dataDir) });
   });
@@ -114,13 +134,12 @@ export const aiFeedRoutes: FastifyPluginAsync<Options> = async (fastify, { dataD
         body: {
           type: 'object',
           properties: {
-            senderPreference: { type: 'string', enum: ['show', 'hide'] },
             draftReply: {
               type: 'object',
               required: ['subject', 'body'],
               properties: { subject: { type: 'string' }, body: { type: 'string' } },
             },
-            unsubscribe: { type: 'boolean' },
+            unsubscribeAction: { type: 'string', enum: ['unsubscribe', 'suppress'] },
           },
         },
       },

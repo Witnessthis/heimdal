@@ -95,28 +95,31 @@ function stopInFlightPinAttempt(): void {
 // only way out of that, permanently revealing the button (and leaving
 // #feed genuinely too short to scroll at all) instead of hiding it.
 //
-// Tracks its own previously-applied fill (appliedFill) and subtracts it
-// back out of the current scrollHeight to recover the *natural* content
-// height, rather than zeroing the CSS variable and immediately
-// re-reading layout — that reset-then-remeasure shape depends on the
-// zeroed style being reflowed before the very next read, which isn't
-// guaranteed to happen synchronously on every engine. Plain arithmetic
-// against one single measurement has no such dependency.
-// A deliberate few pixels past the theoretical exact minimum — offsetTop/
-// scrollHeight can be fractional (sub-pixel layout) and browsers round a
-// scrollTop assignment, so aiming for the exact boundary risks landing a
-// fraction of a pixel short of it. A content-rich inbox never notices this
-// (its natural overflow already clears the threshold with real margin);
-// a sparse one, sitting exactly on the edge this fill computes, is exactly
-// where that rounding bites. Cheap to overshoot slightly; expensive not to.
+// Measures the real content height via the last child's own document-flow
+// position (offsetTop + offsetHeight), NOT via #feed's own scrollHeight —
+// scrollHeight is clamped to never read below clientHeight (confirmed by
+// reproducing this in a real browser: with only a few short cards,
+// scrollHeight reported the full 700px viewport height even though the
+// actual content only reached ~380px), so a shortfall computed from it
+// silently under-counts by exactly the amount this function exists to
+// detect, every time real content is shorter than the viewport — which is
+// exactly the sparse-inbox case this is supposed to handle. offsetTop is a
+// plain layout-flow measurement with no such floor.
+//
+// A deliberate few pixels past the theoretical exact minimum — offsetTop
+// can be fractional (sub-pixel layout) and browsers round a scrollTop
+// assignment, so aiming for the exact boundary risks landing a fraction of
+// a pixel short of it. Also deliberately doesn't subtract #feed's own base
+// bottom padding (safe-area/nav clearance) from the target — slightly
+// over-filling by that amount is an imperceptible bit of extra blank
+// scroll space, and far simpler than reading an env() value back out in JS.
 const SCROLL_ROOM_MARGIN_PX = 4;
 
-let appliedFill = 0;
 function ensureEnoughScrollRoom(): void {
-  const naturalScrollHeight = feed.scrollHeight - appliedFill;
-  const shortfall = feed.clientHeight + hiddenScrollTop() + SCROLL_ROOM_MARGIN_PX - naturalScrollHeight;
-  appliedFill = Math.max(0, shortfall);
-  feed.style.setProperty('--feed-min-scroll-fill', `${appliedFill}px`);
+  const last = feed.lastElementChild as HTMLElement | null;
+  const contentBottom = last ? last.offsetTop + last.offsetHeight : 0;
+  const shortfall = feed.clientHeight + hiddenScrollTop() + SCROLL_ROOM_MARGIN_PX - contentBottom;
+  feed.style.setProperty('--feed-min-scroll-fill', `${Math.max(0, shortfall)}px`);
 }
 
 function tryPin(): boolean {

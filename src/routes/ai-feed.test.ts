@@ -78,6 +78,7 @@ const account = {
   label: 'Acc One',
   kind: 'imap' as const,
   color: '#111111',
+  theme: 'heimdal',
   createdAt: '2026-01-01T00:00:00Z',
 };
 

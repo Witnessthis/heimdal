@@ -18,8 +18,22 @@ export interface MailAccount {
   // than a constrained enum, since the override is a native
   // `<input type="color">` in Settings, not a swatch picker.
   color: string;
+  // A key into web/public/themes.js's THEMES map — unlike `color` above,
+  // this genuinely changes what switching profile looks like (see chat
+  // history: the user wants each profile to remember and reapply its own
+  // whole-app theme). Just a plain string here; this module and its
+  // callers never validate it against the real theme list — an unknown
+  // value is themes.js's own resolve()'s job to fall back safely from,
+  // same as an unrecognized value already read from localStorage does.
+  theme: string;
   createdAt: string;
 }
+
+// Matches themes.js's own DEFAULT_THEME — duplicated rather than shared
+// across the backend/frontend boundary (no runtime coupling exists between
+// them today), same reasoning as web/src/shared/account-id.ts's own
+// duplicated-rather-than-imported comment.
+const DEFAULT_THEME = 'heimdal';
 
 const INDEX_FILE_NAME = 'accounts.json';
 
@@ -55,7 +69,12 @@ function indexPath(dataDir: string): string {
 async function readIndex(dataDir: string): Promise<MailAccount[]> {
   try {
     const raw = await readFile(indexPath(dataDir), 'utf-8');
-    return JSON.parse(raw) as MailAccount[];
+    const accounts = JSON.parse(raw) as MailAccount[];
+    // Backfills `theme` for accounts written before it existed — self-heals
+    // on disk the next time anything calls writeIndex (e.g. any PATCH),
+    // rather than needing a dedicated one-time migration for what's really
+    // just one optional-at-read-time field.
+    return accounts.map((a) => (a.theme ? a : { ...a, theme: DEFAULT_THEME }));
   } catch {
     return [];
   }
@@ -90,6 +109,7 @@ export async function createAccount(
     label: input.label,
     kind: input.kind,
     color: nextDefaultColor(accounts.length),
+    theme: DEFAULT_THEME,
     createdAt: new Date().toISOString(),
   };
   await mkdir(accountDir(dataDir, account.id), { recursive: true });
@@ -100,7 +120,7 @@ export async function createAccount(
 export async function updateAccount(
   dataDir: string,
   accountId: string,
-  patch: { label?: string; color?: string },
+  patch: { label?: string; color?: string; theme?: string },
 ): Promise<MailAccount> {
   const accounts = await readIndex(dataDir);
   const index = accounts.findIndex((a) => a.id === accountId);
@@ -109,6 +129,7 @@ export async function updateAccount(
     ...accounts[index],
     ...(patch.label !== undefined ? { label: patch.label } : {}),
     ...(patch.color !== undefined ? { color: patch.color } : {}),
+    ...(patch.theme !== undefined ? { theme: patch.theme } : {}),
   };
   accounts[index] = updated;
   await writeIndex(dataDir, accounts);
@@ -176,6 +197,7 @@ export async function migrateLegacyAccountIfNeeded(dataDir: string): Promise<voi
     label,
     kind,
     color: nextDefaultColor(0),
+    theme: DEFAULT_THEME,
     createdAt: new Date().toISOString(),
   };
   const dir = accountDir(dataDir, account.id);

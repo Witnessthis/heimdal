@@ -23,11 +23,12 @@ afterEach(async () => {
 });
 
 describe('createAccount / listAccounts / getAccount', () => {
-  it('creates an account with a generated id, default color, and its own directory', async () => {
+  it('creates an account with a generated id, default color/theme, and its own directory', async () => {
     const account = await createAccount(dir, { label: 'Work', kind: 'imap' });
     expect(account.label).toBe('Work');
     expect(account.kind).toBe('imap');
     expect(account.color).toBe(nextDefaultColor(0));
+    expect(account.theme).toBe('heimdal');
     expect(account.id).toMatch(/^[0-9a-f]{16}$/);
 
     const listed = await listAccounts(dir);
@@ -49,6 +50,17 @@ describe('createAccount / listAccounts / getAccount', () => {
   it('returns undefined for an account that does not exist', async () => {
     expect(await getAccount(dir, 'nonexistent')).toBeUndefined();
   });
+
+  it('backfills a default theme for an account written before that field existed', async () => {
+    await writeFile(
+      join(dir, 'accounts.json'),
+      JSON.stringify([
+        { id: 'legacy1', label: 'Legacy', kind: 'imap', color: '#e06c75', createdAt: '2026-01-01T00:00:00Z' },
+      ]),
+    );
+    const [account] = await listAccounts(dir);
+    expect(account.theme).toBe('heimdal');
+  });
 });
 
 describe('updateAccount', () => {
@@ -63,6 +75,14 @@ describe('updateAccount', () => {
     const account = await createAccount(dir, { label: 'Work', kind: 'imap' });
     const updated = await updateAccount(dir, account.id, { color: '#123456' });
     expect(updated.color).toBe('#123456');
+    expect(updated.label).toBe('Work');
+  });
+
+  it('updates the theme without touching color/label', async () => {
+    const account = await createAccount(dir, { label: 'Work', kind: 'imap' });
+    const updated = await updateAccount(dir, account.id, { theme: 'dracula' });
+    expect(updated.theme).toBe('dracula');
+    expect(updated.color).toBe(account.color);
     expect(updated.label).toBe('Work');
   });
 

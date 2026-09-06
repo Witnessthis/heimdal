@@ -36,6 +36,12 @@ async function renderProfileScopedSettings(accountId: string): Promise<void> {
   await createLanguageEditor(languageEditorContainer, accountId);
 }
 
+// Re-highlights the theme grid once profile-switcher.ts confirms it has
+// actually applied the active profile's own theme (see its own comment on
+// why this is an event rather than a direct call from renderProfileScopedSettings
+// above, which runs concurrently against its own independent fetch).
+document.addEventListener('heimdal:theme-applied', syncThemeGridActiveSwatch);
+
 onActiveProfileChange((accountId) => {
   void renderProfileScopedSettings(accountId);
 });
@@ -143,6 +149,19 @@ document.getElementById('totp-btn')!.addEventListener('click', () => {
   window.location.href = '/totp-setup.html';
 });
 
+// Re-highlights whichever swatch matches the currently applied theme —
+// called after picking one directly here, and from renderProfileScopedSettings
+// whenever the active profile changes (switching profile re-applies that
+// profile's own theme — see profile-switcher.ts's refreshActiveProfile —
+// which this grid, built once below, otherwise has no way to notice).
+function syncThemeGridActiveSwatch(): void {
+  const grid = document.getElementById('theme-grid')!;
+  const current = window.HeimdalThemes.currentTheme();
+  grid.querySelectorAll<HTMLElement>('.theme-swatch').forEach((el) => {
+    el.classList.toggle('active', el.dataset.theme === current);
+  });
+}
+
 // Builds the theme picker grid once — the list of available themes
 // never changes at runtime, so there's no need to rebuild it every
 // time Settings is shown (unlike loadTotpStatus, which reflects
@@ -171,10 +190,23 @@ function buildThemeGrid(): void {
 
     swatch.style.background = theme.bg;
     swatch.append(dots, label);
+    // Picking a theme is per-profile (see chat history) — persists to
+    // whichever account is currently active, not just localStorage, so it's
+    // reapplied the next time that profile becomes active again (see
+    // profile-switcher.ts's refreshActiveProfile).
     swatch.addEventListener('click', () => {
       window.HeimdalThemes.setTheme(key);
-      grid.querySelectorAll('.theme-swatch').forEach((el) => {
-        el.classList.toggle('active', el === swatch);
+      syncThemeGridActiveSwatch();
+      const activeId = getActiveProfileId();
+      if (!activeId) return;
+      fetch(`/api/accounts/${encodeURIComponent(activeId)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ theme: key }),
+      }).catch(() => {
+        // Best-effort — a failed save just means this profile falls back
+        // to whatever theme it had last successfully saved, next time it
+        // becomes active again.
       });
     });
     grid.appendChild(swatch);

@@ -4,6 +4,7 @@ interface ProfileSummary {
   id: string;
   label: string;
   color: string;
+  theme: string;
 }
 
 const swatch = document.getElementById('nav-profile-swatch') as HTMLElement;
@@ -35,22 +36,37 @@ function renderSwatch(profile: ProfileSummary | undefined): void {
   swatch.textContent = initials(profile.label);
 }
 
-/** Re-fetches and re-renders the nav tab's swatch — called on every
- *  active-profile change, and once at load. Account rename/recolor now only
- *  happens on the standalone account-management.html page (a real
- *  navigation), so a page (re)load through bootstrap is what naturally
- *  picks up a changed label/color here — no live cross-update needed. */
-async function refreshProfileBadge(): Promise<void> {
+/** Re-fetches the active profile and applies everything about it that isn't
+ *  scoped to a specific view: the nav tab's swatch, and — per the user's
+ *  explicit request — the whole-app theme, since each profile remembers and
+ *  reapplies its own (see themes.js's setTheme; MailAccount.theme on the
+ *  backend). Called on every active-profile change and once at load.
+ *  Rename/recolor/re-theme now only happen on their own dedicated surfaces
+ *  (account-management.html for label/color, the theme grid in Settings for
+ *  theme) rather than live within this same session, so there's no separate
+ *  "something about the active profile changed without its id changing"
+ *  case to handle beyond what those surfaces already trigger directly. */
+async function refreshActiveProfile(): Promise<void> {
   const profiles = await fetchProfiles();
-  renderSwatch(profiles.find((p) => p.id === getActiveProfileId()));
+  const active = profiles.find((p) => p.id === getActiveProfileId());
+  if (!active) return;
+  renderSwatch(active);
+  window.HeimdalThemes.setTheme(active.theme);
+  // A plain DOM event rather than importing settings.ts's theme-grid
+  // sync directly — keeps the two decoupled, and (unlike a direct call)
+  // guarantees settings.ts only re-highlights *after* the theme this
+  // profile actually has was applied above, regardless of which of the
+  // two modules' own independent /api/accounts fetches happens to resolve
+  // first.
+  document.dispatchEvent(new CustomEvent('heimdal:theme-applied'));
 }
 
 // Subscribe before any async work so the very first setActiveProfileId call
 // from inbox.ts's bootstrap() is never missed regardless of module load order.
 onActiveProfileChange(() => {
-  void refreshProfileBadge();
+  void refreshActiveProfile();
 });
-void refreshProfileBadge();
+void refreshActiveProfile();
 
 function closeModal(): void {
   modal.style.display = 'none';

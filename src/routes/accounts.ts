@@ -134,7 +134,7 @@ export const accountsRoutes: FastifyPluginAsync<Options> = async (fastify, { dat
     },
   );
 
-  fastify.patch<{ Params: { id: string }; Body: { label?: string; color?: string } }>(
+  fastify.patch<{ Params: { id: string }; Body: { label?: string; color?: string; theme?: string } }>(
     '/:id',
     {
       schema: {
@@ -143,6 +143,7 @@ export const accountsRoutes: FastifyPluginAsync<Options> = async (fastify, { dat
           properties: {
             label: { type: 'string', minLength: 1 },
             color: { type: 'string', pattern: '^#[0-9a-fA-F]{6}$' },
+            theme: { type: 'string', minLength: 1 },
           },
         },
       },

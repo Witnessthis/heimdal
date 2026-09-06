@@ -79,14 +79,6 @@
       font-family: inherit;
     }
     .account-label-input:focus { outline: none; border-color: var(--accent); }
-    .account-current-badge {
-      padding: 7px 14px;
-      border-radius: 6px;
-      border: 1px solid var(--success);
-      color: var(--success);
-      font-size: 0.85rem;
-      white-space: nowrap;
-    }
     .account-status { display: block; color: var(--muted); font-size: 0.8rem; }
 
     .btn-action {
@@ -172,8 +164,9 @@
 
   <h1>Account management</h1>
   <p class="subtitle">
-    Add, switch, or remove the mail accounts connected to Heimdal. Each account keeps its own
-    personalized memory, language settings, and inbox.
+    Add or remove the mail accounts connected to Heimdal. Each account keeps its own
+    personalized memory, language settings, and inbox. To switch which one you're viewing, use
+    the profile switcher in the bottom nav.
   </p>
 
   <div class="content">
@@ -198,12 +191,12 @@
   </div>
 
   <script>
-    // Same localStorage key as web/src/shared/active-profile.ts — this page
-    // is a separate, non-SPA navigation (see chat history: account
-    // management lives on its own page now, not embedded in Settings), so
-    // it reads/writes the shared "active profile" state directly through
-    // storage rather than importing that module. A later navigation back to
-    // "/" picks this up naturally via that module's own bootstrap.
+    // Same localStorage key as web/src/shared/active-profile.ts. This page
+    // has no notion of "switching" profile at all (see chat history: which
+    // account is active doesn't matter here) — the only reason it ever
+    // touches this key is to pick a fallback active profile if the one just
+    // removed happened to be the active one, so the SPA doesn't come back
+    // to a reference to a now-deleted account on the next navigation to "/".
     const ACTIVE_PROFILE_KEY = 'heimdal:activeProfileId';
 
     let pendingRemoval = null;
@@ -247,7 +240,7 @@
       }
     }
 
-    function buildAccountRow(account, activeId) {
+    function buildAccountRow(account) {
       const row = document.createElement('div');
       row.className = 'account-row';
 
@@ -276,23 +269,6 @@
       header.appendChild(colorInput);
       header.appendChild(labelInput);
 
-      if (account.id === activeId) {
-        const current = document.createElement('span');
-        current.className = 'account-current-badge';
-        current.textContent = 'Current';
-        header.appendChild(current);
-      } else {
-        const selectBtn = document.createElement('button');
-        selectBtn.type = 'button';
-        selectBtn.className = 'btn-action';
-        selectBtn.textContent = 'Select';
-        selectBtn.addEventListener('click', () => {
-          localStorage.setItem(ACTIVE_PROFILE_KEY, account.id);
-          loadAccounts();
-        });
-        header.appendChild(selectBtn);
-      }
-
       const removeBtn = document.createElement('button');
       removeBtn.type = 'button';
       removeBtn.className = 'btn-action btn-action-danger';
@@ -313,10 +289,9 @@
       const statusEl = document.getElementById('status');
       try {
         const { accounts } = await fetch('/api/accounts').then((r) => r.json());
-        const activeId = localStorage.getItem(ACTIVE_PROFILE_KEY);
         const list = document.getElementById('accounts-list');
         list.innerHTML = '';
-        for (const account of accounts) list.appendChild(buildAccountRow(account, activeId));
+        for (const account of accounts) list.appendChild(buildAccountRow(account));
         statusEl.textContent = '';
       } catch {
         statusEl.textContent = 'Could not load accounts — check your connection and try again.';

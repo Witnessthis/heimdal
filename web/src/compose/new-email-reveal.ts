@@ -70,6 +70,21 @@ export function hiddenScrollTop(): number {
 newEmailBg.style.visibility = 'hidden';
 let pinned = false;
 let pinAttemptInFlight = false;
+// Hoisted (rather than local to one ensureNewEmailBgPinned() call) so
+// resetNewEmailBgPin() can tear down a still-in-flight attempt before
+// starting a new one — otherwise switching profile twice in quick
+// succession (the profile switcher deliberately stays open for exactly
+// this — see chat history) would leave an earlier attempt's observer/timer
+// alive, watching stale content, alongside the new one.
+let activeObserver: MutationObserver | null = null;
+let activeGiveUpTimer: ReturnType<typeof setTimeout> | null = null;
+
+function stopInFlightPinAttempt(): void {
+  activeObserver?.disconnect();
+  activeObserver = null;
+  if (activeGiveUpTimer !== null) clearTimeout(activeGiveUpTimer);
+  activeGiveUpTimer = null;
+}
 
 // Guarantees #feed can actually be scrolled far enough to carry the New
 // Email button out of view, regardless of how few emails — down to zero —
@@ -113,17 +128,16 @@ export function ensureNewEmailBgPinned(): void {
       newEmailBg.style.visibility = '';
       return;
     }
-    let giveUpTimer: ReturnType<typeof setTimeout>;
     const observer = new MutationObserver(() => {
       if (tryPin()) {
-        observer.disconnect();
-        clearTimeout(giveUpTimer);
+        stopInFlightPinAttempt();
         pinned = true;
         pinAttemptInFlight = false;
         newEmailBg.style.visibility = '';
       }
     });
     observer.observe(feed, { childList: true });
+    activeObserver = observer;
     // ensureEnoughScrollRoom (see tryPin) already guarantees enough scroll
     // range regardless of content, so this should rarely if ever actually
     // fire now — kept as a last-resort safety net (e.g. a fetch failing
@@ -132,8 +146,8 @@ export function ensureNewEmailBgPinned(): void {
     // handled. Counts as "pinned" (no further retries): it already gave up
     // and revealed the button, so a later retry could only make things
     // worse by hiding it again.
-    giveUpTimer = setTimeout(() => {
-      observer.disconnect();
+    activeGiveUpTimer = setTimeout(() => {
+      stopInFlightPinAttempt();
       pinned = true;
       pinAttemptInFlight = false;
       newEmailBg.style.visibility = '';
@@ -141,6 +155,27 @@ export function ensureNewEmailBgPinned(): void {
   });
 }
 ensureNewEmailBgPinned();
+
+/** Re-arms the pin sequence for a freshly-loaded inbox under the same
+ *  button — called when switching profile (see inbox.ts's switchAccount).
+ *  The new account's inbox starts from a much shorter DOM (every card from
+ *  the previous account was just removed), so scrollTop simply clamps to
+ *  wherever that shrunk range allows — often revealing the button, since
+ *  there's nothing to carry it out of view for yet. Hiding it again
+ *  immediately and re-running the same pin logic used at initial load
+ *  (already robust to a sparse/empty inbox via ensureEnoughScrollRoom)
+ *  keeps a profile switch from ever surfacing the button by accident.
+ *  Tears down any still-in-flight attempt from a previous switch first —
+ *  the profile switcher deliberately stays open across selections, so
+ *  switching again before an earlier attempt has resolved is routine, not
+ *  an edge case. */
+export function resetNewEmailBgPin(): void {
+  stopInFlightPinAttempt();
+  pinned = false;
+  pinAttemptInFlight = false;
+  newEmailBg.style.visibility = 'hidden';
+  ensureNewEmailBgPinned();
+}
 
 document.getElementById('new-email-btn')!.addEventListener('click', () => {
   feed.scrollTop = hiddenScrollTop();

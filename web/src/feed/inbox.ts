@@ -1,6 +1,7 @@
 import type { AccountMailEvent } from '@server/mail/registry';
 import type { EmailMessage, EmailSummary, Folder, Page } from '@server/mail/types';
 import { openForwardCompose, openReplyCompose } from '../compose/compose';
+import { resetNewEmailBgPin } from '../compose/new-email-reveal';
 import { getLastKnownProfileId, onActiveProfileChange, setActiveProfileId } from '../shared/active-profile';
 import { buildCard } from './card';
 import { feed, feedStatus } from './dom';
@@ -254,6 +255,12 @@ async function switchAccount(newAccountId: string): Promise<void> {
   });
   feedStatus.textContent = 'Loading your inbox…';
   if (!feedStatus.isConnected) feed.insertBefore(feedStatus, sentinel);
+  // Every card just got removed above — #feed's scrollable range just
+  // shrank out from under whatever scrollTop was, which otherwise clamps
+  // to wherever that shrunk range allows (often revealing the New Email
+  // button instead of leaving it hidden). Re-arms the same pin sequence
+  // used at initial load for this account's own fresh content.
+  resetNewEmailBgPin();
 
   connectToMailEvents(newAccountId);
   await loadInbox();

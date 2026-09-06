@@ -12,7 +12,6 @@ const modal = document.getElementById('profile-switcher-modal') as HTMLElement;
 const list = document.getElementById('profile-switcher-list') as HTMLElement;
 const closeBtn = document.getElementById('profile-switcher-close') as HTMLButtonElement;
 const settingsBtn = document.getElementById('profile-switcher-settings') as HTMLButtonElement;
-const addAccountBtn = document.getElementById('profile-switcher-add-account') as HTMLButtonElement;
 
 // First letter of up to two whitespace-separated words in the label (e.g.
 // "alice@example.local" -> "A", "Work Email" -> "WE") — good enough to
@@ -36,12 +35,12 @@ function renderSwatch(profile: ProfileSummary | undefined): void {
   swatch.textContent = initials(profile.label);
 }
 
-/** Re-fetches and re-renders the nav tab's swatch — called proactively on
- *  every active-profile change, and exported for account-management.ts to
- *  call after a rename/recolor of the *currently active* account (which
- *  doesn't fire onActiveProfileChange at all, since the id itself didn't
- *  change, but the swatch's label/color did). */
-export async function refreshProfileBadge(): Promise<void> {
+/** Re-fetches and re-renders the nav tab's swatch — called on every
+ *  active-profile change, and once at load. Account rename/recolor now only
+ *  happens on the standalone account-management.html page (a real
+ *  navigation), so a page (re)load through bootstrap is what naturally
+ *  picks up a changed label/color here — no live cross-update needed. */
+async function refreshProfileBadge(): Promise<void> {
   const profiles = await fetchProfiles();
   renderSwatch(profiles.find((p) => p.id === getActiveProfileId()));
 }
@@ -91,15 +90,10 @@ modal.addEventListener('click', (event) => {
   if (event.target === modal) closeModal();
 });
 
-// No direct import of settings.ts here (and account-management.ts imports
-// *this* module for refreshProfileBadge) — a plain DOM event keeps this
-// module and settings.ts decoupled in both directions rather than forming
-// an import cycle through account-management.ts.
+// A plain DOM event rather than importing showView/openSettings from
+// settings.ts directly — keeps this module and settings.ts decoupled in
+// both directions.
 settingsBtn.addEventListener('click', () => {
   closeModal();
   document.dispatchEvent(new CustomEvent('heimdal:open-settings'));
-});
-
-addAccountBtn.addEventListener('click', () => {
-  window.location.href = '/connect-provider.html';
 });

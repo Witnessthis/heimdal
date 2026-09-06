@@ -54,13 +54,12 @@
         <button class="btn-action" id="totp-btn" type="button">Set up</button>
       </div>
 
-      <div class="setting-row" style="border-bottom: none; display: block;">
-        <div class="setting-info" style="margin-bottom: 12px;">
+      <div class="setting-row" style="border-bottom: none;">
+        <div class="setting-info">
           <span class="setting-name">Account management</span>
           <span class="setting-desc">Add, switch, or remove the mail accounts connected to Heimdal.</span>
         </div>
-        <div id="accounts-list"></div>
-        <button class="btn-action" id="add-account-btn" type="button">+ Add account</button>
+        <a class="btn-action" href="/account-management.html">Manage</a>
       </div>
 
       <p class="section-label" style="margin-top: 32px;" id="profile-settings-label">Settings for</p>
@@ -268,23 +267,6 @@
       <div class="profile-switcher-list" id="profile-switcher-list"></div>
       <div class="profile-switcher-divider"></div>
       <button type="button" class="profile-switcher-action" id="profile-switcher-settings">Settings</button>
-      <button type="button" class="profile-switcher-action" id="profile-switcher-add-account">+ Add account</button>
-    </div>
-  </div>
-
-  <div id="remove-account-modal" class="modal-overlay" style="display: none">
-    <div class="modal-panel">
-      <button type="button" class="modal-close-btn" id="remove-account-close" aria-label="Close">×</button>
-      <p class="modal-title">Remove account?</p>
-      <p class="modal-desc">
-        This permanently deletes <span id="remove-account-label"></span>'s Feed cards, personalized
-        memory, and language settings, and disconnects its mailbox. This cannot be undone.
-      </p>
-      <p class="modal-error" id="remove-account-error"></p>
-      <div class="modal-actions">
-        <button type="button" class="btn-action" id="remove-account-cancel">Cancel</button>
-        <button type="button" class="btn-action-primary" id="remove-account-confirm">Yes, remove it</button>
-      </div>
     </div>
   </div>
 

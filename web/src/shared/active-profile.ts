@@ -3,10 +3,12 @@
 // profile means everywhere (Inbox's loaded mailbox, Settings' profile-scoped
 // section, the nav tab's swatch — see profile-switcher.ts). Deliberately
 // holds only the id + pub/sub, no data-fetching: the accounts list is small
-// and cheap enough that each consumer (profile-switcher.ts, inbox.ts,
-// settings/account-management.ts) just fetches /api/accounts itself when it
-// needs the list, rather than this module owning a cache every consumer has
-// to stay in sync with.
+// and cheap enough that each consumer (profile-switcher.ts, inbox.ts) just
+// fetches /api/accounts itself when it needs the list, rather than this
+// module owning a cache every consumer has to stay in sync with. The
+// standalone account-management.html page (a real navigation, outside this
+// module's JS graph entirely) reads/writes the same localStorage key
+// directly instead — see its own script for why.
 const STORAGE_KEY = 'heimdal:activeProfileId';
 
 let currentAccountId: string | null = null;

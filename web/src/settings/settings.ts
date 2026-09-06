@@ -2,7 +2,6 @@ import { loadAiFeed } from '../ai-feed/list';
 import { ensureNewEmailBgPinned, hiddenScrollTop } from '../compose/new-email-reveal';
 import { aiFeedView, feed, nav, navAiFeed, navInbox, navProfile, settingsView } from '../feed/dom';
 import { getActiveProfileId, onActiveProfileChange } from '../shared/active-profile';
-import { loadAccountManagement } from './account-management';
 import { createLanguageEditor } from './languages';
 import { refreshNotificationRow } from './notifications';
 import {
@@ -41,10 +40,8 @@ onActiveProfileChange((accountId) => {
   void renderProfileScopedSettings(accountId);
 });
 
-// No direct import from profile-switcher.ts (account-management.ts, which
-// this module also imports, itself imports profile-switcher.ts) — a plain
-// DOM event keeps this module and profile-switcher.ts decoupled in both
-// directions rather than forming an import cycle.
+// A plain DOM event rather than importing this module's own showView from
+// profile-switcher.ts directly — keeps the two decoupled in both directions.
 document.addEventListener('heimdal:open-settings', () => showView('settings'));
 
 // --- View switching --------------------------------------------------
@@ -109,7 +106,6 @@ function showView(view: 'ai-feed' | 'inbox' | 'settings'): void {
   if (view === 'ai-feed') loadAiFeed();
   if (view === 'settings') {
     loadTotpStatus();
-    void loadAccountManagement();
     const activeId = getActiveProfileId();
     if (activeId) void renderProfileScopedSettings(activeId);
     void refreshNotificationRow();

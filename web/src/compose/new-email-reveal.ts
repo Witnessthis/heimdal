@@ -92,14 +92,31 @@ function stopInFlightPinAttempt(): void {
 // nowhere for scrollTop to reach hiddenScrollTop() at all: the browser
 // clamps it to whatever the real content allows, tryPin() below keeps
 // failing, and ensureNewEmailBgPinned's own give-up timer used to be the
-// only way out of that, permanently revealing the button instead of hiding
-// it. Reads back to '0px' first so an earlier attempt's own padding isn't
-// counted as real content and compounded on retry — this must stay
-// idempotent, since it reruns on every pin attempt as more batches load.
+// only way out of that, permanently revealing the button (and leaving
+// #feed genuinely too short to scroll at all) instead of hiding it.
+//
+// Tracks its own previously-applied fill (appliedFill) and subtracts it
+// back out of the current scrollHeight to recover the *natural* content
+// height, rather than zeroing the CSS variable and immediately
+// re-reading layout — that reset-then-remeasure shape depends on the
+// zeroed style being reflowed before the very next read, which isn't
+// guaranteed to happen synchronously on every engine. Plain arithmetic
+// against one single measurement has no such dependency.
+// A deliberate few pixels past the theoretical exact minimum — offsetTop/
+// scrollHeight can be fractional (sub-pixel layout) and browsers round a
+// scrollTop assignment, so aiming for the exact boundary risks landing a
+// fraction of a pixel short of it. A content-rich inbox never notices this
+// (its natural overflow already clears the threshold with real margin);
+// a sparse one, sitting exactly on the edge this fill computes, is exactly
+// where that rounding bites. Cheap to overshoot slightly; expensive not to.
+const SCROLL_ROOM_MARGIN_PX = 4;
+
+let appliedFill = 0;
 function ensureEnoughScrollRoom(): void {
-  feed.style.setProperty('--feed-min-scroll-fill', '0px');
-  const shortfall = feed.clientHeight + hiddenScrollTop() - feed.scrollHeight;
-  if (shortfall > 0) feed.style.setProperty('--feed-min-scroll-fill', `${shortfall}px`);
+  const naturalScrollHeight = feed.scrollHeight - appliedFill;
+  const shortfall = feed.clientHeight + hiddenScrollTop() + SCROLL_ROOM_MARGIN_PX - naturalScrollHeight;
+  appliedFill = Math.max(0, shortfall);
+  feed.style.setProperty('--feed-min-scroll-fill', `${appliedFill}px`);
 }
 
 function tryPin(): boolean {
@@ -108,7 +125,11 @@ function tryPin(): boolean {
   if (feed.offsetParent === null) return false;
   ensureEnoughScrollRoom();
   feed.scrollTop = hiddenScrollTop();
-  return feed.scrollTop === hiddenScrollTop();
+  // A tolerance, not strict equality, for the same sub-pixel/rounding
+  // reason as SCROLL_ROOM_MARGIN_PX above — the assignment above can
+  // legitimately land a fraction of a pixel away from the target and
+  // still be visually/functionally pinned.
+  return Math.abs(feed.scrollTop - hiddenScrollTop()) < 1;
 }
 
 // Safe to call any number of times, from any view: a no-op once already

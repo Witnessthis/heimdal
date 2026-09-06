@@ -1,5 +1,6 @@
 import { generateText, type ModelMessage, NoObjectGeneratedError, Output } from 'ai';
 import { z } from 'zod';
+import { splitQualifiedId } from '../mail/account-id';
 import { detectLanguage, resolveReplyLanguage } from './language';
 import { getModel } from './model';
 import { type EmailTriage, modelDecisionSchema } from './triage-schema';
@@ -173,7 +174,11 @@ export async function classifyEmail(
         messages,
         output: Output.object({ schema: modelDecisionSchema }),
       });
-      const triage: EmailTriage = { ...result.output, emailId: email.id };
+      const triage: EmailTriage = {
+        ...result.output,
+        emailId: email.id,
+        accountId: splitQualifiedId(email.id).accountId,
+      };
 
       // Two-pass language correction — only when a reply was actually
       // drafted, so most emails (which don't need one at all) never pay

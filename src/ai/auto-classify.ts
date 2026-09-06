@@ -3,19 +3,20 @@ import { getSpokenLanguages } from '../lib/language-settings';
 import { getMemory } from '../lib/memory-notes';
 import { sendFeedNotification } from '../lib/send-push';
 import { isSuppressed } from '../lib/unsubscribe-suppressions';
-import type { MailEvent } from '../mail/provider';
-import { mailService } from '../mail/registry';
+import { type AccountMailEvent, mailService } from '../mail/registry';
 import { buildEmailForModel } from './email-for-model';
 import { classifyEmail, type EmailTriage } from './triage';
 
-/** Wires classifyEmail() into live mail arrival. Subscribes to
- *  mailService's newMessage events and, for each one, runs the full AI
- *  feed pipeline: suppression gate -> classify -> persist. Call once
- *  at startup (see server.ts, alongside mailService.init()) — the listener
- *  is registered on the mailService singleton itself, not on whatever
- *  provider happens to be connected at the time, so it survives a later
- *  provider-setup/reconfigure without needing to be re-registered. Returns
- *  an unsubscribe function mirroring mailService.onEvent's own contract. */
+/** Wires classifyEmail() into live mail arrival, across every connected
+ *  account. Subscribes to mailService's newMessage events and, for each
+ *  one, runs the full AI feed pipeline: suppression gate -> classify ->
+ *  persist, using that event's own account (event.accountId) for the
+ *  per-account memory/language settings/suppression list. Call once at
+ *  startup (see server.ts, alongside mailService.initAll()) — the listener
+ *  is registered on the mailService singleton itself, not on any one
+ *  account's provider, so it survives accounts being added/removed/
+ *  reconnected without needing to be re-registered. Returns an unsubscribe
+ *  function mirroring mailService.onEvent's own contract. */
 export function startAutoClassification(dataDir: string): () => void {
   return mailService.onEvent((event) => {
     if (event.type !== 'newMessage') return;
@@ -27,19 +28,20 @@ export function startAutoClassification(dataDir: string): () => void {
 
 async function handleNewMessage(
   dataDir: string,
-  event: Extract<MailEvent, { type: 'newMessage' }>,
+  event: Extract<AccountMailEvent, { type: 'newMessage' }>,
 ): Promise<void> {
   // No lighter-weight single-message fetch exists on MailProvider, so the
   // suppression gate below runs after a full fetch rather than before it —
   // one extra message body over the wire per suppressed sender, never a
   // batch, so not worth a new provider method for.
-  const message = await mailService.getProvider().getMessage(event.messageId);
+  const message = await mailService.getMessage(event.messageId);
+  const accountId = event.accountId;
 
   // A sender the user has unsubscribed from or suppressed never reaches
   // the model at all — see chat history: "if I have chosen to suppress an
   // email, I don't want it to be processed by the AI ever again either."
   // A full block, not just "don't force it into the feed."
-  if (await isSuppressed(dataDir, message.from.address)) return;
+  if (await isSuppressed(dataDir, accountId, message.from.address)) return;
 
   // Deterministic, no model involved (see list-unsubscribe.ts) — a real
   // working unsubscribe mechanism is, on its own, enough to earn a feed
@@ -51,8 +53,8 @@ async function handleNewMessage(
   // have shown anyway.
   const unsubscribeEligible = message.unsubscribe.type !== 'none';
 
-  const userLanguages = await getSpokenLanguages(dataDir);
-  const memory = await getMemory(dataDir);
+  const userLanguages = await getSpokenLanguages(dataDir, accountId);
+  const memory = await getMemory(dataDir, accountId);
   let triage = await classifyEmail(buildEmailForModel(message), { userLanguages, memory });
   if (!triage) {
     // The model couldn't be coaxed into a valid response within the retry
@@ -67,6 +69,7 @@ async function handleNewMessage(
     }
     triage = {
       emailId: message.id,
+      accountId,
       visibility: { type: 'feed' },
       draftReply: { type: 'none' },
       suspicious: { type: 'no' },

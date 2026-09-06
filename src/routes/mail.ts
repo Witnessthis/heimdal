@@ -11,6 +11,11 @@ interface Options {
 }
 
 interface QuickSendBody {
+  // No message id to derive this from (a fresh compose has no originating
+  // card) — the Inbox tab's compose UI always knows which account it's
+  // currently viewing (see its account switcher) and sends that along
+  // explicitly.
+  accountId: string;
   to: EmailAddress[];
   cc?: EmailAddress[];
   bcc?: EmailAddress[];
@@ -51,16 +56,32 @@ export const mailRoutes: FastifyPluginAsync<Options> = async (fastify, { dataDir
     reply.send(error);
   });
 
-  fastify.get('/folders', async (_request, reply) => {
-    const folders = await mailService.getProvider().listFolders();
-    return reply.send({ folders });
-  });
+  fastify.get<{ Querystring: { accountId: string } }>(
+    '/folders',
+    {
+      schema: {
+        querystring: {
+          type: 'object',
+          required: ['accountId'],
+          properties: { accountId: { type: 'string' } },
+        },
+      },
+    },
+    async (request, reply) => {
+      const folders = await mailService.listFolders(request.query.accountId);
+      return reply.send({ folders });
+    },
+  );
 
   // Server-Sent Events stream of mailService's events (newMessage,
   // messageUpdated, messageDeleted, connectionState) — the delivery half of
   // the IMAP IDLE session's detection half. Without this, IDLE notices new
   // mail arriving but nothing ever tells a connected browser about it.
-  fastify.get('/events', (request, reply) => {
+  // Scoped to one account (?accountId=) — the Inbox tab only ever looks at
+  // one account's live stream at a time (see its account switcher);
+  // events from every other connected account are filtered out here
+  // rather than left for the browser to sort through.
+  fastify.get<{ Querystring: { accountId: string } }>('/events', (request, reply) => {
     reply.hijack();
     reply.raw.writeHead(200, {
       'Content-Type': 'text/event-stream',
@@ -69,7 +90,9 @@ export const mailRoutes: FastifyPluginAsync<Options> = async (fastify, { dataDir
     });
     reply.raw.write('\n');
 
+    const { accountId } = request.query;
     const unsubscribe = mailService.onEvent((event) => {
+      if (event.accountId !== accountId) return;
       reply.raw.write(`data: ${JSON.stringify(event)}\n\n`);
     });
 
@@ -84,14 +107,17 @@ export const mailRoutes: FastifyPluginAsync<Options> = async (fastify, { dataDir
     });
   });
 
-  fastify.get<{ Querystring: { folderId: string; pageToken?: string; pageSize?: string } }>(
+  fastify.get<{
+    Querystring: { accountId: string; folderId: string; pageToken?: string; pageSize?: string };
+  }>(
     '/messages',
     {
       schema: {
         querystring: {
           type: 'object',
-          required: ['folderId'],
+          required: ['accountId', 'folderId'],
           properties: {
+            accountId: { type: 'string' },
             folderId: { type: 'string' },
             pageToken: { type: 'string' },
             pageSize: { type: 'string' },
@@ -100,8 +126,8 @@ export const mailRoutes: FastifyPluginAsync<Options> = async (fastify, { dataDir
       },
     },
     async (request, reply) => {
-      const { folderId, pageToken, pageSize } = request.query;
-      const page = await mailService.getProvider().listMessages({
+      const { accountId, folderId, pageToken, pageSize } = request.query;
+      const page = await mailService.listMessages(accountId, {
         folderId,
         pageToken,
         pageSize: pageSize ? Number(pageSize) : undefined,
@@ -111,27 +137,27 @@ export const mailRoutes: FastifyPluginAsync<Options> = async (fastify, { dataDir
   );
 
   fastify.get<{ Params: { id: string } }>('/messages/:id', async (request, reply) => {
-    const message = await mailService.getProvider().getMessage(request.params.id);
+    const message = await mailService.getMessage(request.params.id);
     return reply.send(message);
   });
 
   fastify.post<{ Params: { id: string } }>('/messages/:id/read', async (request, reply) => {
-    await mailService.getProvider().setRead(request.params.id, true);
+    await mailService.setRead(request.params.id, true);
     return reply.send({ ok: true });
   });
 
   fastify.post<{ Params: { id: string } }>('/messages/:id/unread', async (request, reply) => {
-    await mailService.getProvider().setRead(request.params.id, false);
+    await mailService.setRead(request.params.id, false);
     return reply.send({ ok: true });
   });
 
   fastify.post<{ Params: { id: string } }>('/messages/:id/flag', async (request, reply) => {
-    await mailService.getProvider().setFlagged(request.params.id, true);
+    await mailService.setFlagged(request.params.id, true);
     return reply.send({ ok: true });
   });
 
   fastify.post<{ Params: { id: string } }>('/messages/:id/unflag', async (request, reply) => {
-    await mailService.getProvider().setFlagged(request.params.id, false);
+    await mailService.setFlagged(request.params.id, false);
     return reply.send({ ok: true });
   });
 
@@ -147,18 +173,18 @@ export const mailRoutes: FastifyPluginAsync<Options> = async (fastify, { dataDir
       },
     },
     async (request, reply) => {
-      await mailService.getProvider().moveToFolder(request.params.id, request.body.folderId);
+      await mailService.moveToFolder(request.params.id, request.body.folderId);
       return reply.send({ ok: true });
     },
   );
 
   fastify.post<{ Params: { id: string } }>('/messages/:id/archive', async (request, reply) => {
-    await mailService.getProvider().archive(request.params.id);
+    await mailService.archive(request.params.id);
     return reply.send({ ok: true });
   });
 
   fastify.post<{ Params: { id: string } }>('/messages/:id/delete', async (request, reply) => {
-    await mailService.getProvider().deleteMessage(request.params.id);
+    await mailService.deleteMessage(request.params.id);
     return reply.send({ ok: true });
   });
 
@@ -182,7 +208,7 @@ export const mailRoutes: FastifyPluginAsync<Options> = async (fastify, { dataDir
   // never in the browser — this app's CSP locks connectSrc to 'self', and
   // the target URL is attacker-controlled email content regardless.
   fastify.post<{ Params: { id: string } }>('/messages/:id/unsubscribe', async (request, reply) => {
-    const message = await mailService.getProvider().getMessage(request.params.id);
+    const message = await mailService.getMessage(request.params.id);
     if (message.unsubscribe.type !== 'oneClick') {
       return reply.code(400).send({ error: 'This message has no one-click unsubscribe available' });
     }
@@ -198,8 +224,9 @@ export const mailRoutes: FastifyPluginAsync<Options> = async (fastify, { dataDir
       schema: {
         body: {
           type: 'object',
-          required: ['to', 'subject'],
+          required: ['accountId', 'to', 'subject'],
           properties: {
+            accountId: { type: 'string' },
             to: { type: 'array', items: addressSchema, minItems: 1 },
             cc: { type: 'array', items: addressSchema },
             bcc: { type: 'array', items: addressSchema },
@@ -214,7 +241,7 @@ export const mailRoutes: FastifyPluginAsync<Options> = async (fastify, { dataDir
     },
     async (request, reply) => {
       const body = request.body;
-      const result = await mailService.getProvider().send({
+      const result = await mailService.send(body.accountId, {
         to: body.to,
         cc: body.cc,
         bcc: body.bcc,

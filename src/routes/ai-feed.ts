@@ -1,9 +1,11 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { buildMemoryEvent, scheduleMemoryUpdate } from '../ai/memory-update';
 import type { EmailTriage } from '../ai/triage';
+import { listAccounts } from '../lib/accounts';
 import { getFeedItems, removeFeedItem } from '../lib/ai-feed';
 import { requireAuth } from '../lib/require-auth';
 import { isSuppressed, recordSuppression } from '../lib/unsubscribe-suppressions';
+import { splitQualifiedId } from '../mail/account-id';
 import { performOneClickUnsubscribe } from '../mail/perform-unsubscribe';
 import { mailService } from '../mail/registry';
 import type { EmailMessage } from '../mail/types';
@@ -35,7 +37,11 @@ export async function buildFeedList(dataDir: string): Promise<AiFeedListItem[]> 
   const triageItems = await getFeedItems(dataDir);
   if (triageItems.length === 0) return [];
 
-  const summaries = await mailService.getProvider().getMessageSummaries(triageItems.map((t) => t.emailId));
+  const summaries = await mailService.getMessageSummaries(triageItems.map((t) => t.emailId));
+  // Looked up once per list build (not per item) and joined in below — see
+  // AiFeedListItem's own doc comment for why accountColor/accountLabel are
+  // baked in here rather than left for the frontend to fetch/join itself.
+  const accounts = new Map((await listAccounts(dataDir)).map((a) => [a.id, a]));
 
   const items: AiFeedListItem[] = [];
   for (const triage of triageItems) {
@@ -47,6 +53,7 @@ export async function buildFeedList(dataDir: string): Promise<AiFeedListItem[]> 
       await removeFeedItem(dataDir, triage.emailId);
       continue;
     }
+    const account = accounts.get(triage.accountId);
     items.push({
       triage,
       from: message.from,
@@ -57,7 +64,10 @@ export async function buildFeedList(dataDir: string): Promise<AiFeedListItem[]> 
       threadId: message.threadId,
       unsubscribe: message.unsubscribe,
       unsubscribeEligible:
-        message.unsubscribe.type !== 'none' && !(await isSuppressed(dataDir, message.from.address)),
+        message.unsubscribe.type !== 'none' &&
+        !(await isSuppressed(dataDir, triage.accountId, message.from.address)),
+      accountColor: account?.color ?? '#888888',
+      accountLabel: account?.label ?? 'Unknown account',
     });
   }
   return items;
@@ -75,8 +85,13 @@ export async function executeConfirm(
   message: EmailMessage,
   staged: ConfirmBody,
 ): Promise<void> {
+  // message.id is already account-qualified (see mail/registry.ts) — the
+  // account to send through is always the one that received the email
+  // being acted on, never ambiguous.
+  const { accountId } = splitQualifiedId(message.id);
+
   if (staged.draftReply) {
-    await mailService.getProvider().send({
+    await mailService.send(accountId, {
       to: [message.from],
       subject: staged.draftReply.subject,
       body: { text: staged.draftReply.body },
@@ -88,7 +103,7 @@ export async function executeConfirm(
   if (staged.unsubscribeAction === 'unsubscribe') {
     const unsubscribe = message.unsubscribe;
     if (unsubscribe.type === 'mailto') {
-      await mailService.getProvider().send({
+      await mailService.send(accountId, {
         to: [{ address: unsubscribe.address }],
         subject: unsubscribe.subject ?? 'Unsubscribe',
         body: { text: unsubscribe.body ?? '' },
@@ -105,9 +120,9 @@ export async function executeConfirm(
     // request (or a 'link'/'none' mechanism this server can't verify at
     // all) would otherwise keep getting force-shown forever. This is the
     // local-suppression fallback the real attempt doesn't guarantee.
-    await recordSuppression(dataDir, message.from.address, 'unsubscribed');
+    await recordSuppression(dataDir, accountId, message.from.address, 'unsubscribed');
   } else if (staged.unsubscribeAction === 'suppress') {
-    await recordSuppression(dataDir, message.from.address, 'suppressed');
+    await recordSuppression(dataDir, accountId, message.from.address, 'suppressed');
   }
 }
 
@@ -181,8 +196,8 @@ export async function logCardActionForMemory(
   triage: EmailTriage,
   actionSummary: string,
 ): Promise<void> {
-  const message = await mailService.getProvider().getMessage(triage.emailId);
-  await scheduleMemoryUpdate(dataDir, buildMemoryEvent(message, triage, actionSummary));
+  const message = await mailService.getMessage(triage.emailId);
+  await scheduleMemoryUpdate(dataDir, triage.accountId, buildMemoryEvent(message, triage, actionSummary));
 }
 
 export const aiFeedRoutes: FastifyPluginAsync<Options> = async (fastify, { dataDir }) => {
@@ -223,7 +238,7 @@ export const aiFeedRoutes: FastifyPluginAsync<Options> = async (fastify, { dataD
     },
     async (request, reply) => {
       const emailId = request.params.emailId;
-      const message = await mailService.getProvider().getMessage(emailId);
+      const message = await mailService.getMessage(emailId);
       // Read before removeFeedItem deletes this row — see
       // logCardActionForMemory's own comment on why.
       const triage = (await getFeedItems(dataDir)).find((item) => item.emailId === emailId);

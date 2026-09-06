@@ -3,7 +3,8 @@ import { buildMemoryEvent } from './memory-update';
 import type { EmailTriage } from './triage-schema';
 
 const triage = (overrides: Partial<EmailTriage> = {}): EmailTriage => ({
-  emailId: 'imap:INBOX:1',
+  emailId: 'acc1|imap:INBOX:1',
+  accountId: 'acc1',
   visibility: { type: 'feed' },
   draftReply: { type: 'none' },
   suspicious: { type: 'no' },

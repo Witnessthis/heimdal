@@ -1,7 +1,7 @@
 import { loadAiFeed } from '../ai-feed/list';
 import { ensureNewEmailBgPinned, hiddenScrollTop } from '../compose/new-email-reveal';
 import { aiFeedView, feed, nav, navAiFeed, navInbox, navSettings, settingsView } from '../feed/dom';
-import { loadLanguageSettings } from './languages';
+import { loadAccounts } from './accounts';
 import { refreshNotificationRow } from './notifications';
 import {
   isAutoLoadImagesEnabled,
@@ -68,8 +68,7 @@ function showView(view: 'ai-feed' | 'inbox' | 'settings'): void {
   if (view === 'ai-feed') loadAiFeed();
   if (view === 'settings') {
     loadTotpStatus();
-    void loadProviderStatus();
-    loadLanguageSettings();
+    void loadAccounts();
     void refreshNotificationRow();
     alignSubSettingConnectors();
   }
@@ -104,34 +103,6 @@ async function loadTotpStatus(): Promise<void> {
 
 document.getElementById('totp-btn')!.addEventListener('click', () => {
   window.location.href = '/totp-setup.html';
-});
-
-/** Reflects the currently connected mail account and offers a way back
- *  into the connect flow to change it — connect-provider.html/
- *  connect-imap.html no longer bounce back home just because a provider
- *  is already configured (see their own comments), which is what makes
- *  this button able to actually go anywhere. */
-async function loadProviderStatus(): Promise<void> {
-  const status = await fetch('/api/provider/status').then((r) => r.json());
-  const desc = document.getElementById('mail-account-desc')!;
-  const btn = document.getElementById('mail-account-btn')!;
-  if (!status.configured) {
-    desc.textContent = 'No mail account connected';
-    btn.textContent = 'Connect';
-  } else {
-    desc.textContent = status.healthy
-      ? `Connected via ${status.kind.toUpperCase()}`
-      : `Connected via ${status.kind.toUpperCase()} — connection issue, tap to reconnect`;
-    btn.textContent = 'Change';
-  }
-}
-
-document.getElementById('mail-account-btn')!.addEventListener('click', () => {
-  window.location.href = '/connect-provider.html';
-});
-
-document.getElementById('memory-btn')!.addEventListener('click', () => {
-  window.location.href = '/memory.html';
 });
 
 // Builds the theme picker grid once — the list of available themes

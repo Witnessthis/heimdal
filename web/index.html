@@ -35,6 +35,9 @@
     <div id="new-email-bg">
       <button type="button" id="new-email-btn">New Email</button>
     </div>
+    <div id="inbox-account-bar" style="display: none">
+      <select id="inbox-account-select" aria-label="Mail account"></select>
+    </div>
     <div class="feed-top-spacer"></div>
     <div class="feed-status" id="feed-status">Loading your inbox…</div>
   </main>
@@ -80,26 +83,6 @@
         <div class="theme-grid" id="theme-grid"></div>
       </div>
 
-      <p class="section-label" style="margin-top: 32px;">AI</p>
-      <div class="setting-row" style="border-bottom: none; display: block;">
-        <div class="setting-info" style="margin-bottom: 12px;">
-          <span class="setting-name">Languages I speak</span>
-          <span class="setting-desc">Drafted replies are translated into one of these when the original email isn't written in any of them. Leave empty to always draft in English.</span>
-        </div>
-        <div class="language-chips" id="language-chips"></div>
-        <select class="language-add" id="language-add">
-          <option value="" selected disabled>+ Add language</option>
-        </select>
-      </div>
-
-      <div class="setting-row" style="border-bottom: none;">
-        <div class="setting-info">
-          <span class="setting-name">Personalized memory</span>
-          <span class="setting-desc">What Heimdal has learned about how you handle mail, based on your Feed actions</span>
-        </div>
-        <button class="btn-action" id="memory-btn" type="button">View</button>
-      </div>
-
       <p class="section-label" style="margin-top: 32px;">Notifications</p>
       <div class="setting-row" style="border-bottom: none;">
         <div class="setting-info">
@@ -118,15 +101,13 @@
         <button class="btn-action" id="totp-btn" type="button">Set up</button>
       </div>
 
-      <p class="section-label" style="margin-top: 32px;">Account</p>
+      <p class="section-label" style="margin-top: 32px;">Accounts</p>
+      <div id="accounts-list"></div>
       <div class="setting-row" style="border-bottom: none;">
-        <div class="setting-info">
-          <span class="setting-name" id="mail-account-label">Mail account</span>
-          <span class="setting-desc" id="mail-account-desc">Loading…</span>
-        </div>
-        <button class="btn-action" id="mail-account-btn" type="button">Change</button>
+        <button class="btn-action" id="add-account-btn" type="button">+ Add account</button>
       </div>
-      <div class="setting-row" style="border-bottom: none;">
+
+      <div class="setting-row" style="border-bottom: none; margin-top: 16px;">
         <button class="btn-logout" id="logout-btn" type="button">Log out</button>
       </div>
     </div>

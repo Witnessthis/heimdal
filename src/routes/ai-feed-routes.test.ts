@@ -8,11 +8,11 @@ import { buildServer } from '../server';
 
 // Route-wiring/auth/validation coverage against the real Fastify stack —
 // mirrors settings.test.ts's pattern. Deliberately never configures a
-// mail provider: these three routes all need mailService.getProvider(),
-// and there's no lightweight fake for it (mail.ts's own routes have the
-// same gap — only the greenmail integration suite exercises a real
-// provider). What's covered here is exactly what doesn't need one: auth
-// gating, the "no provider configured" gate, and request-schema
+// mail account: these three routes all need a connected mailService
+// provider, and there's no lightweight fake for it (mail.ts's own routes
+// have the same gap — only the greenmail integration suite exercises a
+// real provider). What's covered here is exactly what doesn't need one:
+// auth gating, the "no account configured" gate, and request-schema
 // validation. executeConfirm/buildFeedList's actual branching logic is
 // covered separately, with mocks, in ai-feed.test.ts.
 let app: FastifyInstance;

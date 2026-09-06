@@ -72,11 +72,14 @@ Respond with ONLY the full updated file content, nothing else — no preamble, n
 
 // Serializes concurrent calls against the same file — two Feed actions taken
 // in quick succession must not both read the same "before" content and then
-// race to write, silently dropping one of them.
-let queue: Promise<void> = Promise.resolve();
+// race to write, silently dropping one of them. Keyed per account: two
+// different accounts' memory files are independent and their updates must
+// not wait on each other, but two updates to the *same* account's file
+// still need to queue behind one another.
+const queues = new Map<string, Promise<void>>();
 
-async function doUpdate(dataDir: string, eventDescription: string): Promise<void> {
-  const current = await getMemory(dataDir);
+async function doUpdate(dataDir: string, accountId: string, eventDescription: string): Promise<void> {
+  const current = await getMemory(dataDir, accountId);
   const result = await generateText({
     model: getModel(),
     instructions: INSTRUCTIONS,
@@ -87,7 +90,7 @@ async function doUpdate(dataDir: string, eventDescription: string): Promise<void
       },
     ],
   });
-  await setMemory(dataDir, result.text.trim());
+  await setMemory(dataDir, accountId, result.text.trim());
 }
 
 /** Fire-and-forget from the caller's perspective (see src/routes/ai-feed.ts)
@@ -95,10 +98,18 @@ async function doUpdate(dataDir: string, eventDescription: string): Promise<void
  *  the confirm/dismiss request it was triggered by. Not unit-tested
  *  directly, same as classifyEmail itself: this is only ever mocked at the
  *  call site in tests, never exercised against a real model. */
-export function scheduleMemoryUpdate(dataDir: string, eventDescription: string): Promise<void> {
-  const run = queue.then(() => doUpdate(dataDir, eventDescription));
+export function scheduleMemoryUpdate(
+  dataDir: string,
+  accountId: string,
+  eventDescription: string,
+): Promise<void> {
+  const queue = queues.get(accountId) ?? Promise.resolve();
+  const run = queue.then(() => doUpdate(dataDir, accountId, eventDescription));
   // Swallow here too (not just at the caller) so one failed update doesn't
-  // permanently wedge the queue for every update after it.
-  queue = run.catch(() => {});
+  // permanently wedge this account's queue for every update after it.
+  queues.set(
+    accountId,
+    run.catch(() => {}),
+  );
   return run;
 }

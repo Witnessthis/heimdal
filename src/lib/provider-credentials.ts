@@ -1,5 +1,6 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { accountDir } from './accounts';
 import { decrypt, encrypt, loadOrCreateMasterKey } from './crypto';
 
 /** Connection details for the configured provider. No secrets here — those
@@ -41,23 +42,30 @@ const FILE_NAME = 'provider-credentials.json';
 
 export async function saveProviderCredentials(
   dataDir: string,
+  accountId: string,
   config: ProviderConfig,
   secret: ProviderSecret,
 ): Promise<void> {
-  await mkdir(dataDir, { recursive: true });
+  const dir = accountDir(dataDir, accountId);
+  await mkdir(dir, { recursive: true });
+  // The master key stays global (one key, dataDir-rooted) rather than
+  // per-account — see crypto.ts's own doc comment on why it must be
+  // available before any account-specific state exists (e.g. right after a
+  // container restart, before anyone has logged in).
   const key = await loadOrCreateMasterKey(dataDir);
   const stored: StoredProviderCredentials = {
     config,
     secret: encrypt(key, JSON.stringify(secret)),
   };
-  await writeFile(join(dataDir, FILE_NAME), JSON.stringify(stored, null, 2), { mode: 0o600 });
+  await writeFile(join(dir, FILE_NAME), JSON.stringify(stored, null, 2), { mode: 0o600 });
 }
 
 export async function loadProviderCredentials(
   dataDir: string,
+  accountId: string,
 ): Promise<{ config: ProviderConfig; secret: ProviderSecret } | null> {
   try {
-    const raw = await readFile(join(dataDir, FILE_NAME), 'utf-8');
+    const raw = await readFile(join(accountDir(dataDir, accountId), FILE_NAME), 'utf-8');
     const stored = JSON.parse(raw) as StoredProviderCredentials;
     const key = await loadOrCreateMasterKey(dataDir);
     const secret = JSON.parse(decrypt(key, stored.secret)) as ProviderSecret;
@@ -70,16 +78,20 @@ export async function loadProviderCredentials(
   }
 }
 
-export async function updateProviderSecret(dataDir: string, secret: ProviderSecret): Promise<void> {
-  const existing = await loadProviderCredentials(dataDir);
+export async function updateProviderSecret(
+  dataDir: string,
+  accountId: string,
+  secret: ProviderSecret,
+): Promise<void> {
+  const existing = await loadProviderCredentials(dataDir, accountId);
   if (!existing) throw new Error('No provider configured');
-  await saveProviderCredentials(dataDir, existing.config, secret);
+  await saveProviderCredentials(dataDir, accountId, existing.config, secret);
 }
 
-export async function clearProviderCredentials(dataDir: string): Promise<void> {
+export async function clearProviderCredentials(dataDir: string, accountId: string): Promise<void> {
   try {
     const { unlink } = await import('node:fs/promises');
-    await unlink(join(dataDir, FILE_NAME));
+    await unlink(join(accountDir(dataDir, accountId), FILE_NAME));
   } catch {
     // already gone, that's fine
   }

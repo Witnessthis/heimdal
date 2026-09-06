@@ -1,6 +1,7 @@
 import { upsertFeedItem } from '../lib/ai-feed';
 import { getSpokenLanguages } from '../lib/language-settings';
 import { getMemory } from '../lib/memory-notes';
+import { splitQualifiedId } from '../mail/account-id';
 import { mailService } from '../mail/registry';
 import { buildEmailForModel } from './email-for-model';
 import { buildMemoryEvent, scheduleMemoryUpdate } from './memory-update';
@@ -19,15 +20,16 @@ import { classifyEmail, type EmailTriage } from './triage';
  *  hidden category of mail at all, and to correct the pattern once they do,
  *  via the personalized-memory feedback loop. */
 export async function reprocessMessage(dataDir: string, messageId: string): Promise<void> {
-  const message = await mailService.getProvider().getMessage(messageId);
+  const { accountId } = splitQualifiedId(messageId);
+  const message = await mailService.getMessage(messageId);
 
   // Deliberately does NOT check isSuppressed — this is a direct, targeted
   // request about one specific email, not the automatic pipeline
   // isSuppressed exists to quiet. It doesn't touch the suppression record
   // either: this email gets shown; the sender's suppression status is
   // untouched.
-  const userLanguages = await getSpokenLanguages(dataDir);
-  const memory = await getMemory(dataDir);
+  const userLanguages = await getSpokenLanguages(dataDir, accountId);
+  const memory = await getMemory(dataDir, accountId);
   const result = await classifyEmail(buildEmailForModel(message), { userLanguages, memory });
 
   // Preserve what the model actually decided (for the memory note below)
@@ -38,6 +40,7 @@ export async function reprocessMessage(dataDir: string, messageId: string): Prom
     ? { ...result, visibility: { type: 'feed' } }
     : {
         emailId: message.id,
+        accountId,
         visibility: { type: 'feed' },
         draftReply: { type: 'none' },
         suspicious: { type: 'no' },
@@ -53,5 +56,5 @@ export async function reprocessMessage(dataDir: string, messageId: string): Prom
     originalVisibility === 'feed'
       ? 'the user explicitly marked this for reprocessing even though the AI already had it visible — reinforcing that this kind of email belongs in the Feed'
       : `the user explicitly marked this for reprocessing and forced it into the Feed, overriding the AI's own verdict (visibility=${originalVisibility ?? 'no valid classification produced'}) — this is a deliberate, single-instance correction, not a passive action`;
-  await scheduleMemoryUpdate(dataDir, buildMemoryEvent(message, triage, actionSummary));
+  await scheduleMemoryUpdate(dataDir, accountId, buildMemoryEvent(message, triage, actionSummary));
 }

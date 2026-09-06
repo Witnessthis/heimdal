@@ -259,3 +259,59 @@ button.badge:disabled:hover {
   font-size: 0.85rem;
   font-family: inherit;
 }
+
+/* One mail account's card in Settings > Accounts (see accounts.ts) — its
+   own color/label/status up top, then its own memory link and its own
+   independent language editor (createLanguageEditor in languages.ts)
+   below. Visually separated from the next account's card by the same
+   border-soft rule the rest of Settings uses between rows. */
+.account-row {
+  padding: 16px 0;
+  border-bottom: 1px solid var(--border-soft);
+}
+.account-row-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+/* Native color input, unstyled beyond sizing — deliberately not a
+   constrained swatch picker (see chat history: any color the user
+   wants, defaults just come from a curated palette at creation time). */
+.account-color-input {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--border-soft);
+  border-radius: 6px;
+  background: none;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.account-label-input {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border-soft);
+  background: var(--bg-elevated);
+  color: var(--fg);
+  font-size: 0.95rem;
+  font-family: inherit;
+}
+.account-label-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.account-status {
+  display: block;
+  margin-bottom: 10px;
+}
+.account-memory-link {
+  display: inline-block;
+  text-decoration: none;
+  margin-bottom: 14px;
+}
+.account-languages {
+  padding-top: 4px;
+}

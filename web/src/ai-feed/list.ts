@@ -5,7 +5,7 @@ import { aiFeedStatus, aiFeedView } from './dom';
 
 /** Fetches and rebuilds the whole AI Feed view — called every time the
  *  tab is shown (see settings.ts's showView()), not cached, matching the
- *  existing loadTotpStatus()/loadLanguageSettings() pattern: the
+ *  existing loadTotpStatus()/loadAccounts() pattern: the
  *  classification pipeline runs entirely server-side and can change the
  *  set of pending items at any time, so there's nothing worth caching
  *  client-side. A full rebuild rather than a diff — simpler, and AI feed

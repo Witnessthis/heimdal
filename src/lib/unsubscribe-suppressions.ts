@@ -1,6 +1,7 @@
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { accountDir } from './accounts';
 
 /** Whether a sender's unsubscribe has already been handled — either a real
  *  attempt was made ('unsubscribed') or the user chose to just stop seeing
@@ -13,15 +14,22 @@ import { DatabaseSync } from 'node:sqlite';
  *  nothing reads it today. See src/ai/auto-classify.ts and
  *  src/routes/ai-feed.ts for the mechanism this backs.
  *
+ *  One database per account (see accountDir), not a single global one —
+ *  unsubscribing/suppressing a sender through one mail account says
+ *  nothing about whether the user wants that sender's mail to a *different*
+ *  account (see chat history: these are deliberately independent, not a
+ *  cross-account block on the address itself).
+ *
  *  node:sqlite: built into Node, no native binding to cross-compile for
  *  the Raspberry Pi deploy target. */
 export type SuppressionMethod = 'unsubscribed' | 'suppressed';
 
 const FILE_NAME = 'unsubscribe-suppressions.sqlite';
 
-async function openDb(dataDir: string): Promise<DatabaseSync> {
-  await mkdir(dataDir, { recursive: true });
-  const db = new DatabaseSync(join(dataDir, FILE_NAME));
+async function openDb(dataDir: string, accountId: string): Promise<DatabaseSync> {
+  const dir = accountDir(dataDir, accountId);
+  await mkdir(dir, { recursive: true });
+  const db = new DatabaseSync(join(dir, FILE_NAME));
   db.exec(`
     CREATE TABLE IF NOT EXISTS unsubscribe_suppressions (
       address TEXT PRIMARY KEY,
@@ -39,8 +47,8 @@ function normalize(address: string): string {
   return address.trim().toLowerCase();
 }
 
-export async function isSuppressed(dataDir: string, address: string): Promise<boolean> {
-  const db = await openDb(dataDir);
+export async function isSuppressed(dataDir: string, accountId: string, address: string): Promise<boolean> {
+  const db = await openDb(dataDir, accountId);
   try {
     const row = db
       .prepare('SELECT 1 FROM unsubscribe_suppressions WHERE address = ?')
@@ -56,10 +64,11 @@ export async function isSuppressed(dataDir: string, address: string): Promise<bo
  *  blocked by the earlier row. */
 export async function recordSuppression(
   dataDir: string,
+  accountId: string,
   address: string,
   method: SuppressionMethod,
 ): Promise<void> {
-  const db = await openDb(dataDir);
+  const db = await openDb(dataDir, accountId);
   try {
     db.prepare(
       `INSERT INTO unsubscribe_suppressions (address, method, created_at) VALUES (?, ?, ?)

@@ -424,6 +424,19 @@ export function buildAiFeedCard(item: AiFeedListItem): HTMLElement {
 
   const meta = document.createElement('div');
   meta.className = 'card-meta';
+  // A small, theme-independent dot naming which account this card came
+  // from — the Feed merges every connected account into one list (unlike
+  // the Inbox tab, which shows one account at a time via its own
+  // switcher), so this is the only thing on the card itself that
+  // disambiguates "which mailbox do I act through" at a glance. Inline
+  // `background`, not a CSS variable, since the color is arbitrary
+  // per-account data (see lib/accounts.ts), not a themed token — it must
+  // read the same regardless of which theme is active.
+  const accountDot = document.createElement('span');
+  accountDot.className = 'card-account-dot';
+  accountDot.style.background = item.accountColor;
+  accountDot.title = item.accountLabel;
+  meta.appendChild(accountDot);
   const fromName = document.createElement('span');
   fromName.className = 'card-from-name';
   fromName.textContent = item.from.name || item.from.address || '(unknown sender)';

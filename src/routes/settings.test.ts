@@ -33,16 +33,16 @@ afterEach(async () => {
   await rm(dir, { recursive: true, force: true });
 });
 
-describe('GET /api/settings/languages', () => {
+describe('GET /api/settings/acc1/languages', () => {
   it('rejects an unauthenticated request', async () => {
-    const res = await app.inject({ method: 'GET', url: '/api/settings/languages' });
+    const res = await app.inject({ method: 'GET', url: '/api/settings/acc1/languages' });
     expect(res.statusCode).toBe(401);
   });
 
   it('starts empty, with the full ISO-639-1 name list available', async () => {
     const res = await app.inject({
       method: 'GET',
-      url: '/api/settings/languages',
+      url: '/api/settings/acc1/languages',
       cookies: { session },
     });
     expect(res.statusCode).toBe(200);
@@ -54,11 +54,11 @@ describe('GET /api/settings/languages', () => {
   });
 });
 
-describe('PUT /api/settings/languages', () => {
+describe('PUT /api/settings/acc1/languages', () => {
   it('rejects an unauthenticated request', async () => {
     const res = await app.inject({
       method: 'PUT',
-      url: '/api/settings/languages',
+      url: '/api/settings/acc1/languages',
       payload: { languages: ['English'] },
     });
     expect(res.statusCode).toBe(401);
@@ -67,7 +67,7 @@ describe('PUT /api/settings/languages', () => {
   it('saves a valid set, which a subsequent GET reflects', async () => {
     const put = await app.inject({
       method: 'PUT',
-      url: '/api/settings/languages',
+      url: '/api/settings/acc1/languages',
       cookies: { session },
       payload: { languages: ['English', 'Danish'] },
     });
@@ -76,7 +76,7 @@ describe('PUT /api/settings/languages', () => {
 
     const get = await app.inject({
       method: 'GET',
-      url: '/api/settings/languages',
+      url: '/api/settings/acc1/languages',
       cookies: { session },
     });
     expect(get.json().selected).toEqual(['English', 'Danish']);
@@ -85,7 +85,7 @@ describe('PUT /api/settings/languages', () => {
   it('rejects a name that is not a real language, without saving anything', async () => {
     const res = await app.inject({
       method: 'PUT',
-      url: '/api/settings/languages',
+      url: '/api/settings/acc1/languages',
       cookies: { session },
       payload: { languages: ['English', 'Klingon'] },
     });
@@ -93,7 +93,7 @@ describe('PUT /api/settings/languages', () => {
 
     const get = await app.inject({
       method: 'GET',
-      url: '/api/settings/languages',
+      url: '/api/settings/acc1/languages',
       cookies: { session },
     });
     expect(get.json().selected).toEqual([]);
@@ -102,7 +102,7 @@ describe('PUT /api/settings/languages', () => {
   it('dedupes a repeated entry rather than rejecting it', async () => {
     const res = await app.inject({
       method: 'PUT',
-      url: '/api/settings/languages',
+      url: '/api/settings/acc1/languages',
       cookies: { session },
       payload: { languages: ['English', 'English'] },
     });
@@ -113,13 +113,13 @@ describe('PUT /api/settings/languages', () => {
   it('overwrites the previous set entirely, including clearing it with an empty array', async () => {
     await app.inject({
       method: 'PUT',
-      url: '/api/settings/languages',
+      url: '/api/settings/acc1/languages',
       cookies: { session },
       payload: { languages: ['English'] },
     });
     const res = await app.inject({
       method: 'PUT',
-      url: '/api/settings/languages',
+      url: '/api/settings/acc1/languages',
       cookies: { session },
       payload: { languages: [] },
     });

@@ -1,8 +1,9 @@
-import type { MailEvent } from '@server/mail/provider';
+import type { AccountMailEvent } from '@server/mail/registry';
 import type { EmailMessage, EmailSummary, Folder, Page } from '@server/mail/types';
 import { openForwardCompose, openReplyCompose } from '../compose/compose';
 import { buildCard } from './card';
-import { feed, feedStatus } from './dom';
+import { feed, feedStatus, inboxAccountBar, inboxAccountSelect } from './dom';
+import { setCurrentInboxAccountId } from './inbox-account';
 
 // A batch is fetched over a single IMAP connection (see the backend's
 // ImapProvider.listMessages()), but arrives as one burst rather than
@@ -30,6 +31,13 @@ const INITIAL_BATCHES = 3;
 const LOAD_AHEAD_BATCHES = 3;
 const TRIGGER_BATCHES_REMAINING = 1;
 
+// Remembers the last account viewed across visits — the Inbox tab is
+// scoped to one account at a time (see chat history: each account has
+// its own inbox, unlike the merged Feed), so this is what lets it default
+// back to whichever one the user last looked at instead of always
+// resetting to the first.
+const LAST_ACCOUNT_STORAGE_KEY = 'heimdal:inboxAccountId';
+
 let batchesLoaded = 0;
 let loadingAhead = false;
 const batchBoundaries: HTMLElement[] = []; // batchBoundaries[i] = permanent marker at the start of batch i (0-indexed)
@@ -37,9 +45,14 @@ const batchBoundaries: HTMLElement[] = []; // batchBoundaries[i] = permanent mar
 let nextPageToken: string | null = null;
 let loadingMore = false;
 let folderId: string | null = null;
+let accountId: string | null = null;
+let eventSource: EventSource | null = null;
 
 async function loadInbox(): Promise<void> {
-  const folders: { folders: Folder[] } = await fetch('/api/mail/folders').then((r) => r.json());
+  if (!accountId) return;
+  const url = new URL('/api/mail/folders', window.location.origin);
+  url.searchParams.set('accountId', accountId);
+  const folders: { folders: Folder[] } = await fetch(url).then((r) => r.json());
   const inbox = folders.folders.find((f) => f.kind === 'inbox') || folders.folders[0];
   if (!inbox) {
     feedStatus.textContent = 'No mail folders found.';
@@ -71,11 +84,12 @@ async function loadMoreBatches(n: number): Promise<void> {
 }
 
 async function loadMore(): Promise<void> {
-  if (loadingMore || !folderId) return;
+  if (loadingMore || !folderId || !accountId) return;
   loadingMore = true;
   const requestedPageToken = nextPageToken;
   try {
     const url = new URL('/api/mail/messages', window.location.origin);
+    url.searchParams.set('accountId', accountId);
     url.searchParams.set('folderId', folderId);
     url.searchParams.set('pageSize', String(PAGE_SIZE));
     if (requestedPageToken) url.searchParams.set('pageToken', requestedPageToken);
@@ -172,11 +186,16 @@ export function checkBatchTrigger(): void {
 // reconnects automatically if the connection drops. This connection
 // now stays open the whole time you're on this page, including while
 // viewing Settings, since that's a view toggle rather than a real
-// navigation — see showView() in settings.ts.
-function connectToMailEvents(): void {
-  const source = new EventSource('/api/mail/events');
+// navigation — see showView() in settings.ts. Scoped to one account
+// (?accountId=) — switchAccount() below tears this down and opens a
+// fresh one whenever the viewed account changes.
+function connectToMailEvents(forAccountId: string): void {
+  const url = new URL('/api/mail/events', window.location.origin);
+  url.searchParams.set('accountId', forAccountId);
+  const source = new EventSource(url);
+  eventSource = source;
   source.onmessage = async (e) => {
-    let event: MailEvent;
+    let event: AccountMailEvent;
     try {
       event = JSON.parse(e.data);
     } catch {
@@ -214,10 +233,58 @@ function prependCard(message: EmailMessage): void {
   if (feedStatus.isConnected) feedStatus.remove();
 }
 
-// Auth/provider bootstrap: 401 means not logged in (routes to setup or
-// login depending on whether the app has ever been configured); an
-// unconfigured mail provider routes to the connect flow. Only once past
-// both does the feed actually start loading.
+interface MailAccountOption {
+  id: string;
+  label: string;
+}
+
+/** Tears down everything scoped to the previously-viewed account (its SSE
+ *  connection, loaded cards, pagination state) and loads the requested one
+ *  fresh — the Inbox tab shows exactly one account's mailbox at a time
+ *  (unlike the merged, color-coded Feed tab), so switching is a full reset
+ *  rather than a filter over already-loaded data. */
+async function switchAccount(newAccountId: string): Promise<void> {
+  if (newAccountId === accountId) return;
+  accountId = newAccountId;
+  setCurrentInboxAccountId(newAccountId);
+  localStorage.setItem(LAST_ACCOUNT_STORAGE_KEY, newAccountId);
+
+  eventSource?.close();
+  eventSource = null;
+  folderId = null;
+  nextPageToken = null;
+  batchesLoaded = 0;
+  batchBoundaries.length = 0;
+  feed.querySelectorAll('.card-wrap, [data-batch-index]').forEach((el) => {
+    el.remove();
+  });
+  feedStatus.textContent = 'Loading your inbox…';
+  if (!feedStatus.isConnected) feed.insertBefore(feedStatus, sentinel);
+
+  connectToMailEvents(newAccountId);
+  await loadInbox();
+}
+
+function populateAccountSelect(accounts: MailAccountOption[]): void {
+  inboxAccountSelect.innerHTML = '';
+  for (const account of accounts) {
+    const option = document.createElement('option');
+    option.value = account.id;
+    option.textContent = account.label;
+    inboxAccountSelect.appendChild(option);
+  }
+  inboxAccountBar.style.display = accounts.length > 0 ? '' : 'none';
+}
+
+inboxAccountSelect.addEventListener('change', () => {
+  void switchAccount(inboxAccountSelect.value);
+});
+
+// Auth/account bootstrap: 401 means not logged in (routes to setup or
+// login depending on whether the app has ever been configured); no
+// connected mail account at all routes to the connect flow. Only once
+// past both does the feed actually start loading, defaulting to whichever
+// account was last viewed (if it still exists) or the first one otherwise.
 export async function bootstrap(): Promise<void> {
   const [meRes, statusRes] = await Promise.all([fetch('/api/me'), fetch('/api/status')]);
   if (meRes.status === 401) {
@@ -226,13 +293,15 @@ export async function bootstrap(): Promise<void> {
     return;
   }
 
-  const providerStatus = await fetch('/api/provider/status').then((r) => r.json());
-  if (!providerStatus.configured) {
+  const { accounts }: { accounts: MailAccountOption[] } = await fetch('/api/accounts').then((r) => r.json());
+  if (accounts.length === 0) {
     window.location.replace('/connect-provider.html');
     return;
   }
 
-  connectToMailEvents();
-
-  await loadInbox();
+  populateAccountSelect(accounts);
+  const lastViewed = localStorage.getItem(LAST_ACCOUNT_STORAGE_KEY);
+  const initial = accounts.find((a) => a.id === lastViewed) ?? accounts[0];
+  inboxAccountSelect.value = initial.id;
+  await switchAccount(initial.id);
 }

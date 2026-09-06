@@ -55,4 +55,12 @@ export interface AiFeedListItem {
   // handled for. Always current even if suppression state changed after
   // this item was originally classified (e.g. handled from elsewhere).
   unsubscribeEligible: boolean;
+  // Joined in from lib/accounts.ts at list-build time (see buildFeedList)
+  // rather than left for the frontend to separately fetch/join against
+  // /api/accounts — this is the only thing that lets a merged, multi-
+  // account Feed show which account each card came from (a small color
+  // dot, deliberately independent of the active theme — see
+  // web/src/ai-feed/card.ts).
+  accountColor: string;
+  accountLabel: string;
 }

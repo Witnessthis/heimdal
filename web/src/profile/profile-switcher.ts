@@ -89,9 +89,16 @@ async function openModal(): Promise<void> {
     label.textContent = profile.label;
 
     row.append(dot, label);
+    // Stays open on selection — switching profile is something you might
+    // want to do a few times in a row (comparing Feeds, checking each
+    // one), and closing every time made that more tedious than it needed
+    // to be. Re-marks which row is active in place rather than rebuilding
+    // the whole list from a fresh fetch.
     row.addEventListener('click', () => {
       setActiveProfileId(profile.id);
-      closeModal();
+      list.querySelectorAll('.profile-switcher-row').forEach((el) => {
+        el.classList.toggle('active', el === row);
+      });
     });
     list.appendChild(row);
   }

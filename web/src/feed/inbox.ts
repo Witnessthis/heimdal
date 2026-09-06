@@ -1,7 +1,7 @@
 import type { AccountMailEvent } from '@server/mail/registry';
 import type { EmailMessage, EmailSummary, Folder, Page } from '@server/mail/types';
 import { openForwardCompose, openReplyCompose } from '../compose/compose';
-import { resetNewEmailBgPin } from '../compose/new-email-reveal';
+import { ensureEnoughScrollRoom, resetNewEmailBgPin } from '../compose/new-email-reveal';
 import { getLastKnownProfileId, onActiveProfileChange, setActiveProfileId } from '../shared/active-profile';
 import { buildCard } from './card';
 import { feed, feedStatus } from './dom';
@@ -156,6 +156,11 @@ async function loadMore(generation: number): Promise<void> {
     if (!page.items?.length && !feed.querySelector('.card')) {
       feedStatus.textContent = 'No messages in your inbox.';
     }
+    // Keeps --feed-min-scroll-fill in sync with the real content that just
+    // landed, regardless of whether the New Email button has already
+    // "pinned" — see the comment on ensureEnoughScrollRoom for why that
+    // flag alone isn't a safe gate for this.
+    ensureEnoughScrollRoom();
   } catch (_err) {
     if (!feed.querySelector('.card')) feedStatus.textContent = 'Could not load your inbox.';
   } finally {

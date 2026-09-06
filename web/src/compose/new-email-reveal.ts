@@ -132,6 +132,22 @@ function stopInFlightPinAttempt(): void {
 // a pixel short of it.
 const SCROLL_ROOM_MARGIN_PX = 4;
 
+// Exported so inbox.ts can call this directly, every time it inserts real
+// cards — not just while a pin attempt is still in flight. Once `pinned`
+// latches true it never becomes false again on its own (only
+// resetNewEmailBgPin does that, on an account switch), so if it happens to
+// latch against a still-empty #feed — which it can: a switch that lands
+// while Inbox is already the visible view finds tryPin() succeeding on its
+// very first, next-frame attempt, trivially, because the guaranteed-minimum
+// fill computed for zero cards makes an empty feed "pinnable" too — nothing
+// would otherwise ever recompute this once the real cards arrive a moment
+// later. The stale, oversized fill (sized for zero cards) then lingers
+// forever, letting scrollTop reach far past the real last card. A direct
+// page load happens to dodge this only because Inbox isn't the visible view
+// yet when the switch starts, so tryPin() bails immediately instead of
+// latching early — an accident of timing, not something to depend on. See
+// chat history for the switch-back-and-forth repro that exposed this.
+//
 // BASE_PADDING_BOTTOM_PX *must* be subtracted here — leaving it as
 // "harmless extra" was tried and wasn't: with a sparse inbox, the unwanted
 // slack pushed the max scroll position (clientHeight + hiddenScrollTop(),
@@ -144,7 +160,7 @@ const SCROLL_ROOM_MARGIN_PX = 4;
 // (given the first, and so every later, card already starts right after
 // the button+spacer, comfortably past hiddenScrollTop() on its own) never
 // scrolls further than the last card's own top edge.
-function ensureEnoughScrollRoom(): void {
+export function ensureEnoughScrollRoom(): void {
   const last = feed.lastElementChild as HTMLElement | null;
   const contentBottom = last ? last.offsetTop + last.offsetHeight : 0;
   const shortfall =

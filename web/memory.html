@@ -90,11 +90,12 @@
     </a>
   </div>
 
-  <h1>Personalized memory</h1>
+  <h1>Personalized memory<span id="account-label"></span></h1>
   <p class="subtitle">
     Notes Heimdal has picked up over time from how you actually confirm or dismiss cards in your Feed —
     used to inform future triage alongside its own judgment. Edit or clear anything that's wrong; your
-    own wording is kept as-is unless your later actions clearly contradict it.
+    own wording is kept as-is unless your later actions clearly contradict it. Each mail account has its
+    own memory, the same way it has its own inbox.
   </p>
 
   <form id="form" class="content">
@@ -112,9 +113,22 @@
         window.location.replace('/login.html?next=/memory.html');
         return;
       }
+      const accountId = new URLSearchParams(window.location.search).get('accountId');
+      if (!accountId) {
+        document.getElementById('status').textContent = 'No account specified — go back to Settings and pick an account.';
+        document.getElementById('status').classList.add('error');
+        document.getElementById('form').style.display = 'none';
+        return;
+      }
       try {
-        const res = await fetch('/api/memory');
-        const data = await res.json();
+        const [accountsRes, memoryRes] = await Promise.all([
+          fetch('/api/accounts'),
+          fetch(`/api/memory/${encodeURIComponent(accountId)}`),
+        ]);
+        const { accounts } = await accountsRes.json();
+        const account = accounts.find((a) => a.id === accountId);
+        if (account) document.getElementById('account-label').textContent = ` — ${account.label}`;
+        const data = await memoryRes.json();
         document.getElementById('content').value = data.content ?? '';
       } catch {
         document.getElementById('status').textContent = 'Could not load — check your connection and try again.';
@@ -132,7 +146,8 @@
       saveBtn.textContent = 'Saving…';
 
       try {
-        const res = await fetch('/api/memory', {
+        const accountId = new URLSearchParams(window.location.search).get('accountId');
+        const res = await fetch(`/api/memory/${encodeURIComponent(accountId)}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ content: document.getElementById('content').value }),

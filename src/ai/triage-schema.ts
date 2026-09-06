@@ -59,8 +59,12 @@ export const modelDecisionSchema = z.object({
 
 export type ModelDecisionOutput = z.infer<typeof modelDecisionSchema>;
 
-// The full record persisted to the AI feed store — model output plus the
-// one fact the app already had before ever calling the model.
+// The full record persisted to the AI feed store — model output plus facts
+// the app already had before ever calling the model. accountId is stitched
+// on the same way emailId is, for the same reason: the call is scoped to
+// one email in one account, so the model was never asked and can't get it
+// wrong.
 export interface EmailTriage extends ModelDecisionOutput {
   emailId: string;
+  accountId: string;
 }

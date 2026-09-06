@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { EmailMessage } from '../mail/types';
 import type { EmailTriage } from './triage';
 
-vi.mock('../mail/registry', () => ({ mailService: { getProvider: vi.fn() } }));
+vi.mock('../mail/registry', () => ({ mailService: { getMessage: vi.fn() } }));
 vi.mock('./triage', () => ({ classifyEmail: vi.fn() }));
 vi.mock('./email-for-model', () => ({ buildEmailForModel: vi.fn() }));
 vi.mock('../lib/ai-feed', () => ({ upsertFeedItem: vi.fn() }));
@@ -20,9 +20,10 @@ const { buildMemoryEvent, scheduleMemoryUpdate } = await import('./memory-update
 const { reprocessMessage } = await import('./reprocess');
 
 const DATA_DIR = '/data';
+const ACCOUNT_ID = 'acc1';
 
 const message: EmailMessage = {
-  id: 'imap:INBOX:1',
+  id: `${ACCOUNT_ID}|imap:INBOX:1`,
   messageId: 'msg-1@example.com',
   threadId: 'imap:INBOX:1',
   folderId: 'imap:INBOX',
@@ -44,6 +45,7 @@ const message: EmailMessage = {
 
 const triage = (overrides: Partial<EmailTriage> = {}): EmailTriage => ({
   emailId: message.id,
+  accountId: ACCOUNT_ID,
   visibility: { type: 'filtered' },
   draftReply: { type: 'none' },
   suspicious: { type: 'no' },
@@ -52,9 +54,7 @@ const triage = (overrides: Partial<EmailTriage> = {}): EmailTriage => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(mailService.getProvider).mockReturnValue({
-    getMessage: vi.fn().mockResolvedValue(message),
-  } as unknown as ReturnType<typeof mailService.getProvider>);
+  vi.mocked(mailService.getMessage).mockResolvedValue(message);
   vi.mocked(buildEmailForModel).mockReturnValue({
     id: message.id,
     threadId: message.threadId,
@@ -105,6 +105,7 @@ describe('reprocessMessage', () => {
 
     expect(upsertFeedItem).toHaveBeenCalledWith(DATA_DIR, {
       emailId: message.id,
+      accountId: ACCOUNT_ID,
       visibility: { type: 'feed' },
       draftReply: { type: 'none' },
       suspicious: { type: 'no' },
@@ -126,6 +127,8 @@ describe('reprocessMessage', () => {
       userLanguages: ['English', 'Danish'],
       memory: '- The user dismisses most newsletters.',
     });
+    expect(getSpokenLanguages).toHaveBeenCalledWith(DATA_DIR, ACCOUNT_ID);
+    expect(getMemory).toHaveBeenCalledWith(DATA_DIR, ACCOUNT_ID);
   });
 
   it('names the original verdict in the memory event when overriding it', async () => {
@@ -166,6 +169,6 @@ describe('reprocessMessage', () => {
 
   it('schedules the built memory event', async () => {
     await reprocessMessage(DATA_DIR, message.id);
-    expect(scheduleMemoryUpdate).toHaveBeenCalledWith(DATA_DIR, 'event description');
+    expect(scheduleMemoryUpdate).toHaveBeenCalledWith(DATA_DIR, ACCOUNT_ID, 'event description');
   });
 });

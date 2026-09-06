@@ -66,6 +66,7 @@ export default defineConfig({
         'connect-provider': page('connect-provider'),
         'connect-imap': page('connect-imap'),
         memory: page('memory'),
+        'account-management': page('account-management'),
       },
     },
   },

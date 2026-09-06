@@ -3,14 +3,16 @@ import type { EmailTriage } from '../ai/triage';
 import type { EmailMessage, EmailSummary } from '../mail/types';
 
 vi.mock('../ai/memory-update', () => ({ buildMemoryEvent: vi.fn(), scheduleMemoryUpdate: vi.fn() }));
+vi.mock('../lib/accounts', () => ({ listAccounts: vi.fn() }));
 vi.mock('../lib/ai-feed', () => ({ getFeedItems: vi.fn(), removeFeedItem: vi.fn() }));
 vi.mock('../lib/unsubscribe-suppressions', () => ({ isSuppressed: vi.fn(), recordSuppression: vi.fn() }));
 vi.mock('../mail/perform-unsubscribe', () => ({ performOneClickUnsubscribe: vi.fn() }));
 vi.mock('../mail/registry', () => ({
-  mailService: { getProvider: vi.fn(), isConfigured: vi.fn() },
+  mailService: { getMessage: vi.fn(), getMessageSummaries: vi.fn(), send: vi.fn(), isConfigured: vi.fn() },
 }));
 
 const { buildMemoryEvent, scheduleMemoryUpdate } = await import('../ai/memory-update');
+const { listAccounts } = await import('../lib/accounts');
 const { getFeedItems, removeFeedItem } = await import('../lib/ai-feed');
 const { isSuppressed, recordSuppression } = await import('../lib/unsubscribe-suppressions');
 const { performOneClickUnsubscribe } = await import('../mail/perform-unsubscribe');
@@ -20,9 +22,11 @@ const { buildFeedList, executeConfirm, describeCardAction, logCardActionForMemor
 );
 
 const DATA_DIR = '/data';
+const ACCOUNT_ID = 'acc1';
+const EMAIL_ID = `${ACCOUNT_ID}|imap:INBOX:1`;
 
 const message = (overrides: Partial<EmailMessage> = {}): EmailMessage => ({
-  id: 'imap:INBOX:1',
+  id: EMAIL_ID,
   messageId: 'msg-1@example.com',
   threadId: 'imap:INBOX:1',
   folderId: 'imap:INBOX',
@@ -44,7 +48,7 @@ const message = (overrides: Partial<EmailMessage> = {}): EmailMessage => ({
 });
 
 const summary = (overrides: Partial<EmailSummary> = {}): EmailSummary => ({
-  id: 'imap:INBOX:1',
+  id: EMAIL_ID,
   messageId: 'msg-1@example.com',
   threadId: 'imap:INBOX:1',
   folderId: 'imap:INBOX',
@@ -61,28 +65,34 @@ const summary = (overrides: Partial<EmailSummary> = {}): EmailSummary => ({
 });
 
 const triage = (overrides: Partial<EmailTriage> = {}): EmailTriage => ({
-  emailId: 'imap:INBOX:1',
+  emailId: EMAIL_ID,
+  accountId: ACCOUNT_ID,
   visibility: { type: 'feed' },
   draftReply: { type: 'none' },
   suspicious: { type: 'no' },
   ...overrides,
 });
 
-let sendMock: ReturnType<typeof vi.fn>;
-let getMessageMock: ReturnType<typeof vi.fn>;
-let getMessageSummariesMock: ReturnType<typeof vi.fn>;
+const account = {
+  id: ACCOUNT_ID,
+  label: 'Acc One',
+  kind: 'imap' as const,
+  color: '#111111',
+  theme: 'heimdal',
+  createdAt: '2026-01-01T00:00:00Z',
+};
+
+const sendMock = vi.mocked(mailService.send);
+const getMessageMock = vi.mocked(mailService.getMessage);
+const getMessageSummariesMock = vi.mocked(mailService.getMessageSummaries);
 
 beforeEach(() => {
   vi.clearAllMocks();
-  sendMock = vi.fn().mockResolvedValue({ messageId: 'sent-1' });
-  getMessageMock = vi.fn().mockResolvedValue(message());
-  getMessageSummariesMock = vi.fn().mockResolvedValue(new Map([[summary().id, summary()]]));
+  sendMock.mockResolvedValue({ messageId: 'sent-1' });
+  getMessageMock.mockResolvedValue(message());
+  getMessageSummariesMock.mockResolvedValue(new Map([[summary().id, summary()]]));
   vi.mocked(isSuppressed).mockResolvedValue(false);
-  vi.mocked(mailService.getProvider).mockReturnValue({
-    getMessage: getMessageMock,
-    getMessageSummaries: getMessageSummariesMock,
-    send: sendMock,
-  } as unknown as ReturnType<typeof mailService.getProvider>);
+  vi.mocked(listAccounts).mockResolvedValue([account]);
   vi.mocked(buildMemoryEvent).mockReturnValue('event description');
   vi.mocked(scheduleMemoryUpdate).mockResolvedValue(undefined);
 });
@@ -95,11 +105,11 @@ describe('executeConfirm', () => {
     expect(recordSuppression).not.toHaveBeenCalled();
   });
 
-  it('sends the staged (possibly edited) draft reply, threaded to the original message', async () => {
+  it('sends the staged (possibly edited) draft reply, through the account that received it, threaded to the original message', async () => {
     await executeConfirm(DATA_DIR, message(), {
       draftReply: { subject: 'Re: Hi', body: 'Sounds good!' },
     });
-    expect(sendMock).toHaveBeenCalledWith({
+    expect(sendMock).toHaveBeenCalledWith(ACCOUNT_ID, {
       to: [{ name: 'Jane Doe', address: 'jane@example.com' }],
       subject: 'Re: Hi',
       body: { text: 'Sounds good!' },
@@ -114,12 +124,12 @@ describe('executeConfirm', () => {
       message({ unsubscribe: { type: 'mailto', address: 'unsub@example.com', subject: 'Unsubscribe me' } }),
       { unsubscribeAction: 'unsubscribe' },
     );
-    expect(sendMock).toHaveBeenCalledWith({
+    expect(sendMock).toHaveBeenCalledWith(ACCOUNT_ID, {
       to: [{ address: 'unsub@example.com' }],
       subject: 'Unsubscribe me',
       body: { text: '' },
     });
-    expect(recordSuppression).toHaveBeenCalledWith(DATA_DIR, 'jane@example.com', 'unsubscribed');
+    expect(recordSuppression).toHaveBeenCalledWith(DATA_DIR, ACCOUNT_ID, 'jane@example.com', 'unsubscribed');
   });
 
   it('performs a one-click unsubscribe using the real URL', async () => {
@@ -129,7 +139,7 @@ describe('executeConfirm', () => {
       { unsubscribeAction: 'unsubscribe' },
     );
     expect(performOneClickUnsubscribe).toHaveBeenCalledWith('https://example.com/unsub');
-    expect(recordSuppression).toHaveBeenCalledWith(DATA_DIR, 'jane@example.com', 'unsubscribed');
+    expect(recordSuppression).toHaveBeenCalledWith(DATA_DIR, ACCOUNT_ID, 'jane@example.com', 'unsubscribed');
   });
 
   it('does nothing server-side for a link unsubscribe — already opened client-side — but still records suppression', async () => {
@@ -142,7 +152,7 @@ describe('executeConfirm', () => {
     );
     expect(sendMock).not.toHaveBeenCalled();
     expect(performOneClickUnsubscribe).not.toHaveBeenCalled();
-    expect(recordSuppression).toHaveBeenCalledWith(DATA_DIR, 'jane@example.com', 'unsubscribed');
+    expect(recordSuppression).toHaveBeenCalledWith(DATA_DIR, ACCOUNT_ID, 'jane@example.com', 'unsubscribed');
   });
 
   it('records suppression even when the message turns out to have no unsubscribe mechanism', async () => {
@@ -151,7 +161,7 @@ describe('executeConfirm', () => {
     });
     expect(sendMock).not.toHaveBeenCalled();
     expect(performOneClickUnsubscribe).not.toHaveBeenCalled();
-    expect(recordSuppression).toHaveBeenCalledWith(DATA_DIR, 'jane@example.com', 'unsubscribed');
+    expect(recordSuppression).toHaveBeenCalledWith(DATA_DIR, ACCOUNT_ID, 'jane@example.com', 'unsubscribed');
   });
 
   it('suppress-only records suppression without attempting the real mechanism', async () => {
@@ -162,7 +172,7 @@ describe('executeConfirm', () => {
     );
     expect(sendMock).not.toHaveBeenCalled();
     expect(performOneClickUnsubscribe).not.toHaveBeenCalled();
-    expect(recordSuppression).toHaveBeenCalledWith(DATA_DIR, 'jane@example.com', 'suppressed');
+    expect(recordSuppression).toHaveBeenCalledWith(DATA_DIR, ACCOUNT_ID, 'jane@example.com', 'suppressed');
   });
 
   it('executes every staged action together in one call', async () => {
@@ -176,20 +186,18 @@ describe('executeConfirm', () => {
     );
     expect(sendMock).toHaveBeenCalledTimes(1);
     expect(performOneClickUnsubscribe).toHaveBeenCalledWith('https://example.com/unsub');
-    expect(recordSuppression).toHaveBeenCalledWith(DATA_DIR, 'jane@example.com', 'unsubscribed');
+    expect(recordSuppression).toHaveBeenCalledWith(DATA_DIR, ACCOUNT_ID, 'jane@example.com', 'unsubscribed');
   });
 });
 
 describe('buildFeedList', () => {
-  it("joins each triage row with the message's current summary data", async () => {
+  it("joins each triage row with the message's current summary data and its account's color/label", async () => {
     vi.mocked(getFeedItems).mockResolvedValue([triage()]);
-    getMessageSummariesMock.mockResolvedValue(
-      new Map([['imap:INBOX:1', summary({ subject: 'Hello there' })]]),
-    );
+    getMessageSummariesMock.mockResolvedValue(new Map([[EMAIL_ID, summary({ subject: 'Hello there' })]]));
 
     const items = await buildFeedList(DATA_DIR);
 
-    expect(getMessageSummariesMock).toHaveBeenCalledWith(['imap:INBOX:1']);
+    expect(getMessageSummariesMock).toHaveBeenCalledWith([EMAIL_ID]);
     expect(items).toEqual([
       {
         triage: triage(),
@@ -201,31 +209,41 @@ describe('buildFeedList', () => {
         threadId: 'imap:INBOX:1',
         unsubscribe: { type: 'none' },
         unsubscribeEligible: false,
+        accountColor: '#111111',
+        accountLabel: 'Acc One',
       },
     ]);
+  });
+
+  it('falls back to a placeholder color/label when the account has since been removed', async () => {
+    vi.mocked(getFeedItems).mockResolvedValue([triage()]);
+    vi.mocked(listAccounts).mockResolvedValue([]);
+    getMessageSummariesMock.mockResolvedValue(new Map([[EMAIL_ID, summary()]]));
+
+    const [item] = await buildFeedList(DATA_DIR);
+
+    expect(item.accountColor).toBe('#888888');
+    expect(item.accountLabel).toBe('Unknown account');
   });
 
   it('is unsubscribe-eligible when the message has a real mechanism and the sender is not suppressed', async () => {
     vi.mocked(getFeedItems).mockResolvedValue([triage()]);
     vi.mocked(isSuppressed).mockResolvedValue(false);
     getMessageSummariesMock.mockResolvedValue(
-      new Map([
-        ['imap:INBOX:1', summary({ unsubscribe: { type: 'oneClick', url: 'https://example.com/unsub' } })],
-      ]),
+      new Map([[EMAIL_ID, summary({ unsubscribe: { type: 'oneClick', url: 'https://example.com/unsub' } })]]),
     );
 
     const [item] = await buildFeedList(DATA_DIR);
 
     expect(item.unsubscribeEligible).toBe(true);
+    expect(isSuppressed).toHaveBeenCalledWith(DATA_DIR, ACCOUNT_ID, 'jane@example.com');
   });
 
   it('is not unsubscribe-eligible once the sender has already been suppressed', async () => {
     vi.mocked(getFeedItems).mockResolvedValue([triage()]);
     vi.mocked(isSuppressed).mockResolvedValue(true);
     getMessageSummariesMock.mockResolvedValue(
-      new Map([
-        ['imap:INBOX:1', summary({ unsubscribe: { type: 'oneClick', url: 'https://example.com/unsub' } })],
-      ]),
+      new Map([[EMAIL_ID, summary({ unsubscribe: { type: 'oneClick', url: 'https://example.com/unsub' } })]]),
     );
 
     const [item] = await buildFeedList(DATA_DIR);
@@ -234,26 +252,28 @@ describe('buildFeedList', () => {
   });
 
   it('drops and cleans up a row whose message no longer exists', async () => {
-    vi.mocked(getFeedItems).mockResolvedValue([triage({ emailId: 'imap:INBOX:gone' })]);
+    vi.mocked(getFeedItems).mockResolvedValue([triage({ emailId: `${ACCOUNT_ID}|imap:INBOX:gone` })]);
     getMessageSummariesMock.mockResolvedValue(new Map());
 
     const items = await buildFeedList(DATA_DIR);
 
     expect(items).toEqual([]);
-    expect(removeFeedItem).toHaveBeenCalledWith(DATA_DIR, 'imap:INBOX:gone');
+    expect(removeFeedItem).toHaveBeenCalledWith(DATA_DIR, `${ACCOUNT_ID}|imap:INBOX:gone`);
   });
 
   it('keeps healthy rows even when a different row in the same batch is stale', async () => {
     vi.mocked(getFeedItems).mockResolvedValue([
-      triage({ emailId: 'imap:INBOX:gone' }),
-      triage({ emailId: 'imap:INBOX:ok' }),
+      triage({ emailId: `${ACCOUNT_ID}|imap:INBOX:gone` }),
+      triage({ emailId: `${ACCOUNT_ID}|imap:INBOX:ok` }),
     ]);
-    getMessageSummariesMock.mockResolvedValue(new Map([['imap:INBOX:ok', summary({ id: 'imap:INBOX:ok' })]]));
+    getMessageSummariesMock.mockResolvedValue(
+      new Map([[`${ACCOUNT_ID}|imap:INBOX:ok`, summary({ id: `${ACCOUNT_ID}|imap:INBOX:ok` })]]),
+    );
 
     const items = await buildFeedList(DATA_DIR);
 
     expect(items).toHaveLength(1);
-    expect(removeFeedItem).toHaveBeenCalledWith(DATA_DIR, 'imap:INBOX:gone');
+    expect(removeFeedItem).toHaveBeenCalledWith(DATA_DIR, `${ACCOUNT_ID}|imap:INBOX:gone`);
     expect(removeFeedItem).toHaveBeenCalledTimes(1);
   });
 
@@ -332,9 +352,9 @@ describe('logCardActionForMemory', () => {
 
     await logCardActionForMemory(DATA_DIR, triage(), 'dismissed without acting on it');
 
-    expect(getMessageMock).toHaveBeenCalledWith('imap:INBOX:1');
+    expect(getMessageMock).toHaveBeenCalledWith(EMAIL_ID);
     expect(buildMemoryEvent).toHaveBeenCalledWith(message(), triage(), 'dismissed without acting on it');
-    expect(scheduleMemoryUpdate).toHaveBeenCalledWith(DATA_DIR, 'event description');
+    expect(scheduleMemoryUpdate).toHaveBeenCalledWith(DATA_DIR, ACCOUNT_ID, 'event description');
   });
 
   it('propagates (for its fire-and-forget caller to swallow) when the message no longer exists', async () => {

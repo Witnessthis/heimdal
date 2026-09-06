@@ -3,7 +3,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { EmailTriage } from '../ai/triage';
-import { getFeedItem, getFeedItems, removeFeedItem, upsertFeedItem } from './ai-feed';
+import {
+  getFeedItem,
+  getFeedItems,
+  removeFeedItem,
+  removeFeedItemsForAccount,
+  upsertFeedItem,
+} from './ai-feed';
 
 let dir: string;
 beforeEach(async () => {
@@ -13,8 +19,9 @@ afterEach(async () => {
   await rm(dir, { recursive: true, force: true });
 });
 
-const feedItem = (emailId: string): EmailTriage => ({
+const feedItem = (emailId: string, accountId = 'acc1'): EmailTriage => ({
   emailId,
+  accountId,
   visibility: { type: 'feed' },
   draftReply: { type: 'none' },
   suspicious: { type: 'no' },
@@ -144,5 +151,17 @@ describe('removeFeedItem', () => {
 
     expect(await getFeedItem(dir, 'imap:INBOX:1')).toBeUndefined();
     expect(await getFeedItem(dir, 'imap:INBOX:2')).toBeDefined();
+  });
+});
+
+describe('removeFeedItemsForAccount', () => {
+  it("removes only the given account's items, leaving other accounts intact", async () => {
+    await upsertFeedItem(dir, feedItem('acc1|imap:INBOX:1', 'acc1'));
+    await upsertFeedItem(dir, feedItem('acc2|imap:INBOX:1', 'acc2'));
+
+    await removeFeedItemsForAccount(dir, 'acc1');
+
+    expect(await getFeedItem(dir, 'acc1|imap:INBOX:1')).toBeUndefined();
+    expect(await getFeedItem(dir, 'acc2|imap:INBOX:1')).toBeDefined();
   });
 });

@@ -4,6 +4,7 @@ import { nav } from '../feed/dom';
 import { bestPreviewText, formatFullDate } from '../feed/preview';
 import { ensureFullBodyLoaded, markRead } from '../feed/render-body';
 import { closeSwipe } from '../feed/swipe-state';
+import { splitQualifiedId } from '../shared/account-id';
 import { closeAddressSwipe } from './address-swipe';
 
 // One shared view for all three entry points (the background New Email
@@ -34,6 +35,12 @@ const composeBody = document.getElementById('compose-body') as HTMLTextAreaEleme
 const composeError = document.getElementById('compose-error') as HTMLElement;
 
 interface ComposeThreadContext {
+  // Which account to send through — always resolvable at the call site:
+  // reply/forward derive it from the qualified id of the card being
+  // replied to (see openReplyCompose/openForwardCompose below), and a
+  // fresh "New Email" compose (new-email-reveal.ts) passes whichever
+  // account the Inbox tab currently has selected.
+  accountId?: string;
   inReplyTo?: string;
   threadId?: string;
 }
@@ -132,6 +139,7 @@ interface OpenComposeOptions {
   to?: string;
   subject?: string;
   body?: string;
+  accountId?: string;
   inReplyTo?: string;
   threadId?: string;
 }
@@ -143,6 +151,7 @@ export function openCompose({
   to = '',
   subject = '',
   body = '',
+  accountId,
   inReplyTo,
   threadId,
 }: OpenComposeOptions): void {
@@ -161,7 +170,7 @@ export function openCompose({
   composeBody.setSelectionRange(0, 0);
   composeBody.scrollTop = 0;
   composeError.textContent = '';
-  composeThreadContext = { inReplyTo, threadId };
+  composeThreadContext = { accountId, inReplyTo, threadId };
   // composeOnPrepared, if any, is set by openComposeToStageDraft() just
   // before it calls openCompose() — this is a visual cue only (for
   // screen readers, since the icon itself is an unchanged checkmark in
@@ -241,6 +250,10 @@ export async function sendComposeMessage(): Promise<void> {
     composeError.textContent = 'Add at least one recipient.';
     return;
   }
+  if (!composeThreadContext?.accountId) {
+    composeError.textContent = 'No account selected to send from.';
+    return;
+  }
   // Staging mode: hand the (possibly edited) draft back to the card that
   // opened compose instead of sending anything — see composeOnPrepared's
   // own doc comment. This check runs before anything else below, so it's
@@ -258,6 +271,7 @@ export async function sendComposeMessage(): Promise<void> {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        accountId: composeThreadContext.accountId,
         to,
         cc: parseAddressList(composeCc.value),
         bcc: parseAddressList(composeBcc.value),
@@ -298,6 +312,7 @@ export async function openReplyCompose(card: HTMLElement): Promise<void> {
     to: msg.from?.address || '',
     subject,
     body: `\n\nOn ${formatFullDate(msg.receivedAt)}, ${senderLabel} wrote:\n${quoted}`,
+    accountId: splitQualifiedId(msg.id).accountId,
     inReplyTo: msg.messageId,
     threadId: msg.threadId,
   });
@@ -321,5 +336,6 @@ export async function openForwardCompose(card: HTMLElement): Promise<void> {
       `\n\n---------- Forwarded message ----------\n` +
       `From: ${fromLabel}\nDate: ${formatFullDate(msg.receivedAt)}\n` +
       `Subject: ${msg.subject || ''}\nTo: ${toLabel}\n\n${original}`,
+    accountId: splitQualifiedId(msg.id).accountId,
   });
 }

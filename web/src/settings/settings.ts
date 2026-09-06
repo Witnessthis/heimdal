@@ -1,7 +1,8 @@
 import { loadAiFeed } from '../ai-feed/list';
 import { ensureNewEmailBgPinned, hiddenScrollTop } from '../compose/new-email-reveal';
-import { aiFeedView, feed, nav, navAiFeed, navInbox, navSettings, settingsView } from '../feed/dom';
-import { loadLanguageSettings } from './languages';
+import { aiFeedView, feed, nav, navAiFeed, navInbox, navProfile, settingsView } from '../feed/dom';
+import { getActiveProfileId, onActiveProfileChange } from '../shared/active-profile';
+import { createLanguageEditor } from './languages';
 import { refreshNotificationRow } from './notifications';
 import {
   isAutoLoadImagesEnabled,
@@ -9,6 +10,45 @@ import {
   setAutoLoadImagesEnabled,
   setRichHtmlEnabled,
 } from './reading-prefs';
+
+interface MailAccountOption {
+  id: string;
+  label: string;
+  color: string;
+}
+
+const profileSettingsLabel = document.getElementById('profile-settings-label') as HTMLElement;
+const languageEditorContainer = document.getElementById('language-editor-container') as HTMLElement;
+const memoryLink = document.getElementById('memory-link') as HTMLAnchorElement;
+
+/** Refreshes the "Settings for X" header, the language editor, and the
+ *  memory link's target — everything in Settings that's scoped to
+ *  whichever profile is currently active, rather than global. Called both
+ *  when Settings is shown and whenever the active profile changes (e.g.
+ *  switched via the profile-switcher modal while Settings happens to
+ *  already be open) — cheap enough to always do regardless of which
+ *  triggered it. */
+async function renderProfileScopedSettings(accountId: string): Promise<void> {
+  const { accounts }: { accounts: MailAccountOption[] } = await fetch('/api/accounts').then((r) => r.json());
+  const account = accounts.find((a) => a.id === accountId);
+  profileSettingsLabel.textContent = account ? `Settings for ${account.label}` : 'Settings';
+  memoryLink.href = `/memory.html?accountId=${encodeURIComponent(accountId)}`;
+  await createLanguageEditor(languageEditorContainer, accountId);
+}
+
+// Re-highlights the theme grid once profile-switcher.ts confirms it has
+// actually applied the active profile's own theme (see its own comment on
+// why this is an event rather than a direct call from renderProfileScopedSettings
+// above, which runs concurrently against its own independent fetch).
+document.addEventListener('heimdal:theme-applied', syncThemeGridActiveSwatch);
+
+onActiveProfileChange((accountId) => {
+  void renderProfileScopedSettings(accountId);
+});
+
+// A plain DOM event rather than importing this module's own showView from
+// profile-switcher.ts directly — keeps the two decoupled in both directions.
+document.addEventListener('heimdal:open-settings', () => showView('settings'));
 
 // --- View switching --------------------------------------------------
 // Three panels (AI Feed, Inbox, Settings) share the bottom nav, merged
@@ -54,7 +94,11 @@ function showView(view: 'ai-feed' | 'inbox' | 'settings'): void {
   settingsView.style.display = view === 'settings' ? 'block' : 'none';
   navAiFeed.classList.toggle('active', view === 'ai-feed');
   navInbox.classList.toggle('active', view === 'inbox');
-  navSettings.classList.toggle('active', view === 'settings');
+  // The Profile tab isn't a plain nav-to-a-view button any more (tapping it
+  // opens the switcher modal, see profile-switcher.ts) — but it's still
+  // marked active while Settings is the visible panel, the same way the
+  // other two tabs mark themselves active for their own panel.
+  navProfile.classList.toggle('active', view === 'settings');
   nav.classList.remove('hide');
   lastScrollY =
     view === 'settings' ? settingsView.scrollTop : view === 'ai-feed' ? aiFeedView.scrollTop : feed.scrollTop;
@@ -68,8 +112,8 @@ function showView(view: 'ai-feed' | 'inbox' | 'settings'): void {
   if (view === 'ai-feed') loadAiFeed();
   if (view === 'settings') {
     loadTotpStatus();
-    void loadProviderStatus();
-    loadLanguageSettings();
+    const activeId = getActiveProfileId();
+    if (activeId) void renderProfileScopedSettings(activeId);
     void refreshNotificationRow();
     alignSubSettingConnectors();
   }
@@ -87,7 +131,6 @@ window.addEventListener('resize', () => {
 
 navAiFeed.addEventListener('click', () => showView('ai-feed'));
 navInbox.addEventListener('click', () => showView('inbox'));
-navSettings.addEventListener('click', () => showView('settings'));
 
 async function loadTotpStatus(): Promise<void> {
   const status = await fetch('/api/totp/status').then((r) => r.json());
@@ -106,33 +149,18 @@ document.getElementById('totp-btn')!.addEventListener('click', () => {
   window.location.href = '/totp-setup.html';
 });
 
-/** Reflects the currently connected mail account and offers a way back
- *  into the connect flow to change it — connect-provider.html/
- *  connect-imap.html no longer bounce back home just because a provider
- *  is already configured (see their own comments), which is what makes
- *  this button able to actually go anywhere. */
-async function loadProviderStatus(): Promise<void> {
-  const status = await fetch('/api/provider/status').then((r) => r.json());
-  const desc = document.getElementById('mail-account-desc')!;
-  const btn = document.getElementById('mail-account-btn')!;
-  if (!status.configured) {
-    desc.textContent = 'No mail account connected';
-    btn.textContent = 'Connect';
-  } else {
-    desc.textContent = status.healthy
-      ? `Connected via ${status.kind.toUpperCase()}`
-      : `Connected via ${status.kind.toUpperCase()} — connection issue, tap to reconnect`;
-    btn.textContent = 'Change';
-  }
+// Re-highlights whichever swatch matches the currently applied theme —
+// called after picking one directly here, and from renderProfileScopedSettings
+// whenever the active profile changes (switching profile re-applies that
+// profile's own theme — see profile-switcher.ts's refreshActiveProfile —
+// which this grid, built once below, otherwise has no way to notice).
+function syncThemeGridActiveSwatch(): void {
+  const grid = document.getElementById('theme-grid')!;
+  const current = window.HeimdalThemes.currentTheme();
+  grid.querySelectorAll<HTMLElement>('.theme-swatch').forEach((el) => {
+    el.classList.toggle('active', el.dataset.theme === current);
+  });
 }
-
-document.getElementById('mail-account-btn')!.addEventListener('click', () => {
-  window.location.href = '/connect-provider.html';
-});
-
-document.getElementById('memory-btn')!.addEventListener('click', () => {
-  window.location.href = '/memory.html';
-});
 
 // Builds the theme picker grid once — the list of available themes
 // never changes at runtime, so there's no need to rebuild it every
@@ -162,10 +190,23 @@ function buildThemeGrid(): void {
 
     swatch.style.background = theme.bg;
     swatch.append(dots, label);
+    // Picking a theme is per-profile (see chat history) — persists to
+    // whichever account is currently active, not just localStorage, so it's
+    // reapplied the next time that profile becomes active again (see
+    // profile-switcher.ts's refreshActiveProfile).
     swatch.addEventListener('click', () => {
       window.HeimdalThemes.setTheme(key);
-      grid.querySelectorAll('.theme-swatch').forEach((el) => {
-        el.classList.toggle('active', el === swatch);
+      syncThemeGridActiveSwatch();
+      const activeId = getActiveProfileId();
+      if (!activeId) return;
+      fetch(`/api/accounts/${encodeURIComponent(activeId)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ theme: key }),
+      }).catch(() => {
+        // Best-effort — a failed save just means this profile falls back
+        // to whatever theme it had last successfully saved, next time it
+        // becomes active again.
       });
     });
     grid.appendChild(swatch);

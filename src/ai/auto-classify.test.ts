@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { MailEvent } from '../mail/provider';
+import type { AccountMailEvent } from '../mail/registry';
 import type { EmailMessage } from '../mail/types';
 import type { EmailTriage } from './triage';
 
 vi.mock('../mail/registry', () => ({
-  mailService: { onEvent: vi.fn(() => () => {}), getProvider: vi.fn() },
+  mailService: { onEvent: vi.fn(() => () => {}), getMessage: vi.fn() },
 }));
 vi.mock('./triage', () => ({ classifyEmail: vi.fn() }));
 vi.mock('./email-for-model', () => ({ buildEmailForModel: vi.fn() }));
@@ -25,9 +25,10 @@ const { isSuppressed } = await import('../lib/unsubscribe-suppressions');
 const { startAutoClassification } = await import('./auto-classify');
 
 const DATA_DIR = '/data';
+const ACCOUNT_ID = 'acc1';
 
 const message: EmailMessage = {
-  id: 'imap:INBOX:1',
+  id: `${ACCOUNT_ID}|imap:INBOX:1`,
   threadId: 'imap:INBOX:1',
   folderId: 'imap:INBOX',
   from: { name: 'Jane Doe', address: 'jane@example.com' },
@@ -48,6 +49,7 @@ const message: EmailMessage = {
 
 const triage = (overrides: Partial<EmailTriage> = {}): EmailTriage => ({
   emailId: message.id,
+  accountId: ACCOUNT_ID,
   visibility: { type: 'feed' },
   draftReply: { type: 'none' },
   suspicious: { type: 'no' },
@@ -57,11 +59,15 @@ const triage = (overrides: Partial<EmailTriage> = {}): EmailTriage => ({
 // The listener is registered inside startAutoClassification, not exported
 // directly — capturing it off the mocked onEvent() call is how these tests
 // drive it, same as mailService itself would.
-function captureListener(): (event: MailEvent) => void {
+function captureListener(): (event: AccountMailEvent) => void {
   startAutoClassification(DATA_DIR);
   const call = vi.mocked(mailService.onEvent).mock.calls.at(-1);
   if (!call) throw new Error('startAutoClassification did not call mailService.onEvent');
   return call[0];
+}
+
+function newMessageEvent(): AccountMailEvent {
+  return { type: 'newMessage', folderId: 'imap:INBOX', messageId: message.id, accountId: ACCOUNT_ID };
 }
 
 // handleNewMessage runs un-awaited behind the listener (see auto-classify's
@@ -75,9 +81,7 @@ async function flush(): Promise<void> {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(mailService.onEvent).mockReturnValue(() => {});
-  vi.mocked(mailService.getProvider).mockReturnValue({
-    getMessage: vi.fn().mockResolvedValue(message),
-  } as unknown as ReturnType<typeof mailService.getProvider>);
+  vi.mocked(mailService.getMessage).mockResolvedValue(message);
   vi.mocked(buildEmailForModel).mockReturnValue({
     id: message.id,
     threadId: message.threadId,
@@ -101,36 +105,38 @@ describe('startAutoClassification', () => {
     vi.mocked(getSpokenLanguages).mockResolvedValue(['English', 'Danish']);
     const listener = captureListener();
 
-    listener({ type: 'newMessage', folderId: 'imap:INBOX', messageId: message.id });
+    listener(newMessageEvent());
     await vi.waitFor(() =>
       expect(classifyEmail).toHaveBeenCalledWith(expect.anything(), {
         userLanguages: ['English', 'Danish'],
         memory: '',
       }),
     );
+    expect(getSpokenLanguages).toHaveBeenCalledWith(DATA_DIR, ACCOUNT_ID);
   });
 
   it('passes the stored personalized-memory notes through to classifyEmail', async () => {
     vi.mocked(getMemory).mockResolvedValue('- The user dismisses most newsletters.');
     const listener = captureListener();
 
-    listener({ type: 'newMessage', folderId: 'imap:INBOX', messageId: message.id });
+    listener(newMessageEvent());
     await vi.waitFor(() =>
       expect(classifyEmail).toHaveBeenCalledWith(expect.anything(), {
         userLanguages: [],
         memory: '- The user dismisses most newsletters.',
       }),
     );
+    expect(getMemory).toHaveBeenCalledWith(DATA_DIR, ACCOUNT_ID);
   });
 
   it('ignores events other than newMessage', async () => {
     const listener = captureListener();
-    listener({ type: 'connectionState', state: 'connected' });
-    listener({ type: 'messageUpdated', messageId: message.id });
-    listener({ type: 'messageDeleted', messageId: message.id });
+    listener({ type: 'connectionState', state: 'connected', accountId: ACCOUNT_ID });
+    listener({ type: 'messageUpdated', messageId: message.id, accountId: ACCOUNT_ID });
+    listener({ type: 'messageDeleted', messageId: message.id, accountId: ACCOUNT_ID });
     await flush();
 
-    expect(mailService.getProvider).not.toHaveBeenCalled();
+    expect(mailService.getMessage).not.toHaveBeenCalled();
   });
 
   it('classifies and persists a normal message', async () => {
@@ -138,7 +144,7 @@ describe('startAutoClassification', () => {
     vi.mocked(classifyEmail).mockResolvedValue(result);
     const listener = captureListener();
 
-    listener({ type: 'newMessage', folderId: 'imap:INBOX', messageId: message.id });
+    listener(newMessageEvent());
     await vi.waitFor(() => expect(upsertFeedItem).toHaveBeenCalledWith(DATA_DIR, result));
   });
 
@@ -146,7 +152,7 @@ describe('startAutoClassification', () => {
     vi.mocked(classifyEmail).mockResolvedValue(null);
     const listener = captureListener();
 
-    listener({ type: 'newMessage', folderId: 'imap:INBOX', messageId: message.id });
+    listener(newMessageEvent());
     await vi.waitFor(() => expect(classifyEmail).toHaveBeenCalled());
     await flush();
 
@@ -156,7 +162,7 @@ describe('startAutoClassification', () => {
   it('sends a push notification when the model classifies visibility as feed', async () => {
     const listener = captureListener();
 
-    listener({ type: 'newMessage', folderId: 'imap:INBOX', messageId: message.id });
+    listener(newMessageEvent());
     await vi.waitFor(() =>
       expect(sendFeedNotification).toHaveBeenCalledWith(DATA_DIR, {
         title: message.subject,
@@ -181,7 +187,7 @@ describe('startAutoClassification', () => {
     );
     const listener = captureListener();
 
-    listener({ type: 'newMessage', folderId: 'imap:INBOX', messageId: message.id });
+    listener(newMessageEvent());
     await vi.waitFor(() => expect(classifyEmail).toHaveBeenCalled());
     await flush();
 
@@ -190,14 +196,10 @@ describe('startAutoClassification', () => {
 
   it('logs and swallows a failure instead of throwing out of the listener', async () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
-    vi.mocked(mailService.getProvider).mockReturnValue({
-      getMessage: vi.fn().mockRejectedValue(new Error('IMAP unreachable')),
-    } as unknown as ReturnType<typeof mailService.getProvider>);
+    vi.mocked(mailService.getMessage).mockRejectedValue(new Error('IMAP unreachable'));
     const listener = captureListener();
 
-    expect(() =>
-      listener({ type: 'newMessage', folderId: 'imap:INBOX', messageId: message.id }),
-    ).not.toThrow();
+    expect(() => listener(newMessageEvent())).not.toThrow();
     await vi.waitFor(() => expect(consoleError).toHaveBeenCalled());
 
     consoleError.mockRestore();
@@ -211,9 +213,7 @@ describe('unsubscribe-eligible mail', () => {
   };
 
   function mockMessage(msg: EmailMessage): void {
-    vi.mocked(mailService.getProvider).mockReturnValue({
-      getMessage: vi.fn().mockResolvedValue(msg),
-    } as unknown as ReturnType<typeof mailService.getProvider>);
+    vi.mocked(mailService.getMessage).mockResolvedValue(msg);
   }
 
   it('forces visibility to feed even when the model classifies it as filtered', async () => {
@@ -221,7 +221,7 @@ describe('unsubscribe-eligible mail', () => {
     vi.mocked(classifyEmail).mockResolvedValue(triage({ visibility: { type: 'filtered' } }));
     const listener = captureListener();
 
-    listener({ type: 'newMessage', folderId: 'imap:INBOX', messageId: message.id });
+    listener(newMessageEvent());
     await vi.waitFor(() =>
       expect(upsertFeedItem).toHaveBeenCalledWith(
         DATA_DIR,
@@ -237,7 +237,7 @@ describe('unsubscribe-eligible mail', () => {
     );
     const listener = captureListener();
 
-    listener({ type: 'newMessage', folderId: 'imap:INBOX', messageId: message.id });
+    listener(newMessageEvent());
     await vi.waitFor(() =>
       expect(upsertFeedItem).toHaveBeenCalledWith(
         DATA_DIR,
@@ -251,10 +251,11 @@ describe('unsubscribe-eligible mail', () => {
     vi.mocked(classifyEmail).mockResolvedValue(null);
     const listener = captureListener();
 
-    listener({ type: 'newMessage', folderId: 'imap:INBOX', messageId: message.id });
+    listener(newMessageEvent());
     await vi.waitFor(() =>
       expect(upsertFeedItem).toHaveBeenCalledWith(DATA_DIR, {
         emailId: message.id,
+        accountId: ACCOUNT_ID,
         visibility: { type: 'feed' },
         draftReply: { type: 'none' },
         suspicious: { type: 'no' },
@@ -267,8 +268,10 @@ describe('unsubscribe-eligible mail', () => {
     vi.mocked(isSuppressed).mockResolvedValue(true);
     const listener = captureListener();
 
-    listener({ type: 'newMessage', folderId: 'imap:INBOX', messageId: message.id });
-    await vi.waitFor(() => expect(isSuppressed).toHaveBeenCalledWith(DATA_DIR, 'jane@example.com'));
+    listener(newMessageEvent());
+    await vi.waitFor(() =>
+      expect(isSuppressed).toHaveBeenCalledWith(DATA_DIR, ACCOUNT_ID, 'jane@example.com'),
+    );
     await flush();
 
     expect(classifyEmail).not.toHaveBeenCalled();

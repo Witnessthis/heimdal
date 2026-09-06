@@ -45,7 +45,24 @@
 
   <main id="settings-view" style="display: none">
     <div class="settings-content">
-      <p class="section-label">Reading</p>
+      <p class="section-label">Global</p>
+      <div class="setting-row" style="border-bottom: none;">
+        <div class="setting-info">
+          <span class="setting-name" id="totp-action-label">Set up authenticator</span>
+          <span class="setting-desc">Require an authenticator code on sign in</span>
+        </div>
+        <button class="btn-action" id="totp-btn" type="button">Set up</button>
+      </div>
+
+      <div class="setting-row" style="border-bottom: none;">
+        <div class="setting-info">
+          <span class="setting-name">Account management</span>
+          <span class="setting-desc">Add or remove the mail accounts connected to Heimdal.</span>
+        </div>
+        <a class="btn-action" href="/account-management.html">Manage</a>
+      </div>
+
+      <p class="section-label" style="margin-top: 32px;" id="profile-settings-label">Settings for</p>
       <div class="setting-row" id="setting-rich-html" style="border-bottom: none;">
         <div class="setting-info">
           <span class="setting-name">Rich HTML rendering</span>
@@ -71,7 +88,6 @@
         <button class="badge badge-off" type="button" disabled>OFF</button>
       </div>
 
-      <p class="section-label" style="margin-top: 32px;">Appearance</p>
       <div class="setting-row" style="border-bottom: none; display: block;">
         <div class="setting-info" style="margin-bottom: 12px;">
           <span class="setting-name">Theme</span>
@@ -80,27 +96,16 @@
         <div class="theme-grid" id="theme-grid"></div>
       </div>
 
-      <p class="section-label" style="margin-top: 32px;">AI</p>
-      <div class="setting-row" style="border-bottom: none; display: block;">
-        <div class="setting-info" style="margin-bottom: 12px;">
-          <span class="setting-name">Languages I speak</span>
-          <span class="setting-desc">Drafted replies are translated into one of these when the original email isn't written in any of them. Leave empty to always draft in English.</span>
-        </div>
-        <div class="language-chips" id="language-chips"></div>
-        <select class="language-add" id="language-add">
-          <option value="" selected disabled>+ Add language</option>
-        </select>
-      </div>
+      <div class="setting-row" style="border-bottom: none; display: block;" id="language-editor-container"></div>
 
       <div class="setting-row" style="border-bottom: none;">
         <div class="setting-info">
           <span class="setting-name">Personalized memory</span>
           <span class="setting-desc">What Heimdal has learned about how you handle mail, based on your Feed actions</span>
         </div>
-        <button class="btn-action" id="memory-btn" type="button">View</button>
+        <a class="btn-action" id="memory-link" href="/memory.html">View</a>
       </div>
 
-      <p class="section-label" style="margin-top: 32px;">Notifications</p>
       <div class="setting-row" style="border-bottom: none;">
         <div class="setting-info">
           <span class="setting-name" id="push-action-label">Enable notifications</span>
@@ -109,24 +114,7 @@
         <button class="btn-action" id="push-btn" type="button">Enable</button>
       </div>
 
-      <p class="section-label" style="margin-top: 32px;">Security</p>
-      <div class="setting-row" style="border-bottom: none;">
-        <div class="setting-info">
-          <span class="setting-name" id="totp-action-label">Set up authenticator</span>
-          <span class="setting-desc">Require an authenticator code on sign in</span>
-        </div>
-        <button class="btn-action" id="totp-btn" type="button">Set up</button>
-      </div>
-
-      <p class="section-label" style="margin-top: 32px;">Account</p>
-      <div class="setting-row" style="border-bottom: none;">
-        <div class="setting-info">
-          <span class="setting-name" id="mail-account-label">Mail account</span>
-          <span class="setting-desc" id="mail-account-desc">Loading…</span>
-        </div>
-        <button class="btn-action" id="mail-account-btn" type="button">Change</button>
-      </div>
-      <div class="setting-row" style="border-bottom: none;">
+      <div class="setting-row" style="border-bottom: none; margin-top: 16px;">
         <button class="btn-logout" id="logout-btn" type="button">Log out</button>
       </div>
     </div>
@@ -151,12 +139,11 @@
       </svg>
       Inbox
     </button>
-    <button class="nav-tab" id="nav-settings" type="button" aria-label="Settings">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-        <circle cx="12" cy="12" r="3"/>
-        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
-      </svg>
-      Settings
+    <button class="nav-tab" id="nav-profile" type="button" aria-label="Profile">
+      <!-- Filled in by profile-switcher.ts with the active profile's
+           color/initials — no static icon, this swatch IS the icon. -->
+      <span class="nav-profile-swatch" id="nav-profile-swatch"></span>
+      Profile
     </button>
   </nav>
 
@@ -270,6 +257,16 @@
         <button type="button" class="btn-action" id="delete-email-cancel">Cancel</button>
         <button type="button" class="btn-action-primary" id="delete-email-confirm">Delete email</button>
       </div>
+    </div>
+  </div>
+
+  <div id="profile-switcher-modal" class="modal-overlay" style="display: none">
+    <div class="modal-panel">
+      <button type="button" class="modal-close-btn" id="profile-switcher-close" aria-label="Close">×</button>
+      <p class="modal-title">Switch profile</p>
+      <div class="profile-switcher-list" id="profile-switcher-list"></div>
+      <div class="profile-switcher-divider"></div>
+      <button type="button" class="profile-switcher-action" id="profile-switcher-settings">Settings</button>
     </div>
   </div>
 

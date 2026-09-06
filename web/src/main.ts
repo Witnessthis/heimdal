@@ -9,6 +9,10 @@ import { feed } from './feed/dom';
 import './feed/gestures';
 import { bootstrap, checkBatchTrigger } from './feed/inbox';
 import { closeSwipe, openSwipeCard } from './feed/swipe-state';
+// Side-effect only — renders the nav tab's profile swatch and wires its
+// click handler (opens the switcher modal). Nothing here needs a named
+// import from it, but the module must still be loaded.
+import './profile/profile-switcher';
 import { handleScroll } from './settings/settings';
 
 // Scroll events fire far more often than frames render, and both

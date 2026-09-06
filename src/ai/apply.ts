@@ -1,3 +1,4 @@
+import { splitQualifiedId } from '../mail/account-id';
 import { mailService } from '../mail/registry';
 import type { ModelDecision } from './types';
 
@@ -15,8 +16,6 @@ export interface ApplyResult {
  *  function created, or an explicit delete request. The app, not the
  *  model, owns those. */
 export async function applyDecision(decision: ModelDecision): Promise<ApplyResult> {
-  const provider = mailService.getProvider();
-
   switch (decision.action) {
     case 'classify':
     case 'prioritize':
@@ -27,18 +26,19 @@ export async function applyDecision(decision: ModelDecision): Promise<ApplyResul
       return { applied: true, requiresConfirmation: false };
 
     case 'move':
-      await provider.moveToFolder(decision.emailId, decision.targetFolderId);
+      await mailService.moveToFolder(decision.emailId, decision.targetFolderId);
       return { applied: true, requiresConfirmation: false };
 
     case 'draftReply': {
-      const original = await provider.getMessage(decision.emailId);
-      await provider.saveDraft({
+      const original = await mailService.getMessage(decision.emailId);
+      const { accountId } = splitQualifiedId(decision.emailId);
+      await mailService.saveDraft(accountId, {
         to: [original.from],
         subject: decision.subject,
         body: { text: decision.body },
         // The real RFC822 Message-ID of the message being replied to —
         // decision.emailId is our internal composite id (e.g.
-        // "imap:INBOX:42") and must never end up in an email header.
+        // "acc123|imap:INBOX:42") and must never end up in an email header.
         inReplyTo: original.messageId,
         threadId: original.threadId,
       });

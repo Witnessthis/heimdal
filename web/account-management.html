@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Heimdal — Account management</title>
+  <script src="themes.js"></script>
+  <script>HeimdalThemes.initTheme();</script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Philosopher:wght@700&display=swap" />
+
+  <link rel="manifest" href="manifest.webmanifest" />
+  <meta name="theme-color" content="#1a1a2e" />
+  <script type="module" src="./src/pwa.js"></script>
+
+  <!-- iOS PWA support -->
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="Heimdal" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+
+  <style>
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      background: var(--bg);
+      color: var(--fg);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    body { display: flex; flex-direction: column; align-items: center; padding: 24px; }
+
+    .top-bar { width: 100%; max-width: 480px; margin-bottom: 8px; }
+    .back-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--muted);
+      text-decoration: none;
+      font-size: 0.875rem;
+      padding: 6px 0;
+    }
+    .back-link:hover { color: var(--accent); }
+
+    h1 { font-size: 2rem; margin: 8px 0 4px; color: var(--accent); font-family: 'Philosopher', serif; letter-spacing: 0.05em; }
+    .subtitle { color: var(--fg-dim); margin: 0 0 24px; max-width: 480px; }
+
+    .content { width: 100%; max-width: 480px; display: flex; flex-direction: column; gap: 14px; }
+
+    .account-row {
+      padding: 16px 0;
+      border-bottom: 1px solid var(--border-soft);
+    }
+    .account-row-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 6px;
+      flex-wrap: wrap;
+    }
+    .account-color-input {
+      width: 32px;
+      height: 32px;
+      padding: 0;
+      border: 1px solid var(--border-soft);
+      border-radius: 6px;
+      background: none;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .account-label-input {
+      flex: 1;
+      min-width: 80px;
+      padding: 7px 10px;
+      border-radius: 6px;
+      border: 1px solid var(--border-soft);
+      background: var(--bg-elevated);
+      color: var(--fg);
+      font-size: 0.95rem;
+      font-family: inherit;
+    }
+    .account-label-input:focus { outline: none; border-color: var(--accent); }
+    .account-status { display: block; color: var(--muted); font-size: 0.8rem; }
+
+    .btn-action {
+      padding: 7px 14px;
+      border-radius: 6px;
+      border: 1px solid var(--border-soft);
+      background: transparent;
+      color: var(--fg-dim);
+      font-size: 0.85rem;
+      cursor: pointer;
+      white-space: nowrap;
+      font-family: inherit;
+      text-decoration: none;
+      display: inline-block;
+    }
+    .btn-action:hover { border-color: var(--accent); color: var(--accent); }
+    .btn-action-danger { border-color: var(--danger); color: var(--danger); }
+    .btn-action-danger:hover { background: var(--danger); color: var(--bg); }
+
+    #add-account-btn {
+      align-self: flex-start;
+      padding: 12px 20px;
+      border-radius: 6px;
+      border: none;
+      background: var(--accent);
+      color: var(--bg);
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    #add-account-btn:hover { background: color-mix(in srgb, var(--accent), black 15%); }
+
+    .status { color: var(--muted); font-size: 0.85rem; min-height: 20px; }
+    .status.error { color: var(--danger); }
+
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 50;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      background: color-mix(in srgb, black 55%, transparent);
+    }
+    .modal-overlay.open { display: flex; }
+    .modal-panel {
+      width: 100%;
+      max-width: 360px;
+      padding: 20px;
+      border-radius: 10px;
+      border: 1px solid var(--border-soft);
+      background: var(--bg-elevated);
+      color: var(--fg);
+    }
+    .modal-title { margin: 0 0 8px; font-size: 1.05rem; font-weight: 700; }
+    .modal-desc { margin: 0; font-size: 0.88rem; color: var(--fg-dim); }
+    .modal-desc span { color: var(--fg); font-weight: 600; }
+    .modal-error { margin: 8px 0 0; font-size: 0.85rem; color: var(--danger); min-height: 18px; }
+    .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; }
+    .btn-action-primary {
+      padding: 7px 14px;
+      border-radius: 6px;
+      border: none;
+      background: var(--accent);
+      color: var(--bg);
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: inherit;
+    }
+  </style>
+</head>
+<body>
+  <div class="top-bar">
+    <a class="back-link" href="/">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="m15 18-6-6 6-6" />
+      </svg>
+      Back to Settings
+    </a>
+  </div>
+
+  <h1>Account management</h1>
+  <p class="subtitle">
+    Add or remove the mail accounts connected to Heimdal. Each account keeps its own
+    personalized memory, language settings, and inbox. To switch which one you're viewing, use
+    the profile switcher in the bottom nav.
+  </p>
+
+  <div class="content">
+    <div id="accounts-list"></div>
+    <span class="status" id="status"></span>
+    <button type="button" id="add-account-btn">+ Add account</button>
+  </div>
+
+  <div id="remove-account-modal" class="modal-overlay">
+    <div class="modal-panel">
+      <p class="modal-title">Remove account?</p>
+      <p class="modal-desc">
+        This permanently deletes <span id="remove-account-label"></span>'s Feed cards, personalized
+        memory, and language settings, and disconnects its mailbox. This cannot be undone.
+      </p>
+      <p class="modal-error" id="remove-account-error"></p>
+      <div class="modal-actions">
+        <button type="button" class="btn-action" id="remove-account-cancel">Cancel</button>
+        <button type="button" class="btn-action-primary" id="remove-account-confirm">Yes, remove it</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Same localStorage key as web/src/shared/active-profile.ts. This page
+    // has no notion of "switching" profile at all (see chat history: which
+    // account is active doesn't matter here) — the only reason it ever
+    // touches this key is to pick a fallback active profile if the one just
+    // removed happened to be the active one, so the SPA doesn't come back
+    // to a reference to a now-deleted account on the next navigation to "/".
+    const ACTIVE_PROFILE_KEY = 'heimdal:activeProfileId';
+
+    let pendingRemoval = null;
+    const removeModal = document.getElementById('remove-account-modal');
+    const removeLabel = document.getElementById('remove-account-label');
+    const removeError = document.getElementById('remove-account-error');
+
+    function closeRemoveModal() {
+      removeModal.classList.remove('open');
+      removeError.textContent = '';
+      pendingRemoval = null;
+    }
+    function openRemoveModal(account) {
+      pendingRemoval = account;
+      removeLabel.textContent = account.label;
+      removeError.textContent = '';
+      removeModal.classList.add('open');
+    }
+    removeModal.addEventListener('click', (e) => {
+      if (e.target === removeModal) closeRemoveModal();
+    });
+    document.getElementById('remove-account-cancel').addEventListener('click', closeRemoveModal);
+
+    function accountStatusText(account) {
+      if (!account.connected) return 'Not connected — try removing and re-adding it';
+      return account.healthy
+        ? `Connected via ${account.kind.toUpperCase()}`
+        : `Connected via ${account.kind.toUpperCase()} — connection issue`;
+    }
+
+    async function patchAccount(id, patch) {
+      try {
+        await fetch(`/api/accounts/${encodeURIComponent(id)}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(patch),
+        });
+      } catch {
+        // Best-effort — a failed save is corrected on the next visit to
+        // this page, when loadAccounts() re-syncs from the server.
+      }
+    }
+
+    function buildAccountRow(account) {
+      const row = document.createElement('div');
+      row.className = 'account-row';
+
+      const header = document.createElement('div');
+      header.className = 'account-row-header';
+
+      const colorInput = document.createElement('input');
+      colorInput.type = 'color';
+      colorInput.className = 'account-color-input';
+      colorInput.value = account.color;
+      colorInput.setAttribute('aria-label', `${account.label} color`);
+      colorInput.addEventListener('input', () => {
+        patchAccount(account.id, { color: colorInput.value });
+      });
+
+      const labelInput = document.createElement('input');
+      labelInput.type = 'text';
+      labelInput.className = 'account-label-input';
+      labelInput.value = account.label;
+      labelInput.addEventListener('change', () => {
+        const value = labelInput.value.trim();
+        if (value) patchAccount(account.id, { label: value });
+        else labelInput.value = account.label;
+      });
+
+      header.appendChild(colorInput);
+      header.appendChild(labelInput);
+
+      const removeBtn = document.createElement('button');
+      removeBtn.type = 'button';
+      removeBtn.className = 'btn-action btn-action-danger';
+      removeBtn.textContent = 'Remove';
+      removeBtn.addEventListener('click', () => openRemoveModal(account));
+      header.appendChild(removeBtn);
+
+      const status = document.createElement('span');
+      status.className = 'account-status';
+      status.textContent = accountStatusText(account);
+
+      row.appendChild(header);
+      row.appendChild(status);
+      return row;
+    }
+
+    async function loadAccounts() {
+      const statusEl = document.getElementById('status');
+      try {
+        const { accounts } = await fetch('/api/accounts').then((r) => r.json());
+        const list = document.getElementById('accounts-list');
+        list.innerHTML = '';
+        for (const account of accounts) list.appendChild(buildAccountRow(account));
+        statusEl.textContent = '';
+      } catch {
+        statusEl.textContent = 'Could not load accounts — check your connection and try again.';
+        statusEl.classList.add('error');
+      }
+    }
+
+    document.getElementById('remove-account-confirm').addEventListener('click', async () => {
+      if (!pendingRemoval) return;
+      const { id } = pendingRemoval;
+      const confirmBtn = document.getElementById('remove-account-confirm');
+      confirmBtn.disabled = true;
+      removeError.textContent = '';
+      try {
+        const res = await fetch(`/api/accounts/${encodeURIComponent(id)}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error(`status ${res.status}`);
+        closeRemoveModal();
+        if (localStorage.getItem(ACTIVE_PROFILE_KEY) === id) {
+          const { accounts } = await fetch('/api/accounts').then((r) => r.json());
+          if (accounts.length > 0) localStorage.setItem(ACTIVE_PROFILE_KEY, accounts[0].id);
+          else localStorage.removeItem(ACTIVE_PROFILE_KEY);
+        }
+        await loadAccounts();
+      } catch {
+        removeError.textContent = 'Could not remove — check your connection and try again.';
+      } finally {
+        confirmBtn.disabled = false;
+      }
+    });
+
+    document.getElementById('add-account-btn').addEventListener('click', () => {
+      window.location.href = '/connect-provider.html';
+    });
+
+    (async function () {
+      const meRes = await fetch('/api/me');
+      if (meRes.status === 401) {
+        window.location.replace('/login.html?next=/account-management.html');
+        return;
+      }
+      await loadAccounts();
+    })();
+  </script>
+</body>
+</html>

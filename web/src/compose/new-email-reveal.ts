@@ -1,4 +1,5 @@
 import { feed } from '../feed/dom';
+import { getActiveProfileId } from '../shared/active-profile';
 import { openCompose } from './compose';
 import { shouldSnapToBoundary } from './reveal-snap';
 
@@ -20,6 +21,13 @@ import { shouldSnapToBoundary } from './reveal-snap';
 // ordinary list scrolling.
 const hiddenMarker = document.querySelector('.feed-top-spacer') as HTMLElement;
 const newEmailBg = document.getElementById('new-email-bg') as HTMLElement;
+
+// #feed's own base bottom padding (nav clearance + safe area), resolved to
+// a real px number once up front, before --feed-min-scroll-fill has ever
+// been set (it defaults to 0 via the var()'s own fallback) — see
+// ensureEnoughScrollRoom's own comment for why this has to be subtracted
+// back out rather than left as extra, unaccounted-for filler.
+const BASE_PADDING_BOTTOM_PX = Number.parseFloat(getComputedStyle(feed).paddingBottom) || 0;
 
 // How close to fully revealed (as a fraction of hiddenScrollTop()) a
 // settled pull needs to land to commit to opening — see the settle
@@ -69,13 +77,108 @@ export function hiddenScrollTop(): number {
 newEmailBg.style.visibility = 'hidden';
 let pinned = false;
 let pinAttemptInFlight = false;
+// Hoisted (rather than local to one ensureNewEmailBgPinned() call) so
+// resetNewEmailBgPin() can tear down a still-in-flight attempt before
+// starting a new one — otherwise switching profile twice in quick
+// succession (the profile switcher deliberately stays open for exactly
+// this — see chat history) would leave an earlier attempt's rAF/observer/
+// timer alive, running its own tryPin() (and so its own
+// ensureEnoughScrollRoom() measurement) against stale content, racing
+// whichever one runs last against the new attempt for the same
+// --feed-min-scroll-fill value. activeRafHandle in particular was missed
+// the first time this teardown was added — the *scheduled but not yet
+// fired* requestAnimationFrame callback itself isn't a timer or observer,
+// so stopInFlightPinAttempt() wasn't actually stopping it, only the two
+// things that get created *after* it fires. This is what let scrolling
+// behave differently depending on how many times an account had just been
+// switched away from and back to, rather than just what its own content
+// was — see chat history.
+let activeRafHandle: number | null = null;
+let activeObserver: MutationObserver | null = null;
+let activeGiveUpTimer: ReturnType<typeof setTimeout> | null = null;
+
+function stopInFlightPinAttempt(): void {
+  if (activeRafHandle !== null) cancelAnimationFrame(activeRafHandle);
+  activeRafHandle = null;
+  activeObserver?.disconnect();
+  activeObserver = null;
+  if (activeGiveUpTimer !== null) clearTimeout(activeGiveUpTimer);
+  activeGiveUpTimer = null;
+}
+
+// Guarantees #feed can actually be scrolled far enough to carry the New
+// Email button out of view, regardless of how few emails — down to zero —
+// the inbox currently has. Without this, a too-short inbox simply has
+// nowhere for scrollTop to reach hiddenScrollTop() at all: the browser
+// clamps it to whatever the real content allows, tryPin() below keeps
+// failing, and ensureNewEmailBgPinned's own give-up timer used to be the
+// only way out of that, permanently revealing the button (and leaving
+// #feed genuinely too short to scroll at all) instead of hiding it.
+//
+// Measures the real content height via the last child's own document-flow
+// position (offsetTop + offsetHeight), NOT via #feed's own scrollHeight —
+// scrollHeight is clamped to never read below clientHeight (confirmed by
+// reproducing this in a real browser: with only a few short cards,
+// scrollHeight reported the full 700px viewport height even though the
+// actual content only reached ~380px), so a shortfall computed from it
+// silently under-counts by exactly the amount this function exists to
+// detect, every time real content is shorter than the viewport — which is
+// exactly the sparse-inbox case this is supposed to handle. offsetTop is a
+// plain layout-flow measurement with no such floor.
+//
+// A deliberate few pixels past the theoretical exact minimum — offsetTop
+// can be fractional (sub-pixel layout) and browsers round a scrollTop
+// assignment, so aiming for the exact boundary risks landing a fraction of
+// a pixel short of it.
+const SCROLL_ROOM_MARGIN_PX = 4;
+
+// Exported so inbox.ts can call this directly, every time it inserts real
+// cards — not just while a pin attempt is still in flight. Once `pinned`
+// latches true it never becomes false again on its own (only
+// resetNewEmailBgPin does that, on an account switch), so if it happens to
+// latch against a still-empty #feed — which it can: a switch that lands
+// while Inbox is already the visible view finds tryPin() succeeding on its
+// very first, next-frame attempt, trivially, because the guaranteed-minimum
+// fill computed for zero cards makes an empty feed "pinnable" too — nothing
+// would otherwise ever recompute this once the real cards arrive a moment
+// later. The stale, oversized fill (sized for zero cards) then lingers
+// forever, letting scrollTop reach far past the real last card. A direct
+// page load happens to dodge this only because Inbox isn't the visible view
+// yet when the switch starts, so tryPin() bails immediately instead of
+// latching early — an accident of timing, not something to depend on. See
+// chat history for the switch-back-and-forth repro that exposed this.
+//
+// BASE_PADDING_BOTTOM_PX *must* be subtracted here — leaving it as
+// "harmless extra" was tried and wasn't: with a sparse inbox, the unwanted
+// slack pushed the max scroll position (clientHeight + hiddenScrollTop(),
+// which this fill is sized to just reach) well past where the *last card*
+// actually starts, since that target no longer had anything to do with the
+// real content's own position. Scrolling to the bottom then left most of
+// the last card scrolled up out of view, with nothing but blank filler
+// showing below it — see chat history. Subtracting the real base padding
+// keeps the target scroll position pinned to just past the button, which
+// (given the first, and so every later, card already starts right after
+// the button+spacer, comfortably past hiddenScrollTop() on its own) never
+// scrolls further than the last card's own top edge.
+export function ensureEnoughScrollRoom(): void {
+  const last = feed.lastElementChild as HTMLElement | null;
+  const contentBottom = last ? last.offsetTop + last.offsetHeight : 0;
+  const shortfall =
+    feed.clientHeight + hiddenScrollTop() + SCROLL_ROOM_MARGIN_PX - contentBottom - BASE_PADDING_BOTTOM_PX;
+  feed.style.setProperty('--feed-min-scroll-fill', `${Math.max(0, shortfall)}px`);
+}
 
 function tryPin(): boolean {
   // offsetParent is null exactly when #feed (a position:absolute
   // element with a positioned ancestor) is display:none — see above.
   if (feed.offsetParent === null) return false;
+  ensureEnoughScrollRoom();
   feed.scrollTop = hiddenScrollTop();
-  return feed.scrollTop === hiddenScrollTop();
+  // A tolerance, not strict equality, for the same sub-pixel/rounding
+  // reason as SCROLL_ROOM_MARGIN_PX above — the assignment above can
+  // legitimately land a fraction of a pixel away from the target and
+  // still be visually/functionally pinned.
+  return Math.abs(feed.scrollTop - hiddenScrollTop()) < 1;
 }
 
 // Safe to call any number of times, from any view: a no-op once already
@@ -88,32 +191,34 @@ export function ensureNewEmailBgPinned(): void {
   if (pinned || pinAttemptInFlight) return;
   if (feed.offsetParent === null) return; // not the visible view (yet)
   pinAttemptInFlight = true;
-  requestAnimationFrame(() => {
+  activeRafHandle = requestAnimationFrame(() => {
+    activeRafHandle = null;
     if (tryPin()) {
       pinned = true;
       pinAttemptInFlight = false;
       newEmailBg.style.visibility = '';
       return;
     }
-    let giveUpTimer: ReturnType<typeof setTimeout>;
     const observer = new MutationObserver(() => {
       if (tryPin()) {
-        observer.disconnect();
-        clearTimeout(giveUpTimer);
+        stopInFlightPinAttempt();
         pinned = true;
         pinAttemptInFlight = false;
         newEmailBg.style.visibility = '';
       }
     });
     observer.observe(feed, { childList: true });
-    // A genuinely empty inbox (or a fetch that fails outright) may never
-    // become scrollable at all — don't leave the compose button
-    // invisible forever waiting for content that isn't coming. Counts
-    // as "pinned" (no further retries): it already gave up and revealed
-    // the button, so a later retry could only make things worse by
-    // hiding it again.
-    giveUpTimer = setTimeout(() => {
-      observer.disconnect();
+    activeObserver = observer;
+    // ensureEnoughScrollRoom (see tryPin) already guarantees enough scroll
+    // range regardless of content, so this should rarely if ever actually
+    // fire now — kept as a last-resort safety net (e.g. a fetch failing
+    // outright, or some environment where the very first layout read is
+    // unreliable) rather than the primary way a sparse inbox used to be
+    // handled. Counts as "pinned" (no further retries): it already gave up
+    // and revealed the button, so a later retry could only make things
+    // worse by hiding it again.
+    activeGiveUpTimer = setTimeout(() => {
+      stopInFlightPinAttempt();
       pinned = true;
       pinAttemptInFlight = false;
       newEmailBg.style.visibility = '';
@@ -122,9 +227,30 @@ export function ensureNewEmailBgPinned(): void {
 }
 ensureNewEmailBgPinned();
 
+/** Re-arms the pin sequence for a freshly-loaded inbox under the same
+ *  button — called when switching profile (see inbox.ts's switchAccount).
+ *  The new account's inbox starts from a much shorter DOM (every card from
+ *  the previous account was just removed), so scrollTop simply clamps to
+ *  wherever that shrunk range allows — often revealing the button, since
+ *  there's nothing to carry it out of view for yet. Hiding it again
+ *  immediately and re-running the same pin logic used at initial load
+ *  (already robust to a sparse/empty inbox via ensureEnoughScrollRoom)
+ *  keeps a profile switch from ever surfacing the button by accident.
+ *  Tears down any still-in-flight attempt from a previous switch first —
+ *  the profile switcher deliberately stays open across selections, so
+ *  switching again before an earlier attempt has resolved is routine, not
+ *  an edge case. */
+export function resetNewEmailBgPin(): void {
+  stopInFlightPinAttempt();
+  pinned = false;
+  pinAttemptInFlight = false;
+  newEmailBg.style.visibility = 'hidden';
+  ensureNewEmailBgPinned();
+}
+
 document.getElementById('new-email-btn')!.addEventListener('click', () => {
   feed.scrollTop = hiddenScrollTop();
-  openCompose({ mode: 'new' });
+  openCompose({ mode: 'new', accountId: getActiveProfileId() ?? undefined });
 });
 
 // Whether a finger is currently down on the feed. Distinguishes a

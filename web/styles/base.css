@@ -40,7 +40,13 @@ main#feed {
      .feed-top-spacer instead, so it can't scroll away and drop the
      first card under the notch. */
   touch-action: pan-y;
-  padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+  /* --feed-min-scroll-fill (set from new-email-reveal.ts's
+     ensureEnoughScrollRoom) tops this up when there's too little real
+     content (down to zero emails) to scroll the New Email button fully
+     out of view on its own — see that function's own comment. Zero by
+     default, so this changes nothing for an inbox that already has
+     enough content. */
+  padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px) + var(--feed-min-scroll-fill, 0px));
 }
 main#feed::-webkit-scrollbar {
   display: none;

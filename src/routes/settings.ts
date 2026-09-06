@@ -18,12 +18,15 @@ export const settingsRoutes: FastifyPluginAsync<Options> = async (fastify, { dat
   // convention). Same list detectLanguage()'s own vocabulary is drawn
   // from, so anything selectable here is guaranteed comparable to
   // whatever the model ever actually detects.
-  fastify.get('/languages', async (_request, reply) => {
-    return reply.send({ selected: await getSpokenLanguages(dataDir), available: LANGUAGE_NAMES });
+  fastify.get<{ Params: { accountId: string } }>('/:accountId/languages', async (request, reply) => {
+    return reply.send({
+      selected: await getSpokenLanguages(dataDir, request.params.accountId),
+      available: LANGUAGE_NAMES,
+    });
   });
 
-  fastify.put<{ Body: { languages: string[] } }>(
-    '/languages',
+  fastify.put<{ Params: { accountId: string }; Body: { languages: string[] } }>(
+    '/:accountId/languages',
     {
       schema: {
         body: {
@@ -43,7 +46,7 @@ export const settingsRoutes: FastifyPluginAsync<Options> = async (fastify, { dat
       if (invalid.length > 0) {
         return reply.code(400).send({ error: `Not a recognized language: ${invalid.join(', ')}` });
       }
-      await setSpokenLanguages(dataDir, languages);
+      await setSpokenLanguages(dataDir, request.params.accountId, languages);
       return reply.send({ selected: languages });
     },
   );

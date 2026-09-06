@@ -1,6 +1,8 @@
-import type { MailEvent } from '@server/mail/provider';
+import type { AccountMailEvent } from '@server/mail/registry';
 import type { EmailMessage, EmailSummary, Folder, Page } from '@server/mail/types';
 import { openForwardCompose, openReplyCompose } from '../compose/compose';
+import { ensureEnoughScrollRoom, resetNewEmailBgPin } from '../compose/new-email-reveal';
+import { getLastKnownProfileId, onActiveProfileChange, setActiveProfileId } from '../shared/active-profile';
 import { buildCard } from './card';
 import { feed, feedStatus } from './dom';
 
@@ -37,29 +39,50 @@ const batchBoundaries: HTMLElement[] = []; // batchBoundaries[i] = permanent mar
 let nextPageToken: string | null = null;
 let loadingMore = false;
 let folderId: string | null = null;
+let accountId: string | null = null;
+let eventSource: EventSource | null = null;
 
-async function loadInbox(): Promise<void> {
-  const folders: { folders: Folder[] } = await fetch('/api/mail/folders').then((r) => r.json());
+// Bumped on every switchAccount() call and threaded through the whole
+// load chain below (loadInbox -> loadMoreBatches -> loadMore) — each
+// function bails out right after its own await, before touching any
+// shared state or #feed's DOM, once it notices a *newer* switch has
+// started. Without this, switching profile again before an in-flight
+// fetch for the previous one resolves let two loads race: a stale
+// response could still insert cards (or mutate folderId/nextPageToken)
+// for an account that's no longer the one being viewed, after the
+// account-switch already reset everything for the new one — this is
+// exactly what made scrolling behave differently depending on whether
+// you loaded an account directly or switched to it a few times in a row
+// (see chat history).
+let switchGeneration = 0;
+
+async function loadInbox(generation: number): Promise<void> {
+  if (!accountId) return;
+  const url = new URL('/api/mail/folders', window.location.origin);
+  url.searchParams.set('accountId', accountId);
+  const folders: { folders: Folder[] } = await fetch(url).then((r) => r.json());
+  if (generation !== switchGeneration) return; // superseded by a later switch
   const inbox = folders.folders.find((f) => f.kind === 'inbox') || folders.folders[0];
   if (!inbox) {
     feedStatus.textContent = 'No mail folders found.';
     return;
   }
   folderId = inbox.id;
-  await loadMoreBatches(INITIAL_BATCHES);
+  await loadMoreBatches(INITIAL_BATCHES, generation);
 }
 
 // Loads up to `n` further batches back-to-back, stopping early if the
 // folder runs out. Guarded against overlapping calls — scroll events
 // fire repeatedly while past the trigger point, well before the first
 // run has finished moving the target further away.
-async function loadMoreBatches(n: number): Promise<void> {
+async function loadMoreBatches(n: number, generation: number): Promise<void> {
   if (loadingAhead) return;
   loadingAhead = true;
   try {
     for (let i = 0; i < n; i++) {
+      if (generation !== switchGeneration) return; // superseded by a later switch
       if (batchesLoaded > 0 && !nextPageToken) break; // mailbox exhausted
-      await loadMore();
+      await loadMore(generation);
     }
   } finally {
     loadingAhead = false;
@@ -70,16 +93,18 @@ async function loadMoreBatches(n: number): Promise<void> {
   }
 }
 
-async function loadMore(): Promise<void> {
-  if (loadingMore || !folderId) return;
+async function loadMore(generation: number): Promise<void> {
+  if (loadingMore || !folderId || !accountId) return;
   loadingMore = true;
   const requestedPageToken = nextPageToken;
   try {
     const url = new URL('/api/mail/messages', window.location.origin);
+    url.searchParams.set('accountId', accountId);
     url.searchParams.set('folderId', folderId);
     url.searchParams.set('pageSize', String(PAGE_SIZE));
     if (requestedPageToken) url.searchParams.set('pageToken', requestedPageToken);
     const page: Page<EmailSummary> = await fetch(url).then((r) => r.json());
+    if (generation !== switchGeneration) return; // superseded by a later switch
 
     // Skip anything already on screen (can happen if a message arrived
     // via the live SSE stream — connectToMailEvents — in the brief
@@ -131,6 +156,11 @@ async function loadMore(): Promise<void> {
     if (!page.items?.length && !feed.querySelector('.card')) {
       feedStatus.textContent = 'No messages in your inbox.';
     }
+    // Keeps --feed-min-scroll-fill in sync with the real content that just
+    // landed, regardless of whether the New Email button has already
+    // "pinned" — see the comment on ensureEnoughScrollRoom for why that
+    // flag alone isn't a safe gate for this.
+    ensureEnoughScrollRoom();
   } catch (_err) {
     if (!feed.querySelector('.card')) feedStatus.textContent = 'Could not load your inbox.';
   } finally {
@@ -162,7 +192,7 @@ export function checkBatchTrigger(): void {
   const marker = targetIndex >= 0 ? batchBoundaries[targetIndex] : null;
   if (!marker) return;
   const reached = marker.offsetTop <= feed.scrollTop + feed.clientHeight;
-  if (reached) loadMoreBatches(LOAD_AHEAD_BATCHES);
+  if (reached) loadMoreBatches(LOAD_AHEAD_BATCHES, switchGeneration);
 }
 
 // Live updates: the backend's IMAP IDLE session detects new/changed/
@@ -172,11 +202,16 @@ export function checkBatchTrigger(): void {
 // reconnects automatically if the connection drops. This connection
 // now stays open the whole time you're on this page, including while
 // viewing Settings, since that's a view toggle rather than a real
-// navigation — see showView() in settings.ts.
-function connectToMailEvents(): void {
-  const source = new EventSource('/api/mail/events');
+// navigation — see showView() in settings.ts. Scoped to one account
+// (?accountId=) — switchAccount() below tears this down and opens a
+// fresh one whenever the viewed account changes.
+function connectToMailEvents(forAccountId: string): void {
+  const url = new URL('/api/mail/events', window.location.origin);
+  url.searchParams.set('accountId', forAccountId);
+  const source = new EventSource(url);
+  eventSource = source;
   source.onmessage = async (e) => {
-    let event: MailEvent;
+    let event: AccountMailEvent;
     try {
       event = JSON.parse(e.data);
     } catch {
@@ -214,10 +249,57 @@ function prependCard(message: EmailMessage): void {
   if (feedStatus.isConnected) feedStatus.remove();
 }
 
-// Auth/provider bootstrap: 401 means not logged in (routes to setup or
-// login depending on whether the app has ever been configured); an
-// unconfigured mail provider routes to the connect flow. Only once past
-// both does the feed actually start loading.
+interface MailAccountOption {
+  id: string;
+  label: string;
+}
+
+/** Tears down everything scoped to the previously-viewed account (its SSE
+ *  connection, loaded cards, pagination state) and loads the requested one
+ *  fresh — the Inbox tab shows exactly one account's mailbox at a time
+ *  (unlike the merged, color-coded Feed tab), so switching is a full reset
+ *  rather than a filter over already-loaded data. Reacts to the app-wide
+ *  active profile (see shared/active-profile.ts) rather than driving its
+ *  own picker — switching profile from the nav tab, Settings, or anywhere
+ *  else reaches here the same way. */
+async function switchAccount(newAccountId: string): Promise<void> {
+  if (newAccountId === accountId) return;
+  const generation = ++switchGeneration;
+  accountId = newAccountId;
+
+  eventSource?.close();
+  eventSource = null;
+  folderId = null;
+  nextPageToken = null;
+  batchesLoaded = 0;
+  batchBoundaries.length = 0;
+  feed.querySelectorAll('.card-wrap, [data-batch-index]').forEach((el) => {
+    el.remove();
+  });
+  feedStatus.textContent = 'Loading your inbox…';
+  if (!feedStatus.isConnected) feed.insertBefore(feedStatus, sentinel);
+  // Every card just got removed above — #feed's scrollable range just
+  // shrank out from under whatever scrollTop was, which otherwise clamps
+  // to wherever that shrunk range allows (often revealing the New Email
+  // button instead of leaving it hidden). Re-arms the same pin sequence
+  // used at initial load for this account's own fresh content.
+  resetNewEmailBgPin();
+
+  connectToMailEvents(newAccountId);
+  await loadInbox(generation);
+}
+
+onActiveProfileChange((id) => {
+  void switchAccount(id);
+});
+
+// Auth/account bootstrap: 401 means not logged in (routes to setup or
+// login depending on whether the app has ever been configured); no
+// connected mail account at all routes to the connect flow. Only once past
+// both does the feed actually start loading — setActiveProfileId below
+// picks whichever account was last viewed (if it still exists) or the
+// first one otherwise, which the onActiveProfileChange subscription above
+// then reacts to.
 export async function bootstrap(): Promise<void> {
   const [meRes, statusRes] = await Promise.all([fetch('/api/me'), fetch('/api/status')]);
   if (meRes.status === 401) {
@@ -226,13 +308,13 @@ export async function bootstrap(): Promise<void> {
     return;
   }
 
-  const providerStatus = await fetch('/api/provider/status').then((r) => r.json());
-  if (!providerStatus.configured) {
+  const { accounts }: { accounts: MailAccountOption[] } = await fetch('/api/accounts').then((r) => r.json());
+  if (accounts.length === 0) {
     window.location.replace('/connect-provider.html');
     return;
   }
 
-  connectToMailEvents();
-
-  await loadInbox();
+  const lastViewed = getLastKnownProfileId();
+  const initial = accounts.find((a) => a.id === lastViewed) ?? accounts[0];
+  setActiveProfileId(initial.id);
 }

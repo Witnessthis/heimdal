@@ -259,6 +259,18 @@
    scanning for); time picks up --highlight, each theme's own warm
    accent, matching how timestamps get a distinct highlight in most
    terminal log output (journalctl, dmesg, etc.). */
+/* Which account this card came from (Feed cards only — see card.ts's own
+   comment). align-self: center rather than the row's own baseline
+   alignment, since a circle has no baseline to align to. Background
+   color is set inline per-card (arbitrary per-account data), never a CSS
+   variable — see card.ts. */
+.card-account-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  align-self: center;
+}
 .card-from-name {
   font-weight: 700;
   font-size: 0.8rem;

@@ -2,6 +2,7 @@ import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import type { EmailTriage } from '../ai/triage';
+import { qualifyId } from '../mail/account-id';
 
 // The ephemeral worklist behind the AI Feed view — NOT a permanent record.
 // One row per email currently awaiting a decision; removed once dealt
@@ -29,6 +30,15 @@ async function openDb(dataDir: string): Promise<DatabaseSync> {
   db.exec(`
     CREATE TABLE IF NOT EXISTS ai_feed (
       email_id TEXT PRIMARY KEY,
+      -- Denormalized alongside the (already globally-unique, account-
+      -- qualified — see mail/account-id.ts) email_id, rather than requiring
+      -- every reader to decode it, so this column can be read directly
+      -- without importing the id-splitting helper. Defaulted to '' rather
+      -- than a hard NOT NULL migration failure for any row that predates
+      -- multi-account support (see the migration below) — such a row's
+      -- email_id also predates qualification, so there's no real account
+      -- to recover here regardless.
+      account_id TEXT NOT NULL DEFAULT '',
       -- Deliberately no 'filtered' here — a filtered result is never
       -- inserted at all (see upsertFeedItem), so there's nothing for
       -- this column to represent that state; excluding it from the
@@ -58,11 +68,21 @@ async function openDb(dataDir: string): Promise<DatabaseSync> {
       // Already migrated, or never had the column — nothing to do.
     }
   }
+  // Same idea, the other direction — an already-deployed file predates
+  // account_id entirely. Safe to attempt unconditionally: a fresh DB
+  // (CREATE TABLE above already includes it) just throws "duplicate
+  // column name", swallowed here.
+  try {
+    db.exec("ALTER TABLE ai_feed ADD COLUMN account_id TEXT NOT NULL DEFAULT ''");
+  } catch {
+    // Already migrated, or created fresh with the column above.
+  }
   return db;
 }
 
 interface Row {
   email_id: string;
+  account_id: string;
   visibility_type: 'feed' | 'snooze';
   visibility_until: string | null;
   draft_reply_type: 'none' | 'draft';
@@ -75,6 +95,7 @@ interface Row {
 function rowToTriage(row: Row): EmailTriage {
   return {
     emailId: row.email_id,
+    accountId: row.account_id,
     visibility:
       row.visibility_type === 'snooze'
         ? { type: 'snooze', until: row.visibility_until as string }
@@ -102,11 +123,12 @@ export async function upsertFeedItem(dataDir: string, triage: EmailTriage): Prom
   try {
     db.prepare(
       `INSERT INTO ai_feed (
-        email_id, visibility_type, visibility_until,
+        email_id, account_id, visibility_type, visibility_until,
         draft_reply_type, draft_reply_subject, draft_reply_body,
         suspicious_type, suspicious_reason, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(email_id) DO UPDATE SET
+        account_id = excluded.account_id,
         visibility_type = excluded.visibility_type,
         visibility_until = excluded.visibility_until,
         draft_reply_type = excluded.draft_reply_type,
@@ -116,6 +138,7 @@ export async function upsertFeedItem(dataDir: string, triage: EmailTriage): Prom
         suspicious_reason = excluded.suspicious_reason`,
     ).run(
       triage.emailId,
+      triage.accountId,
       triage.visibility.type,
       triage.visibility.type === 'snooze' ? triage.visibility.until : null,
       triage.draftReply.type,
@@ -175,6 +198,43 @@ export async function removeFeedItem(dataDir: string, emailId: string): Promise<
   const db = await openDb(dataDir);
   try {
     db.prepare('DELETE FROM ai_feed WHERE email_id = ?').run(emailId);
+  } finally {
+    db.close();
+  }
+}
+
+/** Purges every feed row for one account — called when that account is
+ *  removed (see routes/accounts.ts), so the merged Feed doesn't keep
+ *  showing cards pointing at a mailbox that no longer exists. */
+export async function removeFeedItemsForAccount(dataDir: string, accountId: string): Promise<void> {
+  const db = await openDb(dataDir);
+  try {
+    db.prepare('DELETE FROM ai_feed WHERE account_id = ?').run(accountId);
+  } finally {
+    db.close();
+  }
+}
+
+/** One-time upgrade for rows written before multi-account support — their
+ *  email_id is the old unqualified provider-local id (e.g.
+ *  "imap:INBOX:42"), which the rest of the app no longer recognizes now
+ *  that every id must carry its account (see mail/account-id.ts). Called
+ *  once from lib/accounts.ts's migrateLegacyAccountIfNeeded for the single
+ *  pre-existing account being promoted into the new per-account layout.
+ *  Only touches rows that don't already look qualified, so it's harmless
+ *  to call more than once. */
+export async function requalifyLegacyFeedItems(dataDir: string, accountId: string): Promise<void> {
+  const db = await openDb(dataDir);
+  try {
+    const rows = db.prepare('SELECT email_id FROM ai_feed').all() as unknown as { email_id: string }[];
+    for (const row of rows) {
+      if (row.email_id.includes('|')) continue;
+      db.prepare('UPDATE ai_feed SET email_id = ?, account_id = ? WHERE email_id = ?').run(
+        qualifyId(accountId, row.email_id),
+        accountId,
+        row.email_id,
+      );
+    }
   } finally {
     db.close();
   }

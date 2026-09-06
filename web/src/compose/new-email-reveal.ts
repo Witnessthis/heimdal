@@ -22,6 +22,13 @@ import { shouldSnapToBoundary } from './reveal-snap';
 const hiddenMarker = document.querySelector('.feed-top-spacer') as HTMLElement;
 const newEmailBg = document.getElementById('new-email-bg') as HTMLElement;
 
+// #feed's own base bottom padding (nav clearance + safe area), resolved to
+// a real px number once up front, before --feed-min-scroll-fill has ever
+// been set (it defaults to 0 via the var()'s own fallback) — see
+// ensureEnoughScrollRoom's own comment for why this has to be subtracted
+// back out rather than left as extra, unaccounted-for filler.
+const BASE_PADDING_BOTTOM_PX = Number.parseFloat(getComputedStyle(feed).paddingBottom) || 0;
+
 // How close to fully revealed (as a fraction of hiddenScrollTop()) a
 // settled pull needs to land to commit to opening — see the settle
 // logic below.
@@ -109,16 +116,26 @@ function stopInFlightPinAttempt(): void {
 // A deliberate few pixels past the theoretical exact minimum — offsetTop
 // can be fractional (sub-pixel layout) and browsers round a scrollTop
 // assignment, so aiming for the exact boundary risks landing a fraction of
-// a pixel short of it. Also deliberately doesn't subtract #feed's own base
-// bottom padding (safe-area/nav clearance) from the target — slightly
-// over-filling by that amount is an imperceptible bit of extra blank
-// scroll space, and far simpler than reading an env() value back out in JS.
+// a pixel short of it.
 const SCROLL_ROOM_MARGIN_PX = 4;
 
+// BASE_PADDING_BOTTOM_PX *must* be subtracted here — leaving it as
+// "harmless extra" was tried and wasn't: with a sparse inbox, the unwanted
+// slack pushed the max scroll position (clientHeight + hiddenScrollTop(),
+// which this fill is sized to just reach) well past where the *last card*
+// actually starts, since that target no longer had anything to do with the
+// real content's own position. Scrolling to the bottom then left most of
+// the last card scrolled up out of view, with nothing but blank filler
+// showing below it — see chat history. Subtracting the real base padding
+// keeps the target scroll position pinned to just past the button, which
+// (given the first, and so every later, card already starts right after
+// the button+spacer, comfortably past hiddenScrollTop() on its own) never
+// scrolls further than the last card's own top edge.
 function ensureEnoughScrollRoom(): void {
   const last = feed.lastElementChild as HTMLElement | null;
   const contentBottom = last ? last.offsetTop + last.offsetHeight : 0;
-  const shortfall = feed.clientHeight + hiddenScrollTop() + SCROLL_ROOM_MARGIN_PX - contentBottom;
+  const shortfall =
+    feed.clientHeight + hiddenScrollTop() + SCROLL_ROOM_MARGIN_PX - contentBottom - BASE_PADDING_BOTTOM_PX;
   feed.style.setProperty('--feed-min-scroll-fill', `${Math.max(0, shortfall)}px`);
 }
 

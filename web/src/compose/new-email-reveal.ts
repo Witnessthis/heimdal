@@ -81,12 +81,25 @@ let pinAttemptInFlight = false;
 // resetNewEmailBgPin() can tear down a still-in-flight attempt before
 // starting a new one — otherwise switching profile twice in quick
 // succession (the profile switcher deliberately stays open for exactly
-// this — see chat history) would leave an earlier attempt's observer/timer
-// alive, watching stale content, alongside the new one.
+// this — see chat history) would leave an earlier attempt's rAF/observer/
+// timer alive, running its own tryPin() (and so its own
+// ensureEnoughScrollRoom() measurement) against stale content, racing
+// whichever one runs last against the new attempt for the same
+// --feed-min-scroll-fill value. activeRafHandle in particular was missed
+// the first time this teardown was added — the *scheduled but not yet
+// fired* requestAnimationFrame callback itself isn't a timer or observer,
+// so stopInFlightPinAttempt() wasn't actually stopping it, only the two
+// things that get created *after* it fires. This is what let scrolling
+// behave differently depending on how many times an account had just been
+// switched away from and back to, rather than just what its own content
+// was — see chat history.
+let activeRafHandle: number | null = null;
 let activeObserver: MutationObserver | null = null;
 let activeGiveUpTimer: ReturnType<typeof setTimeout> | null = null;
 
 function stopInFlightPinAttempt(): void {
+  if (activeRafHandle !== null) cancelAnimationFrame(activeRafHandle);
+  activeRafHandle = null;
   activeObserver?.disconnect();
   activeObserver = null;
   if (activeGiveUpTimer !== null) clearTimeout(activeGiveUpTimer);
@@ -162,7 +175,8 @@ export function ensureNewEmailBgPinned(): void {
   if (pinned || pinAttemptInFlight) return;
   if (feed.offsetParent === null) return; // not the visible view (yet)
   pinAttemptInFlight = true;
-  requestAnimationFrame(() => {
+  activeRafHandle = requestAnimationFrame(() => {
+    activeRafHandle = null;
     if (tryPin()) {
       pinned = true;
       pinAttemptInFlight = false;

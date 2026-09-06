@@ -42,31 +42,47 @@ let folderId: string | null = null;
 let accountId: string | null = null;
 let eventSource: EventSource | null = null;
 
-async function loadInbox(): Promise<void> {
+// Bumped on every switchAccount() call and threaded through the whole
+// load chain below (loadInbox -> loadMoreBatches -> loadMore) — each
+// function bails out right after its own await, before touching any
+// shared state or #feed's DOM, once it notices a *newer* switch has
+// started. Without this, switching profile again before an in-flight
+// fetch for the previous one resolves let two loads race: a stale
+// response could still insert cards (or mutate folderId/nextPageToken)
+// for an account that's no longer the one being viewed, after the
+// account-switch already reset everything for the new one — this is
+// exactly what made scrolling behave differently depending on whether
+// you loaded an account directly or switched to it a few times in a row
+// (see chat history).
+let switchGeneration = 0;
+
+async function loadInbox(generation: number): Promise<void> {
   if (!accountId) return;
   const url = new URL('/api/mail/folders', window.location.origin);
   url.searchParams.set('accountId', accountId);
   const folders: { folders: Folder[] } = await fetch(url).then((r) => r.json());
+  if (generation !== switchGeneration) return; // superseded by a later switch
   const inbox = folders.folders.find((f) => f.kind === 'inbox') || folders.folders[0];
   if (!inbox) {
     feedStatus.textContent = 'No mail folders found.';
     return;
   }
   folderId = inbox.id;
-  await loadMoreBatches(INITIAL_BATCHES);
+  await loadMoreBatches(INITIAL_BATCHES, generation);
 }
 
 // Loads up to `n` further batches back-to-back, stopping early if the
 // folder runs out. Guarded against overlapping calls — scroll events
 // fire repeatedly while past the trigger point, well before the first
 // run has finished moving the target further away.
-async function loadMoreBatches(n: number): Promise<void> {
+async function loadMoreBatches(n: number, generation: number): Promise<void> {
   if (loadingAhead) return;
   loadingAhead = true;
   try {
     for (let i = 0; i < n; i++) {
+      if (generation !== switchGeneration) return; // superseded by a later switch
       if (batchesLoaded > 0 && !nextPageToken) break; // mailbox exhausted
-      await loadMore();
+      await loadMore(generation);
     }
   } finally {
     loadingAhead = false;
@@ -77,7 +93,7 @@ async function loadMoreBatches(n: number): Promise<void> {
   }
 }
 
-async function loadMore(): Promise<void> {
+async function loadMore(generation: number): Promise<void> {
   if (loadingMore || !folderId || !accountId) return;
   loadingMore = true;
   const requestedPageToken = nextPageToken;
@@ -88,6 +104,7 @@ async function loadMore(): Promise<void> {
     url.searchParams.set('pageSize', String(PAGE_SIZE));
     if (requestedPageToken) url.searchParams.set('pageToken', requestedPageToken);
     const page: Page<EmailSummary> = await fetch(url).then((r) => r.json());
+    if (generation !== switchGeneration) return; // superseded by a later switch
 
     // Skip anything already on screen (can happen if a message arrived
     // via the live SSE stream — connectToMailEvents — in the brief
@@ -170,7 +187,7 @@ export function checkBatchTrigger(): void {
   const marker = targetIndex >= 0 ? batchBoundaries[targetIndex] : null;
   if (!marker) return;
   const reached = marker.offsetTop <= feed.scrollTop + feed.clientHeight;
-  if (reached) loadMoreBatches(LOAD_AHEAD_BATCHES);
+  if (reached) loadMoreBatches(LOAD_AHEAD_BATCHES, switchGeneration);
 }
 
 // Live updates: the backend's IMAP IDLE session detects new/changed/
@@ -242,6 +259,7 @@ interface MailAccountOption {
  *  else reaches here the same way. */
 async function switchAccount(newAccountId: string): Promise<void> {
   if (newAccountId === accountId) return;
+  const generation = ++switchGeneration;
   accountId = newAccountId;
 
   eventSource?.close();
@@ -263,7 +281,7 @@ async function switchAccount(newAccountId: string): Promise<void> {
   resetNewEmailBgPin();
 
   connectToMailEvents(newAccountId);
-  await loadInbox();
+  await loadInbox(generation);
 }
 
 onActiveProfileChange((id) => {

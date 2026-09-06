@@ -92,12 +92,18 @@
 
 /* Sits behind .card-front, revealed as it slides left. Two fixed-width
    buttons rather than anything proportional — the reveal distance in
-   JS (SWIPE_REVEAL_PX) is defined to match this exactly. */
+   JS (SWIPE_REVEAL_PX) is defined to match this exactly.
+   pointer-events: none on the container (re-enabled on the buttons
+   themselves below) — this box spans the full card (inset: 0), and with
+   two of these now on the card (this one and -leading below) whichever
+   is later in DOM order would otherwise paint its empty flex space over
+   the other's buttons and silently swallow clicks meant for them. */
 .card-swipe-actions {
   position: absolute;
   inset: 0;
   display: flex;
   justify-content: flex-end;
+  pointer-events: none;
 }
 /* Revealed by swiping right instead of left (Reprocess/Delete) — same
    button layout as .card-swipe-actions above, just anchored to the
@@ -119,6 +125,7 @@
   font-family: inherit;
   color: var(--bg);
   cursor: pointer;
+  pointer-events: auto;
 }
 .card-swipe-actions svg {
   width: 20px;
@@ -176,6 +183,17 @@
   cursor: pointer;
   touch-action: pan-y;
   transition: transform 0.2s ease;
+  /* A long-press here is the entry gesture for multi-select (see
+     LONG_PRESS_MS in gestures.ts) — without this the browser's own
+     long-press text selection (and, on iOS, the copy/lookup callout)
+     fires at the same time and visibly highlights the card's text.
+     .card-body below opts back into normal selection once expanded,
+     since that's the actual email content a user may want to copy;
+     HTML bodies render into their own sandboxed iframe (render-body.ts)
+     and are never affected by this either way. */
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 #feed.selecting .card-front {
   grid-template-columns: 20px 1fr;
@@ -317,6 +335,14 @@
   font-size: 0.92rem;
   line-height: 1.5em;
   white-space: pre-wrap;
+  /* Opts back into normal text selection — this is the actual email
+     content a user may want to copy once a card is expanded, unlike the
+     always-visible chrome above it (see .card-front's user-select: none
+     and its doc comment). HTML bodies render into their own sandboxed
+     iframe (render-body.ts) and are never affected by either rule. */
+  user-select: text;
+  -webkit-user-select: text;
+  -webkit-touch-callout: default;
 }
 
 /* Renders a message's real HTML once a card is expanded (see

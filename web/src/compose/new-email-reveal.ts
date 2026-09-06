@@ -71,10 +71,27 @@ newEmailBg.style.visibility = 'hidden';
 let pinned = false;
 let pinAttemptInFlight = false;
 
+// Guarantees #feed can actually be scrolled far enough to carry the New
+// Email button out of view, regardless of how few emails — down to zero —
+// the inbox currently has. Without this, a too-short inbox simply has
+// nowhere for scrollTop to reach hiddenScrollTop() at all: the browser
+// clamps it to whatever the real content allows, tryPin() below keeps
+// failing, and ensureNewEmailBgPinned's own give-up timer used to be the
+// only way out of that, permanently revealing the button instead of hiding
+// it. Reads back to '0px' first so an earlier attempt's own padding isn't
+// counted as real content and compounded on retry — this must stay
+// idempotent, since it reruns on every pin attempt as more batches load.
+function ensureEnoughScrollRoom(): void {
+  feed.style.setProperty('--feed-min-scroll-fill', '0px');
+  const shortfall = feed.clientHeight + hiddenScrollTop() - feed.scrollHeight;
+  if (shortfall > 0) feed.style.setProperty('--feed-min-scroll-fill', `${shortfall}px`);
+}
+
 function tryPin(): boolean {
   // offsetParent is null exactly when #feed (a position:absolute
   // element with a positioned ancestor) is display:none — see above.
   if (feed.offsetParent === null) return false;
+  ensureEnoughScrollRoom();
   feed.scrollTop = hiddenScrollTop();
   return feed.scrollTop === hiddenScrollTop();
 }
@@ -107,12 +124,14 @@ export function ensureNewEmailBgPinned(): void {
       }
     });
     observer.observe(feed, { childList: true });
-    // A genuinely empty inbox (or a fetch that fails outright) may never
-    // become scrollable at all — don't leave the compose button
-    // invisible forever waiting for content that isn't coming. Counts
-    // as "pinned" (no further retries): it already gave up and revealed
-    // the button, so a later retry could only make things worse by
-    // hiding it again.
+    // ensureEnoughScrollRoom (see tryPin) already guarantees enough scroll
+    // range regardless of content, so this should rarely if ever actually
+    // fire now — kept as a last-resort safety net (e.g. a fetch failing
+    // outright, or some environment where the very first layout read is
+    // unreliable) rather than the primary way a sparse inbox used to be
+    // handled. Counts as "pinned" (no further retries): it already gave up
+    // and revealed the button, so a later retry could only make things
+    // worse by hiding it again.
     giveUpTimer = setTimeout(() => {
       observer.disconnect();
       pinned = true;

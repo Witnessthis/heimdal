@@ -1,7 +1,9 @@
 import { loadAiFeed } from '../ai-feed/list';
 import { ensureNewEmailBgPinned, hiddenScrollTop } from '../compose/new-email-reveal';
-import { aiFeedView, feed, nav, navAiFeed, navInbox, navSettings, settingsView } from '../feed/dom';
-import { loadAccounts } from './accounts';
+import { aiFeedView, feed, nav, navAiFeed, navInbox, navProfile, settingsView } from '../feed/dom';
+import { getActiveProfileId, onActiveProfileChange } from '../shared/active-profile';
+import { loadAccountManagement } from './account-management';
+import { createLanguageEditor } from './languages';
 import { refreshNotificationRow } from './notifications';
 import {
   isAutoLoadImagesEnabled,
@@ -9,6 +11,41 @@ import {
   setAutoLoadImagesEnabled,
   setRichHtmlEnabled,
 } from './reading-prefs';
+
+interface MailAccountOption {
+  id: string;
+  label: string;
+  color: string;
+}
+
+const profileSettingsLabel = document.getElementById('profile-settings-label') as HTMLElement;
+const languageEditorContainer = document.getElementById('language-editor-container') as HTMLElement;
+const memoryLink = document.getElementById('memory-link') as HTMLAnchorElement;
+
+/** Refreshes the "Settings for X" header, the language editor, and the
+ *  memory link's target — everything in Settings that's scoped to
+ *  whichever profile is currently active, rather than global. Called both
+ *  when Settings is shown and whenever the active profile changes (e.g.
+ *  switched via the profile-switcher modal while Settings happens to
+ *  already be open) — cheap enough to always do regardless of which
+ *  triggered it. */
+async function renderProfileScopedSettings(accountId: string): Promise<void> {
+  const { accounts }: { accounts: MailAccountOption[] } = await fetch('/api/accounts').then((r) => r.json());
+  const account = accounts.find((a) => a.id === accountId);
+  profileSettingsLabel.textContent = account ? `Settings for ${account.label}` : 'Settings';
+  memoryLink.href = `/memory.html?accountId=${encodeURIComponent(accountId)}`;
+  await createLanguageEditor(languageEditorContainer, accountId);
+}
+
+onActiveProfileChange((accountId) => {
+  void renderProfileScopedSettings(accountId);
+});
+
+// No direct import from profile-switcher.ts (account-management.ts, which
+// this module also imports, itself imports profile-switcher.ts) — a plain
+// DOM event keeps this module and profile-switcher.ts decoupled in both
+// directions rather than forming an import cycle.
+document.addEventListener('heimdal:open-settings', () => showView('settings'));
 
 // --- View switching --------------------------------------------------
 // Three panels (AI Feed, Inbox, Settings) share the bottom nav, merged
@@ -54,7 +91,11 @@ function showView(view: 'ai-feed' | 'inbox' | 'settings'): void {
   settingsView.style.display = view === 'settings' ? 'block' : 'none';
   navAiFeed.classList.toggle('active', view === 'ai-feed');
   navInbox.classList.toggle('active', view === 'inbox');
-  navSettings.classList.toggle('active', view === 'settings');
+  // The Profile tab isn't a plain nav-to-a-view button any more (tapping it
+  // opens the switcher modal, see profile-switcher.ts) — but it's still
+  // marked active while Settings is the visible panel, the same way the
+  // other two tabs mark themselves active for their own panel.
+  navProfile.classList.toggle('active', view === 'settings');
   nav.classList.remove('hide');
   lastScrollY =
     view === 'settings' ? settingsView.scrollTop : view === 'ai-feed' ? aiFeedView.scrollTop : feed.scrollTop;
@@ -68,7 +109,9 @@ function showView(view: 'ai-feed' | 'inbox' | 'settings'): void {
   if (view === 'ai-feed') loadAiFeed();
   if (view === 'settings') {
     loadTotpStatus();
-    void loadAccounts();
+    void loadAccountManagement();
+    const activeId = getActiveProfileId();
+    if (activeId) void renderProfileScopedSettings(activeId);
     void refreshNotificationRow();
     alignSubSettingConnectors();
   }
@@ -86,7 +129,6 @@ window.addEventListener('resize', () => {
 
 navAiFeed.addEventListener('click', () => showView('ai-feed'));
 navInbox.addEventListener('click', () => showView('inbox'));
-navSettings.addEventListener('click', () => showView('settings'));
 
 async function loadTotpStatus(): Promise<void> {
   const status = await fetch('/api/totp/status').then((r) => r.json());

@@ -1,9 +1,9 @@
 import type { AccountMailEvent } from '@server/mail/registry';
 import type { EmailMessage, EmailSummary, Folder, Page } from '@server/mail/types';
 import { openForwardCompose, openReplyCompose } from '../compose/compose';
+import { getLastKnownProfileId, onActiveProfileChange, setActiveProfileId } from '../shared/active-profile';
 import { buildCard } from './card';
-import { feed, feedStatus, inboxAccountBar, inboxAccountSelect } from './dom';
-import { setCurrentInboxAccountId } from './inbox-account';
+import { feed, feedStatus } from './dom';
 
 // A batch is fetched over a single IMAP connection (see the backend's
 // ImapProvider.listMessages()), but arrives as one burst rather than
@@ -30,13 +30,6 @@ const PAGE_SIZE = 100;
 const INITIAL_BATCHES = 3;
 const LOAD_AHEAD_BATCHES = 3;
 const TRIGGER_BATCHES_REMAINING = 1;
-
-// Remembers the last account viewed across visits — the Inbox tab is
-// scoped to one account at a time (see chat history: each account has
-// its own inbox, unlike the merged Feed), so this is what lets it default
-// back to whichever one the user last looked at instead of always
-// resetting to the first.
-const LAST_ACCOUNT_STORAGE_KEY = 'heimdal:inboxAccountId';
 
 let batchesLoaded = 0;
 let loadingAhead = false;
@@ -242,12 +235,13 @@ interface MailAccountOption {
  *  connection, loaded cards, pagination state) and loads the requested one
  *  fresh — the Inbox tab shows exactly one account's mailbox at a time
  *  (unlike the merged, color-coded Feed tab), so switching is a full reset
- *  rather than a filter over already-loaded data. */
+ *  rather than a filter over already-loaded data. Reacts to the app-wide
+ *  active profile (see shared/active-profile.ts) rather than driving its
+ *  own picker — switching profile from the nav tab, Settings, or anywhere
+ *  else reaches here the same way. */
 async function switchAccount(newAccountId: string): Promise<void> {
   if (newAccountId === accountId) return;
   accountId = newAccountId;
-  setCurrentInboxAccountId(newAccountId);
-  localStorage.setItem(LAST_ACCOUNT_STORAGE_KEY, newAccountId);
 
   eventSource?.close();
   eventSource = null;
@@ -265,26 +259,17 @@ async function switchAccount(newAccountId: string): Promise<void> {
   await loadInbox();
 }
 
-function populateAccountSelect(accounts: MailAccountOption[]): void {
-  inboxAccountSelect.innerHTML = '';
-  for (const account of accounts) {
-    const option = document.createElement('option');
-    option.value = account.id;
-    option.textContent = account.label;
-    inboxAccountSelect.appendChild(option);
-  }
-  inboxAccountBar.style.display = accounts.length > 0 ? '' : 'none';
-}
-
-inboxAccountSelect.addEventListener('change', () => {
-  void switchAccount(inboxAccountSelect.value);
+onActiveProfileChange((id) => {
+  void switchAccount(id);
 });
 
 // Auth/account bootstrap: 401 means not logged in (routes to setup or
 // login depending on whether the app has ever been configured); no
-// connected mail account at all routes to the connect flow. Only once
-// past both does the feed actually start loading, defaulting to whichever
-// account was last viewed (if it still exists) or the first one otherwise.
+// connected mail account at all routes to the connect flow. Only once past
+// both does the feed actually start loading — setActiveProfileId below
+// picks whichever account was last viewed (if it still exists) or the
+// first one otherwise, which the onActiveProfileChange subscription above
+// then reacts to.
 export async function bootstrap(): Promise<void> {
   const [meRes, statusRes] = await Promise.all([fetch('/api/me'), fetch('/api/status')]);
   if (meRes.status === 401) {
@@ -299,9 +284,7 @@ export async function bootstrap(): Promise<void> {
     return;
   }
 
-  populateAccountSelect(accounts);
-  const lastViewed = localStorage.getItem(LAST_ACCOUNT_STORAGE_KEY);
+  const lastViewed = getLastKnownProfileId();
   const initial = accounts.find((a) => a.id === lastViewed) ?? accounts[0];
-  inboxAccountSelect.value = initial.id;
-  await switchAccount(initial.id);
+  setActiveProfileId(initial.id);
 }

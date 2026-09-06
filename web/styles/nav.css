@@ -53,6 +53,85 @@
   height: 22px;
 }
 
+/* The Profile tab's icon — a colored, initialed swatch reflecting the
+   active profile (see profile-switcher.ts) rather than a static icon.
+   Sized to match the other tabs' svg icons; background/text content are
+   set inline per-account, never a CSS variable, same reasoning as the
+   Feed's own per-account color dot (card.ts) — it must read the same
+   regardless of theme. Rounded-square, not circular, so it reads as
+   distinct from a generic icon rather than blending in. */
+.nav-profile-swatch {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: #fff;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.35);
+}
+
+/* Profile-switcher modal (profile-switcher.ts) — reuses .modal-overlay/
+   .modal-panel/.modal-title/.modal-close-btn (feed.css) for the shell,
+   same as every other confirm-style modal in this app; these rules are
+   just its own list-of-accounts + menu-action rows. */
+.profile-switcher-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 12px 0;
+}
+.profile-switcher-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.9rem;
+  text-align: left;
+  cursor: pointer;
+}
+.profile-switcher-row:hover {
+  border-color: var(--border-soft);
+}
+.profile-switcher-row.active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+.profile-switcher-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.profile-switcher-divider {
+  height: 1px;
+  margin: 4px 0 8px;
+  background: var(--border-soft);
+}
+.profile-switcher-action {
+  display: block;
+  width: 100%;
+  padding: 10px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-size: 0.9rem;
+  text-align: left;
+  cursor: pointer;
+}
+.profile-switcher-action:hover {
+  background: var(--bg);
+}
+
 /* Replaces the bottom nav (same position, same fixed footprint) while
    a selection is active — showing both at once would be redundant and
    cramped, and this keeps the "one fixed action bar at the bottom"

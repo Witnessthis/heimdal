@@ -1,5 +1,5 @@
 import { feed } from '../feed/dom';
-import { getCurrentInboxAccountId } from '../feed/inbox-account';
+import { getActiveProfileId } from '../shared/active-profile';
 import { openCompose } from './compose';
 import { shouldSnapToBoundary } from './reveal-snap';
 
@@ -125,7 +125,7 @@ ensureNewEmailBgPinned();
 
 document.getElementById('new-email-btn')!.addEventListener('click', () => {
   feed.scrollTop = hiddenScrollTop();
-  openCompose({ mode: 'new', accountId: getCurrentInboxAccountId() ?? undefined });
+  openCompose({ mode: 'new', accountId: getActiveProfileId() ?? undefined });
 });
 
 // Whether a finger is currently down on the feed. Distinguishes a

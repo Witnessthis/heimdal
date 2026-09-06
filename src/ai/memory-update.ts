@@ -49,13 +49,20 @@ export function buildMemoryEvent(
     .join('\n');
 }
 
-const INSTRUCTIONS = `You maintain a short memory file that personalizes Heimdal's mail triage to one specific user, based on real actions they take on cards in their Feed over time — not on the day-zero instructions every user starts from.
+const INSTRUCTIONS = `You maintain a persistent memory file that personalizes Heimdal's mail triage to one specific user, based on real actions they take on cards in their Feed over time — not on the day-zero instructions every user starts from.
 
 You will be given the current memory file (it may be empty, meaning nothing has been learned yet) and one new observation: an email the AI already classified, and what the user actually did about it (confirmed / dismissed, and how).
 
-Update the memory file to fold in anything genuinely useful this observation reveals about the user's real preferences — a category of mail they consistently dismiss despite the AI showing it, a sender or kind of content they always act on, a pattern in what they actually reply to. A single observation is rarely enough to justify a new note on its own — only add or strengthen a note when this observation fits a pattern rather than describing an isolated one-off, and prefer merging into an existing related note over adding a new one.
+The file holds a growing set of CATEGORY-level classifications, not a log of individual emails. Each bullet names a kind of mail — invent categories freely, split an existing one into more specific ones, or broaden one, whatever best captures a real recurring pattern (e.g. "package delivery notifications from known carriers", "invoices from recurring vendors") — plus the user's actual preference toward it.
 
-Write in short plain-prose bullet points, not raw logs of individual emails. Keep the whole file concise — well under 500 words — trimming or merging older notes if it's getting long. If the user has written their own note directly into this file, preserve it as-is unless a clear pattern of their own actions now contradicts it.
+The existing file is the source of truth, not the newest observation — you are layering one more data point onto everything already learned, not rewriting the file around it. For every response:
+- If this observation reinforces or refines a category that's already recorded, sharpen or expand THAT bullet in place (tighten its scope, resolve an edge case, add a genuine distinguishing detail) and leave every other, unrelated bullet exactly as it already reads.
+- If it clearly doesn't fit any existing category, add a new bullet — but only once a pattern is actually emerging; a single isolated action rarely justifies one on its own (the explicit-correction case below is the exception).
+- Never drop, collapse, or silently rewrite an existing bullet unless this specific observation directly contradicts it. Being about an unrelated topic is not a contradiction — categories accumulate; the file is additive by default, and something true a week ago doesn't stop being true just because today's observation is about something else.
+
+Never write a bullet about one specific message — not its exact sender, its subject line, or "an email about X was dismissed." Fold whatever generalizes from it into the relevant category and discard the rest. A specific sender or concrete detail belongs in a bullet only when it's a genuine defining feature of the category itself (e.g. "...from known carriers" vs. "...from unfamiliar senders" is the actual distinction the category is about) — never simply because it happened to be the most recent example processed.
+
+Write in short plain-prose bullet points. A file that grows somewhat as real understanding accumulates is fine and expected — don't compress, shorten, or drop existing bullets just to save space. Only merge two bullets when they've genuinely become redundant or one has been folded into a broader one; never merge or trim purely to keep a length target. If the user has written their own note directly into this file, preserve it as-is unless a clear pattern of their own actions now contradicts it.
 
 An observation that describes the user explicitly overriding a specific AI verdict, or explicitly stating a category preference (as opposed to a routine confirm/dismiss), is a much stronger signal than routine card actions — note it even from this single occurrence rather than waiting to see it repeated.
 
